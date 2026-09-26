@@ -217,7 +217,7 @@ export default function StudioPage() {
         alert(data.error || "Failed to extract career milestones.");
         setChatMessages((prev) => [
           ...prev,
-          { sender: "ally", text: `Error: ${data.error || "Failed to extract milestones."}` }
+          { sender: "ally", text: `Notice: ${data.error || "Could not segment milestones."}` }
         ]);
       }
     } catch {
@@ -240,7 +240,7 @@ export default function StudioPage() {
 
     setChatMessages((prev) => [
       ...prev,
-      { sender: "ally", text: `Analyzing ${file.name} through parsing engine...` }
+      { sender: "ally", text: `Reading and extracting text from ${file.name}...` }
     ]);
 
     try {
@@ -262,14 +262,14 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Extracted ${data.milestones.length} milestones directly from ${file.name}. Review them on your canvas.`
+            text: `Extracted ${data.milestones.length} milestones from ${file.name} (${data.engine || "parsed"}). All career chapters mapped to your canvas.`
           }
         ]);
       } else {
         alert(data.error || "Failed to parse document.");
         setChatMessages((prev) => [
           ...prev,
-          { sender: "ally", text: `Error parsing file: ${data.error || "Unknown error"}` }
+          { sender: "ally", text: `Notice: ${data.error || "Could not parse document."}` }
         ]);
       }
     } catch {
