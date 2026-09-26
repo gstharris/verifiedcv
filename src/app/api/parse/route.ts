@@ -12,18 +12,20 @@ interface ExtractedMilestone {
   isCorroborated: boolean;
 }
 
-// Resilient line-by-line parser that does NOT rely on double linebreaks
-function segmentPlainTextLosslessly(rawText: string): {
+// Deterministic multi-strategy plain text parser
+function parseResumeTextDeterministically(rawText: string): {
   fullName: string;
   headline: string;
   milestones: ExtractedMilestone[];
 } {
+  // Normalize dashes, line breaks, and whitespace
   const clean = rawText
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
-    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, " — ")
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, " - ")
     .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ")
-    .replace(/\t/g, "  ");
+    .replace(/\t/g, "  ")
+    .trim();
 
   const lines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
 
@@ -37,8 +39,8 @@ function segmentPlainTextLosslessly(rawText: string): {
     headline = lines[1].replace(/[|•]/g, "").trim();
   }
 
-  // Matches any tenure range: "2010 — 2024", "Jan 2018 - Present", "2018 — 2023", "05/2014 - 08/2022"
-  const dateRegex = /(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*)?(?:\d{1,2}\/)?\b(19\d{2}|20\d{2})\b\s*(?:—|-|–|to)\s*(?:(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*)?(?:\d{1,2}\/)?\b(19\d{2}|20\d{2})\b|present|current)/i;
+  // Broad date range pattern: handles single years, ranges, and words like Present/Current
+  const datePattern = /(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*)?(?:\d{1,2}\/)?\b(19\d{2}|20\d{2})\b\s*(?:-|–|—|to)\s*(?:(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*)?(?:\d{1,2}\/)?\b(19\d{2}|20\d{2})\b|present|current)/i;
 
   const milestones: ExtractedMilestone[] = [];
   let currentCompany = "";
@@ -59,7 +61,7 @@ function segmentPlainTextLosslessly(rawText: string): {
         company: currentCompany || "Career Chapter",
         role: currentRole || "Leader",
         period: currentPeriod || "Confirmed Tenure",
-        calibratedClaim: claim || "Led strategic roadmaps, technical execution, and operational delivery.",
+        calibratedClaim: claim || "Led key strategic initiatives, product development, and operational scale.",
         isCorroborated: false
       });
 
@@ -73,15 +75,14 @@ function segmentPlainTextLosslessly(rawText: string): {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // Skip section headers
+    // Skip broad resume header titles
     if (/^(EXPERIENCE|PROFESSIONAL EXPERIENCE|WORK EXPERIENCE|EMPLOYMENT HISTORY|SUMMARY|EDUCATION|SKILLS)$/i.test(line)) {
       continue;
     }
 
-    const match = line.match(dateRegex);
+    const match = line.match(datePattern);
 
     if (match) {
-      // Date found - flush the prior role
       flush();
 
       currentPeriod = match[0].trim();
@@ -93,7 +94,6 @@ function segmentPlainTextLosslessly(rawText: string): {
         currentRole = parts[1].trim();
       } else if (parts.length === 1) {
         currentCompany = parts[0].trim();
-        // Check if previous line had a title
         if (i > 0 && lines[i - 1].length < 60 && !lines[i - 1].startsWith("•")) {
           currentRole = lines[i - 1];
         } else {
@@ -116,7 +116,7 @@ function segmentPlainTextLosslessly(rawText: string): {
     } else if (line.startsWith("•") || line.startsWith("-") || line.startsWith("*") || line.startsWith("–")) {
       currentBullets.push(line.replace(/^[•\-\*–]\s*/, "").trim());
     } else {
-      if (currentBullets.length === 0 && line.length < 60 && !line.endsWith(".")) {
+      if (currentBullets.length === 0 && line.length < 65 && !line.endsWith(".")) {
         if (!currentCompany) currentCompany = line;
         else if (!currentRole) currentRole = line;
         else currentBullets.push(line);
@@ -128,19 +128,25 @@ function segmentPlainTextLosslessly(rawText: string): {
 
   flush();
 
-  // If no date range was found, divide into logical 4-5 line blocks
-  if (milestones.length === 0 && lines.length > 0) {
-    const chunkSize = 5;
-    for (let i = 0; i < lines.length; i += chunkSize) {
-      const slice = lines.slice(i, i + chunkSize);
-      milestones.push({
-        id: `m-chunk-${Date.now()}-${milestones.length}`,
-        company: slice[0].slice(0, 45),
-        role: "Leader / Contributor",
-        period: "Tenure",
-        calibratedClaim: slice.slice(1).join(" ").trim() || slice[0],
-        isCorroborated: false
+  // If strict date splitting didn't yield multiple milestones, split on double line breaks or chunking
+  if (milestones.length <= 1 && clean.length > 200) {
+    const blocks = clean.split(/\n\s*\n/).filter((b) => b.trim().length > 25);
+    if (blocks.length > 1) {
+      const fallbackList: ExtractedMilestone[] = [];
+      blocks.forEach((block, idx) => {
+        const bLines = block.trim().split("\n").filter(Boolean);
+        const header = bLines[0] || `Role ${idx + 1}`;
+        const rest = bLines.slice(1).join(" ").trim() || header;
+        fallbackList.push({
+          id: `m-block-${Date.now()}-${idx}`,
+          company: header.slice(0, 45),
+          role: "Leader",
+          period: "Tenure",
+          calibratedClaim: rest,
+          isCorroborated: false
+        });
       });
+      return { fullName, headline, milestones: fallbackList };
     }
   }
 
@@ -154,7 +160,7 @@ export async function POST(req: NextRequest) {
     const pastedText = formData.get("text") as string | null;
 
     if (!file && (!pastedText || pastedText.trim().length === 0)) {
-      return NextResponse.json({ error: "No resume input provided." }, { status: 400 });
+      return NextResponse.json({ error: "No resume input received." }, { status: 400 });
     }
 
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
@@ -249,10 +255,10 @@ STRICT INSTRUCTIONS:
           });
         }
       } catch (geminiError: any) {
-        console.error("[VerifiedCV Ingress] Gemini parsing error:", geminiError);
+        console.error("Gemini Ingress Error:", geminiError);
         if (file) {
           return NextResponse.json(
-            { error: `Gemini parsing failed on this PDF: ${geminiError?.message || "Unknown error"}. Please copy all text from your resume and use 'Paste Career Text'.` },
+            { error: `Gemini parsing failed on this PDF: ${geminiError?.message || "Unknown error"}. Please copy your resume text and use 'Paste Career Text'.` },
             { status: 502 }
           );
         }
@@ -263,7 +269,7 @@ STRICT INSTRUCTIONS:
     if (file && (file.name.endsWith(".pdf") || file.type.includes("pdf"))) {
       return NextResponse.json(
         {
-          error: "Binary PDF uploads require a configured GEMINI_API_KEY. To continue immediately without an API key, please open your resume document, copy the text (Cmd+A -> Cmd+C), and paste it into 'Paste Career Text'."
+          error: "Binary PDF parsing requires a configured GEMINI_API_KEY. To continue immediately without an API key, copy your resume text (Cmd+A -> Cmd+C) and paste it into 'Paste Career Text'."
         },
         { status: 400 }
       );
@@ -271,10 +277,10 @@ STRICT INSTRUCTIONS:
 
     // 3. TIER B: DETERMINISTIC PLAINTEXT SEGMENTER
     if (pastedText) {
-      const fallbackResult = segmentPlainTextLosslessly(pastedText);
+      const fallbackResult = parseResumeTextDeterministically(pastedText);
       return NextResponse.json({
         success: true,
-        engine: "deterministic-line-segmenter",
+        engine: "deterministic-tokenizer",
         fullName: fallbackResult.fullName,
         headline: fallbackResult.headline,
         milestones: fallbackResult.milestones
