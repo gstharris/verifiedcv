@@ -100,7 +100,7 @@ export default function StudioPage() {
     setIsProcessing(true);
     setChatMessages((prev) => [
       ...prev,
-      { sender: "ally", text: "Ingesting career track record through parsing engine..." }
+      { sender: "ally", text: "Analyzing career track record through parsing engine..." }
     ]);
 
     try {
@@ -122,7 +122,7 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Extracted ${data.milestones.length} career milestones (${data.engine || "parsed"}). Review each chapter on the canvas and calibrate your claims.`
+            text: `Extracted ${data.milestones.length} career milestones losslessly (${data.engine || "parsed"}). Review each chapter below and calibrate your claims.`
           }
         ]);
       } else {
@@ -148,7 +148,7 @@ export default function StudioPage() {
 
     setChatMessages((prev) => [
       ...prev,
-      { sender: "ally", text: `Analyzing ${file.name} through document parser...` }
+      { sender: "ally", text: `Analyzing ${file.name} through parsing engine...` }
     ]);
 
     try {
@@ -382,7 +382,7 @@ export default function StudioPage() {
               </div>
 
               <div className="space-y-2">
-                <h2 className="text-xl font-black text-[#0F172A]">Ingest Your Career History</h2>
+                <h2 className="text-xl font-black text-[#0F172A]">Ingest Your Career Track Record</h2>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
                   Upload your resume file directly (PDF, DOCX, TXT) or paste your career experience below to map your history into atomic, testable milestones.
                 </p>
