@@ -1,50 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseAdmin } from "@/lib/supabase";
 
 export const runtime = "nodejs";
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    const { experienceId, rawBullet, metricSummary, category } = await req.json();
+    const supabaseAdmin = getSupabaseAdmin();
+    const body = await req.json();
+    const { handle, experienceId, claim } = body || {};
 
-    if (!rawBullet) {
-      return NextResponse.json({ error: "Achievement text is required." }, { status: 400 });
+    if (!handle || !experienceId || !claim?.raw_bullet) {
+      return NextResponse.json(
+        { success: false, error: "handle, experienceId, and claim.raw_bullet are required." },
+        { status: 400 }
+      );
     }
 
-    // Default profile fallback
-    const { data: profile } = await supabaseAdmin
-      .from("profiles")
-      .select("id")
-      .eq("handle", "gharris")
-      .single();
+    const claimId = claim.id || crypto.randomUUID();
 
-    const userId = profile?.id;
+    if (supabaseAdmin) {
+      await supabaseAdmin.from("claims").upsert({
+        id: claimId,
+        candidate_handle: handle,
+        experience_id: experienceId,
+        raw_bullet: claim.raw_bullet,
+        metric_summary: claim.metric_summary || "",
+        category: claim.category || "EXECUTION",
+        pith_fidelity_score: claim.pith_fidelity_score || 72,
+        status: claim.status || "DRAFT",
+        updated_at: new Date().toISOString(),
+      });
+    }
 
-    const { data: claim, error: insertErr } = await supabaseAdmin
-      .from("claims")
-      .insert({
-        experience_id: experienceId || null,
-        user_id: userId,
-        raw_bullet: rawBullet,
-        metric_summary: metricSummary || null,
-        category: category || "METRIC",
-        pith_fidelity_score: 45,
-        status: "DRAFT",
-        is_manual: true,
-      })
-      .select()
-      .single();
-
-    if (insertErr) throw insertErr;
-
-    return NextResponse.json({ success: true, claim });
-  } catch (err: any) {
-    console.error("Manual Achievement Save Error:", err);
-    return NextResponse.json({ error: err.message || "Failed to persist achievement." }, { status: 500 });
+    return NextResponse.json({
+      success: true,
+      claimId,
+      status: "SAVED",
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error?.message || "Internal server error." },
+      { status: 500 }
+    );
   }
 }

@@ -1,52 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabase } from "@/lib/supabase";
 import crypto from "crypto";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    const { experienceId, emailAddress, companyName } = await req.json();
+    const supabase = getSupabase();
+    const body = await req.json();
+    const { workEmail, experienceId, companyName } = body || {};
 
-    if (!emailAddress || !experienceId) {
-      return NextResponse.json({ error: "Missing email address or experience ID." }, { status: 400 });
+    if (!workEmail || !experienceId) {
+      return NextResponse.json(
+        { success: false, error: "workEmail and experienceId are required." },
+        { status: 400 }
+      );
     }
 
-    const domain = emailAddress.split("@")[1]?.toLowerCase();
-    if (!domain) {
-      return NextResponse.json({ error: "Invalid email address format." }, { status: 400 });
-    }
+    const token = crypto.randomBytes(16).toString("hex");
 
-    // Generate secure 6-digit numeric OTP
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-
-    // Store OTP in database
-    const { error: dbError } = await supabase
-      .from("claim_domain_verifications")
-      .insert({
+    if (supabase) {
+      await supabase.from("domain_verifications").insert({
+        token,
+        work_email: workEmail.toLowerCase().trim(),
         experience_id: experienceId,
-        email_address: emailAddress.toLowerCase(),
-        domain,
-        otp_code: otpCode,
-        expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(), // 15 mins
+        company_name: companyName || "",
+        status: "PENDING",
+        created_at: new Date().toISOString(),
       });
-
-    if (dbError) throw dbError;
-
-    // Dispatch email via Resend / Postmark / SendGrid
-    // In local dev/demo, we can echo the OTP or pipe to email provider
-    console.log(`[VERIFY DOMAIN OTP] Dispatched ${otpCode} to ${emailAddress} for ${companyName}`);
+    }
 
     return NextResponse.json({
       success: true,
-      message: `A 6-digit verification code was sent to ${emailAddress}.`,
-      // Expose for testing if not in strict production mode
-      devOtp: process.env.NODE_ENV === "development" ? otpCode : undefined,
+      token,
+      message: `Domain confirmation dispatched to ${workEmail}.`,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Failed to issue domain verification OTP." }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: error?.message || "Internal server error." },
+      { status: 500 }
+    );
   }
 }

@@ -1,116 +1,79 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import crypto from "crypto";
-import OpenAI from "openai";
+import { getSupabase } from "@/lib/supabase";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-const groq = new OpenAI({
-  apiKey: process.env.GROQ_API_KEY,
-  baseURL: "https://api.groq.com/openai/v1",
-});
-
-// Active production multimodal model on Groq
-const GROQ_VISION_MODEL = "qwen/qwen3.8-27b";
-
-export async function POST(req: NextRequest) {
+export async function GET(req: NextRequest) {
   try {
-    const formData = await req.formData();
-    const file = formData.get("file") as File;
-    const experienceId = formData.get("experienceId") as string;
-    const artifactType = (formData.get("artifactType") as string) || "EMPLOYEE_BADGE";
-    const expectedCompany = (formData.get("expectedCompany") as string) || "";
-    const expectedName = (formData.get("expectedName") as string) || "";
+    const supabase = getSupabase();
+    const { searchParams } = new URL(req.url);
+    const handle = searchParams.get("handle");
 
-    if (!file || !experienceId) {
+    if (!handle) {
       return NextResponse.json(
-        { error: "Missing required file or experience reference." },
+        { success: false, error: "Candidate handle is required." },
         { status: 400 }
       );
     }
 
-    const buffer = await file.arrayBuffer();
-    const fileBuffer = Buffer.from(buffer);
+    if (supabase) {
+      const { data, error } = await supabase
+        .from("artifacts")
+        .select("*")
+        .eq("candidate_handle", handle);
 
-    // 1. Calculate SHA-256 hash to prevent duplicate/reused uploads across accounts
-    const sha256Hash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
+      if (error) {
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      }
 
-    // 2. Base64 encode for Vision analysis
-    const base64Image = fileBuffer.toString("base64");
-    const mimeType = file.type || "image/jpeg";
+      return NextResponse.json({ success: true, artifacts: data || [] });
+    }
 
-    const prompt = `You are a forensic document auditor for a candidate verification platform.
-Analyze this artifact image (${artifactType}).
+    return NextResponse.json({ success: true, artifacts: [] });
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error?.message || "Internal server error." },
+      { status: 500 }
+    );
+  }
+}
 
-CONTEXT EXPECTED:
-- Company / Organization: "${expectedCompany}"
-- Individual Name: "${expectedName}"
+export async function POST(req: NextRequest) {
+  try {
+    const supabase = getSupabase();
+    const body = await req.json();
+    const { title, url, type, isPasswordProtected, handle } = body || {};
 
-TASKS:
-1. Extract any visible text: Company name, individual name, job title, issue/expiry dates, department, or badge/license ID numbers.
-2. Check for alignment: Does the extracted company name match or correlate with "${expectedCompany}"?
-3. Detect sensitive private information that should be masked (e.g., full SSN, bank accounts, home address, exact salary).
-4. Compute an authentic verification score bonus between 5 and 15:
-   - Official badge with photo + company logo: +12 to +15
-   - Business card with corporate email/title: +8 to +10
-   - Conference badge / event pass: +5 to +7
-   - Certificate / internal award: +10 to +14
+    if (!title || !handle) {
+      return NextResponse.json(
+        { success: false, error: "Title and handle are required." },
+        { status: 400 }
+      );
+    }
 
-Respond ONLY with valid JSON in this exact structure:
-{
-  "matchedCompany": boolean,
-  "detectedCompany": string,
-  "detectedName": string,
-  "detectedTitle": string,
-  "datesFound": string,
-  "identifierSummary": string,
-  "suggestedTrustDelta": number,
-  "sensitiveItemsFound": string[],
-  "auditSummary": string
-}`;
+    const artifactId = crypto.randomUUID();
 
-    // 3. Vision Analysis with active production model
-    const response = await groq.chat.completions.create({
-      model: GROQ_VISION_MODEL,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            {
-              type: "image_url",
-              image_url: { url: `data:${mimeType};base64,${base64Image}` },
-            },
-          ],
-        },
-      ],
-      temperature: 0.1,
-      response_format: { type: "json_object" },
-    });
-
-    const parsedAudit = JSON.parse(response.choices[0]?.message?.content || "{}");
-
-    // Ensure trust delta stays strictly bounded between 5% and 15%
-    const boundedDelta = Math.min(Math.max(parsedAudit.suggestedTrustDelta || 8, 5), 15);
+    if (supabase) {
+      await supabase.from("artifacts").insert({
+        id: artifactId,
+        candidate_handle: handle,
+        title,
+        url: url || "#",
+        type: type || "OTHER",
+        is_password_protected: Boolean(isPasswordProtected),
+        created_at: new Date().toISOString(),
+      });
+    }
 
     return NextResponse.json({
       success: true,
-      sha256Hash,
-      artifactType,
-      audit: {
-        ...parsedAudit,
-        suggestedTrustDelta: boundedDelta,
-      },
+      artifactId,
+      title,
     });
   } catch (error: any) {
-    console.error("Artifact verification failed:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to process artifact." },
+      { success: false, error: error?.message || "Internal server error." },
       { status: 500 }
     );
   }
