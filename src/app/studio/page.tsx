@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import Script from "next/script";
 import {
   ShieldCheck,
   CheckCircle2,
@@ -125,6 +126,33 @@ const GRAHAM_HARRIS_CANONICAL: {
   ]
 };
 
+async function extractTextFromClientFile(file: File): Promise<string> {
+  if (file.name.endsWith(".txt") || file.name.endsWith(".md")) {
+    return await file.text();
+  }
+
+  if (file.name.endsWith(".pdf") && typeof window !== "undefined" && (window as any).pdfjsLib) {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await (window as any).pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = "";
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: any) => item.str)
+        .join(" ");
+      fullText += pageText + "\n";
+    }
+
+    if (fullText.trim().length > 50) {
+      return fullText;
+    }
+  }
+
+  return await file.text();
+}
+
 export default function StudioPage() {
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [summaryStatement, setSummaryStatement] = useState("");
@@ -155,7 +183,6 @@ export default function StudioPage() {
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Hydrate from Homepage bridge on mount
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -175,7 +202,9 @@ export default function StudioPage() {
         setMilestones(
           parsed.milestones.map((m: any) => ({
             ...m,
-            claims: Array.isArray(m.claims) ? m.claims : (m.calibratedClaim ? [m.calibratedClaim] : [])
+            claims: (Array.isArray(m.claims) ? m.claims : (m.calibratedClaim ? [m.calibratedClaim] : [])).filter(
+              (c: string) => c.length >= 10 && /[a-zA-Z]/.test(c)
+            )
           }))
         );
         if (parsed.fullName) setFullName(parsed.fullName);
@@ -199,7 +228,7 @@ export default function StudioPage() {
         executeIngest(parsed.rawText);
       }
     } catch {
-      // ignore JSON parse error
+      // ignore parse error
     }
   }, []);
 
@@ -247,7 +276,9 @@ export default function StudioPage() {
       if (res.ok && data.milestones && data.milestones.length > 0) {
         const formattedMilestones = data.milestones.map((m: any) => ({
           ...m,
-          claims: Array.isArray(m.claims) ? m.claims : (m.calibratedClaim ? [m.calibratedClaim] : [])
+          claims: (Array.isArray(m.claims) ? m.claims : (m.calibratedClaim ? [m.calibratedClaim] : [])).filter(
+            (c: string) => c.length >= 10 && /[a-zA-Z]/.test(c)
+          )
         }));
 
         setMilestones(formattedMilestones);
@@ -296,8 +327,14 @@ export default function StudioPage() {
     ]);
 
     try {
+      const extractedText = await extractTextFromClientFile(file);
+
       const formData = new FormData();
-      formData.append("file", file);
+      if (extractedText && extractedText.trim().length > 30) {
+        formData.append("text", extractedText);
+      } else {
+        formData.append("file", file);
+      }
 
       const res = await fetch("/api/parse", {
         method: "POST",
@@ -308,7 +345,9 @@ export default function StudioPage() {
       if (res.ok && data.milestones && data.milestones.length > 0) {
         const formattedMilestones = data.milestones.map((m: any) => ({
           ...m,
-          claims: Array.isArray(m.claims) ? m.claims : (m.calibratedClaim ? [m.calibratedClaim] : [])
+          claims: (Array.isArray(m.claims) ? m.claims : (m.calibratedClaim ? [m.calibratedClaim] : [])).filter(
+            (c: string) => c.length >= 10 && /[a-zA-Z]/.test(c)
+          )
         }));
 
         setMilestones(formattedMilestones);
@@ -334,7 +373,7 @@ export default function StudioPage() {
         ]);
       }
     } catch {
-      alert("Error uploading file.");
+      alert("Error extracting document text.");
     } finally {
       setIsProcessing(false);
     }
@@ -453,6 +492,18 @@ export default function StudioPage() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col antialiased selection:bg-emerald-100">
+      {/* PDF.js Browser Runtime CDN Script */}
+      <Script
+        src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"
+        strategy="lazyOnload"
+        onLoad={() => {
+          if (typeof window !== "undefined" && (window as any).pdfjsLib) {
+            (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc =
+              "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+          }
+        }}
+      />
+
       {/* Studio Top Navigation */}
       <header className="sticky top-0 z-50 bg-white border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -822,7 +873,7 @@ export default function StudioPage() {
                                 className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all p-1 cursor-pointer shrink-0"
                                 title="Delete Line Item"
                               >
-                                <Trash2 className="w-3 h-3" />
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           ))}

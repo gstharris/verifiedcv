@@ -3,6 +3,7 @@
 import React, { useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Script from "next/script";
 import {
   ShieldCheck,
   CheckCircle2,
@@ -35,6 +36,35 @@ function LinkedInIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
       <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z" />
     </svg>
   );
+}
+
+// Client-side text extraction using in-browser PDF.js
+async function extractTextFromClientFile(file: File): Promise<string> {
+  if (file.name.endsWith(".txt") || file.name.endsWith(".md")) {
+    return await file.text();
+  }
+
+  if (file.name.endsWith(".pdf") && typeof window !== "undefined" && (window as any).pdfjsLib) {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await (window as any).pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = "";
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: any) => item.str)
+        .join(" ");
+      fullText += pageText + "\n";
+    }
+
+    if (fullText.trim().length > 50) {
+      return fullText;
+    }
+  }
+
+  // Fallback to native text reading
+  return await file.text();
 }
 
 export default function VerifiedCVLandingPage() {
@@ -103,8 +133,15 @@ export default function VerifiedCVLandingPage() {
     setIsProcessing(true);
 
     try {
+      // 1. Extract pure text directly in the browser
+      const extractedText = await extractTextFromClientFile(file);
+
       const formData = new FormData();
-      formData.append("file", file);
+      if (extractedText && extractedText.trim().length > 30) {
+        formData.append("text", extractedText);
+      } else {
+        formData.append("file", file);
+      }
 
       const res = await fetch("/api/parse", {
         method: "POST",
@@ -119,7 +156,7 @@ export default function VerifiedCVLandingPage() {
         alert(data.error || "Could not parse document. Routing to Candidate Studio.");
       }
     } catch {
-      alert("Network error parsing file.");
+      alert("Error extracting document text. Routing to Candidate Studio.");
     } finally {
       setIsProcessing(false);
     }
@@ -173,6 +210,18 @@ export default function VerifiedCVLandingPage() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans antialiased selection:bg-emerald-100 flex flex-col justify-between">
+      {/* PDF.js Browser Runtime CDN Script */}
+      <Script
+        src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"
+        strategy="lazyOnload"
+        onLoad={() => {
+          if (typeof window !== "undefined" && (window as any).pdfjsLib) {
+            (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc =
+              "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+          }
+        }}
+      />
+
       {/* Navigation */}
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-[#E2E8F0]">
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
@@ -237,7 +286,7 @@ export default function VerifiedCVLandingPage() {
             Prove your track record upfront. Replace unverified resumes with forensic proof signals, peer corroboration, and registry links that bypass automated screening filters.
           </p>
 
-          {/* Conversational Ingress Window with Multi-line Safe Textarea */}
+          {/* Conversational Ingress Window */}
           <div className="max-w-xl mx-auto pt-6 text-left">
             <div className="bg-white border border-[#E2E8F0] rounded-2xl shadow-sm p-5 space-y-4">
               <div className="flex items-start gap-3">
@@ -252,7 +301,7 @@ export default function VerifiedCVLandingPage() {
                 </div>
               </div>
 
-              {/* Quick Action Ingress Controls */}
+              {/* Action Buttons */}
               <div className="flex flex-wrap items-center gap-2.5 pt-1">
                 <input
                   ref={fileInputRef}

@@ -29,30 +29,41 @@ export interface ParsedDossierPayload {
   milestones: ExtractedMilestone[];
 }
 
+// Cleans text and filters out lone bullet artifacts or invisible characters
+function sanitizeTextLine(line: string): string {
+  return line
+    .replace(/[\u200B-\u200D\uFEFF]/g, "") // strip zero-width characters
+    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ") // normalize non-breaking spaces
+    .replace(/^[●•\-\*–\d\.\)]\s*/, "") // remove leading bullet characters or numbers
+    .trim();
+}
+
 function extractAtomicAchievements(rawLines: string[]): string[] {
+  // Discard lines that are purely bullet symbols or whitespace
   const contentLines = rawLines
     .map((l) => l.trim())
-    .filter((l) => Boolean(l) && !/^[●•\-\*–]+$/.test(l));
+    .filter((l) => Boolean(l) && !/^[●•\-\*–\s]+$/.test(l));
 
   if (contentLines.length === 0) return [];
 
   const achievements: string[] = [];
   let currentBuffer = "";
 
-  const actionVerbStart = /^(Direct|Directed|Design|Designed|Build|Built|Deploy|Deployed|Partner|Partnered|Found|Founded|Rebuild|Rebuilt|Establish|Established|Engineer|Engineered|Conduct|Conducted|Scale|Scaled|Lead|Led|Restructure|Restructured|Architect|Architected|Manage|Managed|Create|Created|Drive|Drove|Deliver|Delivered|Authored|Author)\b/i;
+  const actionVerbStart = /^(Direct|Directed|Design|Designed|Build|Built|Deploy|Deployed|Partner|Partnered|Found|Founded|Rebuild|Rebuilt|Establish|Established|Engineer|Engineered|Conduct|Conducted|Scale|Scaled|Lead|Led|Restructure|Restructured|Architect|Architected|Manage|Managed|Create|Created|Drive|Drove|Deliver|Delivered|Author|Authored|Spearhead|Spearheaded|Oversee|Oversaw)\b/i;
 
   for (let i = 0; i < contentLines.length; i++) {
     const raw = contentLines[i];
     const startsWithBullet = /^[●•\-\*–]/.test(raw);
-    const cleanText = raw.replace(/^[●•\-\*–]\s*/, "").trim();
+    const cleanText = sanitizeTextLine(raw);
 
-    if (!cleanText) continue;
+    // Skip lone bullet leftovers or fragments with no letters
+    if (!cleanText || !/[a-zA-Z0-9]/.test(cleanText)) continue;
 
     const prevEndedWithPeriod = currentBuffer.endsWith(".") || currentBuffer.endsWith(";");
     const isNewActionSentence = prevEndedWithPeriod && actionVerbStart.test(cleanText);
 
     if (startsWithBullet || isNewActionSentence || !currentBuffer) {
-      if (currentBuffer) {
+      if (currentBuffer && currentBuffer.length >= 12 && /[a-zA-Z]/.test(currentBuffer)) {
         achievements.push(currentBuffer.replace(/\s{2,}/g, " ").trim());
       }
       currentBuffer = cleanText;
@@ -61,11 +72,11 @@ function extractAtomicAchievements(rawLines: string[]): string[] {
     }
   }
 
-  if (currentBuffer) {
+  if (currentBuffer && currentBuffer.length >= 12 && /[a-zA-Z]/.test(currentBuffer)) {
     achievements.push(currentBuffer.replace(/\s{2,}/g, " ").trim());
   }
 
-  return achievements.filter((a) => a.length > 5);
+  return achievements.filter((a) => a.length >= 12 && /[a-zA-Z]/.test(a));
 }
 
 function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
@@ -125,19 +136,21 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
     sectionLines[currentSection].push(line);
   }
 
+  // Summary
   if (sectionLines.SUMMARY.length > 0) {
     summaryStatement = sectionLines.SUMMARY
-      .map((l) => l.replace(/^[●•\-\*–]\s*/, "").trim())
-      .filter(Boolean)
+      .map((l) => sanitizeTextLine(l))
+      .filter((l) => l.length > 10)
       .join(" ")
       .replace(/\s{2,}/g, " ");
   }
 
+  // Skills
   if (sectionLines.SKILLS.length > 0) {
     const rawSkillsText = sectionLines.SKILLS.join(" ");
     const skillTokens = rawSkillsText
       .split(/[,|•●;•\/\n]/)
-      .map((s) => s.replace(/^[●•\-\*–]\s*/, "").trim())
+      .map((s) => sanitizeTextLine(s))
       .filter((s) => s.length > 1 && s.length < 40 && !/^(Languages|Frameworks|Tools|Methodologies):?$/i.test(s));
 
     skillTokens.forEach((s) => {
@@ -147,10 +160,11 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
     });
   }
 
+  // Education
   if (sectionLines.EDUCATION.length > 0) {
     for (let i = 0; i < sectionLines.EDUCATION.length; i++) {
       const line = sectionLines.EDUCATION[i];
-      if (/^[●•\-\*–]$/.test(line)) continue;
+      if (/^[●•\-\*–\s]+$/.test(line)) continue;
 
       if (line.includes("|")) {
         const parts = line.split("|").map((p) => p.trim());
@@ -171,6 +185,7 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
     }
   }
 
+  // Work Experience Milestones
   const yearPattern = /\b(?:19\d{2}|20\d{2})\b/i;
   interface RoleBlock {
     company: string;
@@ -345,7 +360,9 @@ Extract the complete candidate career profile into structured JSON:
                   company: m.company,
                   role: m.role,
                   period: m.period,
-                  claims: Array.isArray(m.claims) ? m.claims : [m.calibratedClaim || ""],
+                  claims: (Array.isArray(m.claims) ? m.claims : [m.calibratedClaim || ""]).filter(
+                    (c: string) => c.length >= 10 && /[a-zA-Z]/.test(c)
+                  ),
                   calibratedClaim: m.calibratedClaim || (Array.isArray(m.claims) ? m.claims.join(" ") : ""),
                   isCorroborated: false
                 }))
@@ -356,7 +373,6 @@ Extract the complete candidate career profile into structured JSON:
           }
         }
 
-        // Clean printable ASCII characters for local extraction
         textContent = rawString.replace(/[^\x20-\x7E\n\t]/g, " ");
       } else {
         textContent = rawString;
