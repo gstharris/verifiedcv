@@ -31,12 +31,21 @@ export async function POST(req: NextRequest) {
     const { messages = [], experiences = [], summary = "", skills = [] } = body || {};
 
     if (!groq) {
-      // Fallback mock responses when API key is not yet set in environment
       return NextResponse.json({
         success: true,
         reply: "CV Ally is connected. To enable live inference, provide GROQ_API_KEY or OPENAI_API_KEY in your Vercel environment variables. In the meantime, you can calibrate claims and invite chapter corroborators.",
       });
     }
+
+    const activeChapters = Array.isArray(experiences)
+      ? experiences
+          .map((e: any) => `${e.title || "Role"} @ ${e.company_name || "Company"} (${e.start_year || ""}-${e.end_year || "Present"})`)
+          .join("; ")
+      : "None listed";
+
+    const keySkills = Array.isArray(skills)
+      ? skills.map((s: any) => s.name || "").filter(Boolean).join(", ")
+      : "None listed";
 
     const contextPrompt = `You are CV Ally, the forensic trust copilot for VerifiedCV (verifiedcv.app).
 Your mission: Help authentic candidates calibrate high-impact claims, uncover unstated operational constraints, and prepare their career chapters for peer corroboration.
@@ -44,9 +53,8 @@ Tone: Grounded, authentic peer, concise, high technical literacy. Zero boilerpla
 
 Candidate Context:
 - Summary: ${summary || "Not specified"}
-- Active Chapters: ${experiences.map((e: any) => `${e.title} @${e.company_name} (${e.start_year \vert{}\vert{} ""}-${e.end_year || "Present"})`).join("; ")}
-- Key Skills: ${skills.map((s: any) => s.name).join(", ")}
-`;
+- Active Chapters: ${activeChapters}
+- Key Skills: ${keySkills}`;
 
     const chatCompletion = await groq.chat.completions.create({
       model: process.env.GROQ_API_KEY ? "llama-3.3-70b-versatile" : "gpt-4o-mini",
