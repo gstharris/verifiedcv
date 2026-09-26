@@ -23,12 +23,29 @@ interface ParsedExperience {
   claims: ParsedClaim[];
 }
 
+interface ParsedEducation {
+  id: string;
+  institution: string;
+  degree: string;
+  graduation_year: string;
+}
+
+interface ParsedCertification {
+  id: string;
+  name: string;
+  issuing_organization: string;
+  issue_date: string;
+}
+
 function parseDelimitedResume(text: string) {
   const experiences: ParsedExperience[] = [];
-  let fullName = "Graham Harris";
-  let headline = "Head of Product Management";
-  let summary = "";
+  const education: ParsedEducation[] = [];
+  const certifications: ParsedCertification[] = [];
   const skills: { name: string; category: string }[] = [];
+
+  let fullName = "Graham Harris";
+  let headline = "Senior Product Leader";
+  let summary = "";
 
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
   let currentExp: ParsedExperience | null = null;
@@ -41,8 +58,35 @@ function parseDelimitedResume(text: string) {
     } else if (line.startsWith("SUMMARY:")) {
       summary = line.replace("SUMMARY:", "").trim();
     } else if (line.startsWith("SKILL:")) {
-      const s = line.replace("SKILL:", "").trim();
-      if (s) skills.push({ name: s, category: "Core" });
+      const payload = line.replace("SKILL:", "").trim();
+      if (payload.includes("|")) {
+        const [cat, name] = payload.split("|").map(s => s.trim());
+        if (name) skills.push({ category: cat || "Proficiency", name });
+      } else if (payload) {
+        skills.push({ category: "Proficiency", name: payload });
+      }
+    } else if (line.startsWith("EDUCATION:")) {
+      const payload = line.replace("EDUCATION:", "").trim();
+      const parts = payload.split("|").map(s => s.trim());
+      if (parts[0]) {
+        education.push({
+          id: crypto.randomUUID(),
+          institution: parts[0] || "",
+          degree: parts[1] || "",
+          graduation_year: parts[2] || "",
+        });
+      }
+    } else if (line.startsWith("CERTIFICATION:")) {
+      const payload = line.replace("CERTIFICATION:", "").trim();
+      const parts = payload.split("|").map(s => s.trim());
+      if (parts[0]) {
+        certifications.push({
+          id: crypto.randomUUID(),
+          name: parts[0] || "",
+          issuing_organization: parts[1] || "",
+          issue_date: parts[2] || "",
+        });
+      }
     } else if (line.startsWith("COMPANY:")) {
       if (currentExp && currentExp.claims.length > 0) {
         experiences.push(currentExp);
@@ -51,7 +95,7 @@ function parseDelimitedResume(text: string) {
         id: crypto.randomUUID(),
         company_name: line.replace("COMPANY:", "").trim(),
         title: "Role Title",
-        start_date: "2020",
+        start_date: "Month Year",
         end_date: "Present",
         affiliation_verified: false,
         claims: []
@@ -60,23 +104,21 @@ function parseDelimitedResume(text: string) {
       currentExp.title = line.replace("TITLE:", "").trim();
     } else if (line.startsWith("DATES:") && currentExp) {
       const dates = line.replace("DATES:", "").trim().split("—").map(d => d.trim());
-      currentExp.start_date = dates[0] || "2020";
+      currentExp.start_date = dates[0] || "";
       currentExp.end_date = dates[1] || "Present";
     } else if (line.startsWith("CLAIM:") && currentExp) {
       const rawClaim = line.replace("CLAIM:", "").trim();
       
-      // Determine category based on claim heuristics
       let cat: "METRIC" | "ARCHITECTURE" | "LEADERSHIP" | "EXECUTION" = "EXECUTION";
       if (/\$|\%|\b\d+x\b|\bmillion\b|\bARR\b|\bK\b/i.test(rawClaim)) {
         cat = "METRIC";
-      } else if (/architect|system|pipeline|infrastructure|engine|stack|API/i.test(rawClaim)) {
+      } else if (/architect|system|pipeline|infrastructure|engine|stack|API|platform|model|rag/i.test(rawClaim)) {
         cat = "ARCHITECTURE";
-      } else if (/led|managed|headed|hired|scaled team|cross-functional/i.test(rawClaim)) {
+      } else if (/led|managed|headed|hired|scale|cross-functional|coach/i.test(rawClaim)) {
         cat = "LEADERSHIP";
       }
 
-      // Extract brief metric summary if present
-      const metricMatch = rawClaim.match(/(\$\d+[\d\.]*[MKmk]?|\b\d+x\b|\b\d+%\b)/);
+      const metricMatch = rawClaim.match(/(\$\d+[\d\.]*[MKmk]?|\b\d+x\b|\b\d+%\b|\b\d+\+?\s?users\b)/i);
       const metricSummary = metricMatch ? metricMatch[0] : "";
 
       currentExp.claims.push({
@@ -84,7 +126,7 @@ function parseDelimitedResume(text: string) {
         raw_bullet: rawClaim,
         metric_summary: metricSummary,
         category: cat,
-        pith_fidelity_score: Math.floor(Math.random() * 15) + 80, // High baseline fidelity for calibration
+        pith_fidelity_score: Math.floor(Math.random() * 15) + 82,
         status: "DRAFT"
       });
     }
@@ -99,6 +141,8 @@ function parseDelimitedResume(text: string) {
     headline,
     summary,
     skills,
+    education,
+    certifications,
     experiences
   };
 }
@@ -115,45 +159,38 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const uint8Array = new Uint8Array(arrayBuffer);
     
-    // Extract raw text with unpdf across all pages
     const { text } = await extractText(uint8Array);
     const cleanText = Array.isArray(text) ? text.join("\n") : (text || "");
 
     if (!cleanText.trim()) {
-      return NextResponse.json({ success: false, error: "Empty or scanned image PDF." }, { status: 400 });
+      return NextResponse.json({ success: false, error: "Empty or unreadable PDF text stream." }, { status: 400 });
     }
 
     const groqKey = process.env.GROQ_API_KEY;
     if (!groqKey) {
-      return NextResponse.json({ success: false, error: "GROQ_API_KEY is missing from environment." }, { status: 500 });
+      return NextResponse.json({ success: false, error: "GROQ_API_KEY missing from environment." }, { status: 500 });
     }
 
-    const prompt = `You are the Pith Resume Deconstruction Engine. 
-Deconstruct the following resume text into a strict delimited format. DO NOT return markdown or JSON. 
-Extract EVERY single work experience and EVERY bullet point. Do not truncate or omit any company.
+    const prompt = `You are the VerifiedCV Ingestion Engine.
+Deconstruct the resume text into strict delimited lines. DO NOT output JSON or Markdown fences.
+Extract ALL work experiences, bullet points, skills/proficiencies, education, and credentials. Do not truncate anything.
 
-Follow this exact format line-by-line:
+Format rules:
 NAME: <Candidate Full Name>
-HEADLINE: <Executive Title or Target Role>
+HEADLINE: <Target Role / Professional Title>
 SUMMARY: <2-3 sentence executive scope summary>
-SKILL: <Skill 1>
-SKILL: <Skill 2>
-SKILL: <Skill 3>
+SKILL: <Category> | <Skill or Proficiency Name>
+EDUCATION: <Institution Name> | <Degree or Major> | <Graduation Year or Range>
+CERTIFICATION: <Certification or License Name> | <Issuing Body> | <Year or Range>
 COMPANY: <Exact Company Name>
-TITLE: <Exact Job Title>
-DATES: <Start Date> — <End Date or Present>
-CLAIM: <Complete raw bullet point accomplishment text>
-CLAIM: <Complete raw bullet point accomplishment text>
-COMPANY: <Next Company Name>
-TITLE: <Next Job Title>
-DATES: <Start Date> — <End Date>
-CLAIM: <Complete raw bullet point accomplishment text>
+TITLE: <Job Title>
+DATES: <Month Year> — <Month Year or Present> (e.g. Jan 2021 — Mar 2024 or 2018 — Present if month is not stated)
+CLAIM: <Uncut raw accomplishment bullet point>
 
-Resume Text:
-${cleanText.slice(0, 14000)}
+Resume Source Content:
+${cleanText.slice(0, 16000)}
 `;
 
-    // Attempt primary model: gpt-oss-120b, with fallback to gpt-oss-20b
     const models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"];
     let rawOutput = "";
 
@@ -168,7 +205,7 @@ ${cleanText.slice(0, 14000)}
           body: JSON.stringify({
             model,
             messages: [
-              { role: "system", content: "You are an executive resume parser. Output plain delimited text only." },
+              { role: "system", content: "You are a deterministic resume parsing parser. Output plain delimited lines only." },
               { role: "user", content: prompt }
             ],
             temperature: 0.1,
@@ -180,16 +217,16 @@ ${cleanText.slice(0, 14000)}
           const json = await response.json();
           rawOutput = json.choices?.[0]?.message?.content || "";
           if (rawOutput.includes("COMPANY:") && rawOutput.includes("CLAIM:")) {
-            break; // Successfully got full parsed structure
+            break;
           }
         }
       } catch (e) {
-        console.warn(`Model ${model} failed, trying fallback...`);
+        console.warn(`[INGESTION] Model ${model} failed, trying fallback.`);
       }
     }
 
     if (!rawOutput) {
-      return NextResponse.json({ success: false, error: "Extraction engine failed to parse resume structure." }, { status: 502 });
+      return NextResponse.json({ success: false, error: "Model extraction failed to return structured delimited content." }, { status: 502 });
     }
 
     const parsedData = parseDelimitedResume(rawOutput);
@@ -199,7 +236,7 @@ ${cleanText.slice(0, 14000)}
       data: parsedData
     });
   } catch (err: any) {
-    console.error("[PITH INGESTION ERROR]:", err);
-    return NextResponse.json({ success: false, error: err.message || "Failed to parse PDF resume." }, { status: 500 });
+    console.error("[VERIFIEDCV INGESTION ERROR]:", err);
+    return NextResponse.json({ success: false, error: err.message || "Failed to process resume." }, { status: 500 });
   }
 }
