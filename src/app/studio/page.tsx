@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ShieldCheck,
   CheckCircle2,
@@ -20,122 +21,70 @@ import {
   Layers,
   FileCheck,
   Trash2,
-  KeyRound,
-  RotateCcw,
-  Upload
+  UploadCloud,
+  ClipboardPaste,
+  UserCheck,
+  X
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
-import { CandidateDossier, AtomicMilestone } from "@/types/vault";
 
-const DEFAULT_DOSSIER: CandidateDossier = {
-  handle: "gharris",
-  fullName: "Graham Harris",
-  headline: "Product Leader • Personalization & High-Scale AI Platforms",
-  location: "Agoura Hills, CA",
-  verifiedEmailDomain: "yahoo-inc.com",
-  identityConfirmed: true,
-  vaultAuditHash: "0x7a4e9b21f8c0541d",
-  totalYearsExperience: 20,
-  updatedAt: new Date().toISOString(),
-  milestones: [
-    {
-      id: "m-yahoo-01",
-      company: "Yahoo",
-      role: "Head of Product Management",
-      period: "2010 — 2024",
-      rawText: "Led product management for a 400 million dollar personalization platform serving global audiences.",
-      calibratedClaim:
-        "Scaled multi-tenant personalization platform serving 400M+ global monthly active users under sub-50ms latency SLAs. Supervised 35+ engineers and data scientists across multi-region edge caching infrastructure.",
-      metrics: [
-        { label: "Monthly Active Users", value: "400M+", tradeoffSummary: "Maintained <50ms p99 at edge" },
-        { label: "Platform Budget", value: "$400M ARR", tradeoffSummary: "Consolidated redundant regional clusters" }
-      ],
-      tier: "tier_2_peer",
-      isCorroborated: true,
-      corroboration: {
-        receiptId: "rcpt-yh-9821",
-        verifierRole: "Senior Director of Core Engineering",
-        organization: "Yahoo",
-        tenureOverlapYears: 8,
-        attestationTimestamp: "2024-03-12T14:22:00Z",
-        cryptographicHash: "0x8f2d61aa72e43a91",
-        channel: "corporate_oauth"
-      }
-    }
-  ]
-};
+interface Milestone {
+  id: string;
+  company: string;
+  role: string;
+  period: string;
+  calibratedClaim: string;
+  isCorroborated: boolean;
+  corroboratedBy?: string;
+  tier?: string;
+}
 
 export default function StudioPage() {
-  const [dossier, setDossier] = useState<CandidateDossier>(DEFAULT_DOSSIER);
-  const [saveStatus, setSaveStatus] = useState<"synced" | "saving">("synced");
-  const [activeMilestoneId, setActiveMilestoneId] = useState<string>("");
-  const [copiedLinkMilestoneId, setCopiedLinkMilestoneId] = useState<string | null>(null);
+  const router = useRouter();
 
+  // Transient Ingestion State (Zero fake baseline data)
+  const [milestones, setMilestones] = useState<Milestone[]>([]);
+  const [activeMilestoneId, setActiveMilestoneId] = useState<string>("");
+  const [activeTab, setActiveTab] = useState<"canvas" | "paste">("canvas");
+  const [pasteBuffer, setPasteBuffer] = useState("");
+
+  // Signup / Handle Claim Modal
+  const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [handle, setHandle] = useState("");
+  const [headline, setHeadline] = useState("");
+  const [isCommitting, setIsCommitting] = useState(false);
+  const [isVaultSaved, setIsVaultSaved] = useState(false);
+
+  // CV Ally 320px Copilot State
   const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
     {
       sender: "ally",
-      text: "Ingestion Engine online. Review your extracted career milestones below, or ask me to calibrate metrics and draft peer vouchers."
+      text: "Welcome to your Candidate Studio. Paste your career history or upload a resume to extract atomic milestones and calibrate claims."
     }
   ]);
   const [chatInput, setChatInput] = useState("");
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Cache Recovery & Fresh Ingestion Handler
+  // Read transient memory from homepage ingress
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // Check if there is an incoming fresh ingestion payload
-    const incomingPayload = sessionStorage.getItem("vcv_ingest_payload");
-
-    if (incomingPayload) {
+    const stored = sessionStorage.getItem("vcv_ingest_payload");
+    if (stored) {
       try {
-        const parsed = JSON.parse(incomingPayload);
-        sessionStorage.removeItem("vcv_ingest_payload"); // Consume immediately to prevent duplicate runs
+        const parsed = JSON.parse(stored);
+        sessionStorage.removeItem("vcv_ingest_payload"); // Consume immediately
 
-        if (parsed.milestones && Array.isArray(parsed.milestones) && parsed.milestones.length > 0) {
-          // Fresh server-extracted milestones completely replace stale cache
-          const freshDossier: CandidateDossier = {
-            ...DEFAULT_DOSSIER,
-            milestones: parsed.milestones,
-            updatedAt: new Date().toISOString()
-          };
-
-          setDossier(freshDossier);
-          localStorage.setItem(`vcv_dossier_${freshDossier.handle}`, JSON.stringify(freshDossier));
-          setActiveMilestoneId(parsed.milestones[0].id);
-
-          setChatMessages((prev) => [
-            ...prev,
-            {
-              sender: "ally",
-              text: `Ingested ${parsed.milestones.length} career milestones from "${parsed.fileName || "uploaded resume"}". Old cache purged.`
-            }
-          ]);
-          return;
+        if (parsed.text && parsed.text.trim().length > 0) {
+          parseRawTextIntoDrafts(parsed.text, parsed.source || "upload");
         }
-      } catch (err) {
-        console.error("Payload ingestion error:", err);
-      }
-    }
-
-    // If no fresh payload, load existing localStorage state
-    const cached = localStorage.getItem(`vcv_dossier_${DEFAULT_DOSSIER.handle}`);
-    if (cached) {
-      try {
-        const parsedCached = JSON.parse(cached);
-        setDossier(parsedCached);
-        if (parsedCached.milestones?.length > 0) {
-          setActiveMilestoneId(parsedCached.milestones[0].id);
-        }
-        return;
       } catch {
-        // ignore JSON parse error
+        // ignore parse error
       }
     }
-
-    // Default seed
-    setActiveMilestoneId(DEFAULT_DOSSIER.milestones[0].id);
   }, []);
 
   // Auto-scroll chat
@@ -145,77 +94,61 @@ export default function StudioPage() {
     }
   }, [chatMessages]);
 
-  const triggerAutoSave = (updated: CandidateDossier) => {
-    setSaveStatus("saving");
-    setDossier(updated);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(`vcv_dossier_${updated.handle}`, JSON.stringify(updated));
-    }
-    setTimeout(() => setSaveStatus("synced"), 300);
-  };
+  const parseRawTextIntoDrafts = (raw: string, source: string) => {
+    // Split on double linebreaks or bullet structures
+    const chunks = raw
+      .split(/\n\s*\n/)
+      .map((c) => c.trim())
+      .filter((c) => c.length > 20);
 
-  const handleResetCache = () => {
-    if (confirm("Reset career vault to clean default state and clear local cache?")) {
-      if (typeof window !== "undefined") {
-        localStorage.removeItem(`vcv_dossier_${dossier.handle}`);
-        sessionStorage.removeItem("vcv_ingest_payload");
-      }
-      setDossier(DEFAULT_DOSSIER);
-      setActiveMilestoneId(DEFAULT_DOSSIER.milestones[0].id);
+    if (chunks.length > 0) {
+      const generated: Milestone[] = chunks.map((chunk, idx) => {
+        const firstLine = chunk.split("\n")[0] || "";
+        const remaining = chunk.substring(firstLine.length).trim() || chunk;
+
+        return {
+          id: `m-draft-${Date.now()}-${idx}`,
+          company: firstLine.length < 50 ? firstLine.replace(/[|•–—,-]/g, " ").trim() : "Career Chapter",
+          role: "Role / Leader",
+          period: "Confirmed Tenure",
+          calibratedClaim: remaining,
+          isCorroborated: false
+        };
+      });
+
+      setMilestones(generated);
+      setActiveMilestoneId(generated[0].id);
       setChatMessages((prev) => [
         ...prev,
-        { sender: "ally", text: "Vault cache reset. Ready for clean resume upload." }
+        {
+          sender: "ally",
+          text: `Parsed ${generated.length} draft milestones from ${source}. Click any card to edit claims or claim your handle to anchor them.`
+        }
       ]);
     }
   };
 
-  const handleDirectStudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
 
-    const formData = new FormData();
-    formData.append("file", file);
-
-    setSaveStatus("saving");
-    try {
-      const res = await fetch("/api/parse", {
-        method: "POST",
-        body: formData
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.milestones && data.milestones.length > 0) {
-          const updatedDossier: CandidateDossier = {
-            ...dossier,
-            milestones: data.milestones,
-            updatedAt: new Date().toISOString()
-          };
-          triggerAutoSave(updatedDossier);
-          setActiveMilestoneId(data.milestones[0].id);
-          setChatMessages((prev) => [
-            ...prev,
-            {
-              sender: "ally",
-              text: `Directly parsed ${data.milestones.length} milestones from "${file.name}". All experiences loaded losslessly.`
-            }
-          ]);
-          return;
-        }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = (event.target?.result as string) || "";
+      if (text.startsWith("%PDF")) {
+        alert("For clean parsing without binary artifacts, please use 'Paste Text' to input your resume content directly.");
+        return;
       }
-      alert("Could not extract milestones from file. Ensure it is a valid PDF or DOCX.");
-    } catch {
-      alert("Upload failed. Please check network connection.");
-    } finally {
-      setSaveStatus("synced");
-    }
+      parseRawTextIntoDrafts(text, file.name);
+    };
+    reader.readAsText(file);
   };
 
-  const handleUpdateClaim = (id: string, updatedClaim: string) => {
-    const updatedMilestones = dossier.milestones.map((m) =>
-      m.id === id ? { ...m, calibratedClaim: updatedClaim } : m
-    );
-    triggerAutoSave({ ...dossier, milestones: updatedMilestones, updatedAt: new Date().toISOString() });
+  const handleManualPaste = () => {
+    if (!pasteBuffer.trim()) return;
+    parseRawTextIntoDrafts(pasteBuffer, "manual paste");
+    setPasteBuffer("");
+    setActiveTab("canvas");
   };
 
   const handleSendMessage = (e: React.FormEvent) => {
@@ -231,49 +164,58 @@ export default function StudioPage() {
         ...prev,
         {
           sender: "ally",
-          text: `Calibrated: Clarified boundary conditions for active milestone. Ready to generate a role-masked voucher link.`
+          text: `Calibrated claim context. Once you save to your Vault, this milestone will be ready for role-masked peer corroboration.`
         }
       ]);
     }, 600);
   };
 
-  const copyPeerVoucherLink = (milestoneId: string) => {
-    const link = `https://verifiedcv.app/vouch/${dossier.handle}/${milestoneId}`;
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(link);
-      setCopiedLinkMilestoneId(milestoneId);
-      setTimeout(() => setCopiedLinkMilestoneId(null), 2500);
+  const handleClaimVaultCommit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!handle || !email || !fullName) {
+      alert("Please provide your full name, work email, and desired handle.");
+      return;
     }
-  };
 
-  const addEmptyMilestone = () => {
-    const newId = `m-${Date.now()}`;
-    const newM: AtomicMilestone = {
-      id: newId,
-      company: "Company or Organization",
-      role: "Role Title",
-      period: "Year — Present",
-      rawText: "",
-      calibratedClaim: "Describe the specific execution scale, metrics, and operational trade-offs...",
-      metrics: [{ label: "Impact", value: "Quantified Metric" }],
-      tier: "tier_1_identity",
-      isCorroborated: false
-    };
-    triggerAutoSave({ ...dossier, milestones: [newM, ...dossier.milestones] });
-    setActiveMilestoneId(newId);
-  };
+    setIsCommitting(true);
+    try {
+      const res = await fetch("/api/vault", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          handle,
+          email,
+          fullName,
+          headline: headline || "Product & Technical Leader",
+          milestones
+        })
+      });
 
-  const removeMilestone = (id: string) => {
-    const remaining = dossier.milestones.filter((m) => m.id !== id);
-    triggerAutoSave({ ...dossier, milestones: remaining });
-    if (activeMilestoneId === id && remaining.length > 0) {
-      setActiveMilestoneId(remaining[0].id);
+      if (res.ok) {
+        setIsVaultSaved(true);
+        setIsClaimModalOpen(false);
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            sender: "ally",
+            text: `Vault created! Your dossier is now live at verifiedcv.app/${handle.toLowerCase().trim()}.`
+          }
+        ]);
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to commit Vault record.");
+      }
+    } catch {
+      alert("Error committing to Vault. Please try again.");
+    } finally {
+      setIsCommitting(false);
     }
   };
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col antialiased selection:bg-emerald-100">
-      {/* Studio Header Bar */}
+      
+      {/* Studio Header */}
       <header className="sticky top-0 z-50 bg-white border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link href="/" className="flex items-center gap-2 group">
@@ -285,55 +227,31 @@ export default function StudioPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.docx,.txt,.md"
-            className="hidden"
-            onChange={handleDirectStudioUpload}
-          />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
-            title="Upload a new resume file"
-          >
-            <Upload className="w-3.5 h-3.5 text-slate-600" />
-            <span>Upload New Resume</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleResetCache}
-            className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-slate-700 p-1.5 rounded-md transition-colors"
-            title="Clear stored browser cache"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset Cache</span>
-          </button>
-
-          <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-500 ml-1">
-            <span
-              className={`w-2 h-2 rounded-full ${
-                saveStatus === "synced" ? "bg-[#059669]" : "bg-amber-400 animate-pulse"
-              }`}
-            />
-            <span>{saveStatus === "synced" ? "Vault Synced" : "Saving..."}</span>
-          </div>
-
-          <Link
-            href={`/${dossier.handle}`}
-            target="_blank"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#059669] text-xs font-bold transition-all shadow-2xs cursor-pointer ml-1"
-          >
-            <span>Preview Dossier</span>
-            <ExternalLink className="w-3.5 h-3.5" />
-          </Link>
+          {isVaultSaved ? (
+            <Link
+              href={`/${handle}`}
+              target="_blank"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#059669] text-xs font-bold transition-all shadow-2xs cursor-pointer"
+            >
+              <span>View Live Dossier</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsClaimModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-[#059669] hover:bg-emerald-600 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+            >
+              <UserCheck className="w-3.5 h-3.5" />
+              <span>Save Vault & Claim Handle</span>
+            </button>
+          )}
         </div>
       </header>
 
-      {/* Main Studio Body: 320px Sidebar + Full-Width Canvas */}
+      {/* Main Studio Body: Fixed 320px Sidebar + Full-Width Canvas */}
       <div className="flex-1 flex overflow-hidden">
+        
         {/* CV ALLY COPILOT: FIXED 320px WIDTH */}
         <aside className="w-[320px] shrink-0 border-r border-[#E2E8F0] bg-white flex flex-col justify-between h-[calc(100vh-3.5rem)]">
           <div className="p-4 border-b border-[#E2E8F0] flex items-center gap-2.5 bg-[#F8FAFC]">
@@ -369,7 +287,7 @@ export default function StudioPage() {
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Ask Ally to calibrate metrics..."
+                placeholder="Ask Ally to calibrate claims..."
                 className="w-full text-xs pl-3 pr-8 py-2 rounded-lg border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans bg-slate-50/50"
               />
               <button
@@ -382,217 +300,271 @@ export default function StudioPage() {
           </form>
         </aside>
 
-        {/* LIVE CANVAS: MASSIVE RIGHT-SIDE EDITABLE AREA */}
+        {/* LIVE CANVAS */}
         <main className="flex-1 overflow-y-auto p-8 max-w-5xl mx-auto space-y-8">
-          {/* Candidate Profile Header Card */}
-          <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#E2E8F0]/70">
-              <div className="space-y-1">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-                  Candidate Vault Identity
-                </span>
-                <input
-                  type="text"
-                  value={dossier.fullName}
-                  onChange={(e) => triggerAutoSave({ ...dossier, fullName: e.target.value })}
-                  className="text-2xl font-black text-[#0F172A] focus:outline-none border-b border-transparent focus:border-[#059669] w-full"
-                />
+          
+          {/* ZERO STATE: If no milestones exist yet */}
+          {milestones.length === 0 ? (
+            <div className="bg-white border border-[#E2E8F0] rounded-3xl p-10 text-center space-y-6 shadow-xs max-w-2xl mx-auto mt-8">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#059669] mx-auto">
+                <UploadCloud className="w-7 h-7" />
               </div>
 
-              <div className="text-left sm:text-right space-y-1">
-                <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">
-                  Hosted Dossier URL
-                </span>
-                <span className="text-xs font-mono font-bold text-[#059669] bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
-                  verifiedcv.app/{dossier.handle}
-                </span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                  Professional Headline
-                </label>
-                <input
-                  type="text"
-                  value={dossier.headline}
-                  onChange={(e) => triggerAutoSave({ ...dossier, headline: e.target.value })}
-                  className="w-full text-xs font-semibold text-slate-700 p-2 rounded-lg border border-[#E2E8F0] focus:outline-none focus:border-[#059669]"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                  Verified Corporate Email Domain
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={dossier.verifiedEmailDomain || ""}
-                    onChange={(e) => triggerAutoSave({ ...dossier, verifiedEmailDomain: e.target.value })}
-                    className="w-full text-xs font-semibold text-slate-700 p-2 rounded-lg border border-[#E2E8F0] focus:outline-none focus:border-[#059669]"
-                  />
-                  <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1.5 rounded-lg text-[10px] font-bold shrink-0 flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 text-[#059669]" /> Bound
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Milestones Management Section */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-black uppercase tracking-wider text-[#0F172A]">
-                  Audited Career Milestones ({dossier.milestones.length})
-                </h2>
-                <p className="text-xs text-slate-500 font-normal">
-                  Lossless extraction preserved across full career tenure.
+              <div className="space-y-2">
+                <h2 className="text-xl font-black text-[#0F172A]">Your Vault is Currently Empty</h2>
+                <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                  Drop your resume file or paste your career accomplishments. CV Ally will parse them into testable, un-truncated milestones.
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={addEmptyMilestone}
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-[#0F172A] hover:bg-slate-800 px-3 py-1.5 rounded-lg transition-colors cursor-pointer shadow-2xs"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Milestone</span>
-              </button>
-            </div>
-
-            {dossier.milestones.map((milestone) => {
-              const isActive = activeMilestoneId === milestone.id;
-              return (
-                <div
-                  key={milestone.id}
-                  onClick={() => setActiveMilestoneId(milestone.id)}
-                  className={`bg-white border rounded-2xl p-5 shadow-xs transition-all space-y-3.5 ${
-                    isActive
-                      ? "border-[#059669] ring-1 ring-emerald-500/20"
-                      : "border-[#E2E8F0] hover:border-slate-300"
-                  }`}
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".txt,.md,.docx"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
                 >
-                  {/* Milestone Header */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-[#E2E8F0]/70">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={milestone.company}
-                        onChange={(e) => {
-                          const updated = dossier.milestones.map((m) =>
-                            m.id === milestone.id ? { ...m, company: e.target.value } : m
-                          );
-                          triggerAutoSave({ ...dossier, milestones: updated });
-                        }}
-                        className="font-extrabold text-sm text-[#0F172A] focus:outline-none border-b border-transparent focus:border-[#059669]"
-                      />
-                      <span className="text-slate-300">•</span>
-                      <input
-                        type="text"
-                        value={milestone.role}
-                        onChange={(e) => {
-                          const updated = dossier.milestones.map((m) =>
-                            m.id === milestone.id ? { ...m, role: e.target.value } : m
-                          );
-                          triggerAutoSave({ ...dossier, milestones: updated });
-                        }}
-                        className="text-xs font-semibold text-slate-600 focus:outline-none border-b border-transparent focus:border-[#059669]"
-                      />
-                    </div>
+                  <UploadCloud className="w-4 h-4 text-emerald-400" />
+                  <span>Upload Resume (.txt / .md)</span>
+                </button>
 
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={milestone.period}
-                        onChange={(e) => {
-                          const updated = dossier.milestones.map((m) =>
-                            m.id === milestone.id ? { ...m, period: e.target.value } : m
-                          );
-                          triggerAutoSave({ ...dossier, milestones: updated });
-                        }}
-                        className="text-[11px] font-mono text-slate-400 focus:outline-none text-right w-24"
-                      />
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("paste")}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
+                >
+                  <ClipboardPaste className="w-4 h-4 text-indigo-600" />
+                  <span>Paste Career Text</span>
+                </button>
+              </div>
 
-                      {milestone.isCorroborated ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
-                          <Check className="w-3 h-3 text-[#059669]" /> Corroborated
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                          Uncorroborated Draft
-                        </span>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeMilestone(milestone.id);
-                        }}
-                        className="text-slate-300 hover:text-red-500 transition-colors p-1"
-                        title="Delete Milestone"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+              {/* Direct In-Canvas Paste Form */}
+              {activeTab === "paste" && (
+                <div className="pt-4 text-left space-y-3 border-t border-[#E2E8F0]">
+                  <textarea
+                    rows={6}
+                    value={pasteBuffer}
+                    onChange={(e) => setPasteBuffer(e.target.value)}
+                    placeholder="Paste your career experience, accomplishments, or resume text directly here..."
+                    className="w-full text-xs p-3 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans resize-none bg-[#F8FAFC]"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("canvas")}
+                      className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-600 font-bold"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleManualPaste}
+                      className="px-4 py-1.5 bg-[#059669] hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer"
+                    >
+                      Parse Milestones
+                    </button>
                   </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* POPULATED CANVAS WITH EXTRACTED DRAFTS */
+            <div className="space-y-6">
+              
+              <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
+                <div>
+                  <h2 className="text-sm font-black uppercase tracking-wider text-[#0F172A]">
+                    Draft Milestones ({milestones.length})
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Extracted from your source material. Unsaved until you claim your handle.
+                  </p>
+                </div>
 
-                  {/* Calibrated Claim Statement */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Calibrated Claim & Impact Scope
-                    </label>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setMilestones((prev) => [
+                      {
+                        id: `m-manual-${Date.now()}`,
+                        company: "Company Name",
+                        role: "Role Title",
+                        period: "Year — Year",
+                        calibratedClaim: "Describe quantified business execution and operational trade-offs...",
+                        isCorroborated: false
+                      },
+                      ...prev
+                    ])
+                  }
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white border border-[#E2E8F0] hover:bg-slate-50 px-3 py-1.5 rounded-lg shadow-2xs transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5 text-[#059669]" />
+                  <span>Add Chapter</span>
+                </button>
+              </div>
+
+              {/* Milestones Card Stream */}
+              <div className="space-y-4">
+                {milestones.map((milestone) => (
+                  <div
+                    key={milestone.id}
+                    className="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-xs space-y-3 hover:border-slate-300 transition-colors"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-[#E2E8F0]/70">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={milestone.company}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setMilestones((prev) =>
+                              prev.map((m) => (m.id === milestone.id ? { ...m, company: val } : m))
+                            );
+                          }}
+                          className="font-extrabold text-sm text-[#0F172A] focus:outline-none border-b border-transparent focus:border-[#059669]"
+                        />
+                        <span className="text-slate-300">•</span>
+                        <input
+                          type="text"
+                          value={milestone.role}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setMilestones((prev) =>
+                              prev.map((m) => (m.id === milestone.id ? { ...m, role: val } : m))
+                            );
+                          }}
+                          className="text-xs font-semibold text-slate-600 focus:outline-none border-b border-transparent focus:border-[#059669]"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                          Draft (Unsaved)
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => setMilestones((prev) => prev.filter((m) => m.id !== milestone.id))}
+                          className="text-slate-300 hover:text-red-500 transition-colors p-1"
+                          title="Delete Milestone"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
                     <textarea
                       rows={3}
                       value={milestone.calibratedClaim}
-                      onChange={(e) => handleUpdateClaim(milestone.id, e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setMilestones((prev) =>
+                          prev.map((m) => (m.id === milestone.id ? { ...m, calibratedClaim: val } : m))
+                        );
+                      }}
                       className="w-full text-xs text-slate-700 leading-relaxed p-3 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans resize-none bg-[#F8FAFC]"
                     />
                   </div>
+                ))}
+              </div>
 
-                  {/* Corroboration & Artifact Details */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-[#E2E8F0]/50 text-xs">
-                    {milestone.isCorroborated && milestone.corroboration ? (
-                      <div className="flex items-center gap-2 text-[11px] text-slate-600">
-                        <ShieldCheck className="w-4 h-4 text-[#059669]" />
-                        <span>
-                          Corroborated by: <strong>{milestone.corroboration.verifierRole}</strong> ({milestone.corroboration.organization})
-                        </span>
-                        <span className="text-[10px] font-mono text-slate-400">
-                          [{milestone.corroboration.cryptographicHash.slice(0, 10)}...]
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => copyPeerVoucherLink(milestone.id)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#059669] text-xs font-bold transition-all cursor-pointer shadow-2xs"
-                        >
-                          <Users className="w-3.5 h-3.5" />
-                          <span>
-                            {copiedLinkMilestoneId === milestone.id ? "Voucher Link Copied!" : "Request Peer Voucher"}
-                          </span>
-                        </button>
-                        <span className="text-[10px] text-slate-400">
-                          Colleague identity is role-masked to protect their privacy.
-                        </span>
-                      </div>
-                    )}
+            </div>
+          )}
 
-                    <span className="text-[10px] font-mono text-slate-400">
-                      ID: {milestone.id}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
         </main>
       </div>
+
+      {/* SIGNUP & HANDLE CLAIM MODAL */}
+      {isClaimModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-lg space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+              <div className="flex items-center gap-2">
+                <VerifiedCVLogo className="w-6 h-6" />
+                <h3 className="font-black text-sm text-[#0F172A]">Claim Your Dossier</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsClaimModalOpen(false)}
+                className="text-slate-400 hover:text-slate-700 p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleClaimVaultCommit} className="space-y-4 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Full Legal Name</label>
+                <input
+                  type="text"
+                  required
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Graham Harris"
+                  className="w-full p-2.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669]"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Work / Corporate Email</label>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@company.com"
+                  className="w-full p-2.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669]"
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Used to verify your corporate identity domain.
+                </span>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Desired Public Handle</label>
+                <div className="flex items-center">
+                  <span className="bg-slate-100 border border-r-0 border-[#E2E8F0] px-2.5 py-2.5 rounded-l-xl text-slate-500 font-mono text-xs">
+                    verifiedcv.app/
+                  </span>
+                  <input
+                    type="text"
+                    required
+                    value={handle}
+                    onChange={(e) => setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))}
+                    placeholder="gharris"
+                    className="w-full p-2.5 rounded-r-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-mono font-bold text-[#059669]"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={isCommitting}
+                  className="w-full py-3 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+                >
+                  {isCommitting ? (
+                    <Clock className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <span>Commit to Vault & Launch Dossier</span>
+                      <ArrowRight className="w-4 h-4 text-emerald-400" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

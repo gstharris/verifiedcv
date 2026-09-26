@@ -1,59 +1,90 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
-export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-// Global singleton to persist across Next.js dev server worker recycling
-const globalVault = globalThis as unknown as {
-  __VERIFIED_CV_VAULT__?: Record<string, any>;
-};
-
-if (!globalVault.__VERIFIED_CV_VAULT__) {
-  globalVault.__VERIFIED_CV_VAULT__ = {};
-}
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const handle = (body.candidateHandle || "gharris").toLowerCase();
+    const { handle, email, fullName, headline, milestones } = body;
 
-    const record = {
-      ...body,
-      candidateHandle: handle,
-      updatedAt: new Date().toISOString(),
-    };
+    if (!handle || !email || !fullName) {
+      return NextResponse.json(
+        { error: "Handle, email, and full name are required." },
+        { status: 400 }
+      );
+    }
 
-    globalVault.__VERIFIED_CV_VAULT__![handle] = record;
+    const cleanHandle = handle.toLowerCase().trim().replace(/[^a-z0-9_-]/g, "");
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      // Ephemeral fallback for local dev when Supabase env vars are pending
+      return NextResponse.json({
+        success: true,
+        candidate: {
+          id: "dev-session-id",
+          handle: cleanHandle,
+          fullName,
+          email,
+          headline: headline || "Professional Leader",
+          vaultAuditHash: "0x" + Math.random().toString(16).substring(2, 10)
+        },
+        savedMilestonesCount: milestones?.length || 0,
+        mode: "ephemeral"
+      });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // 1. Upsert candidate profile
+    const { data: candidate, error: candidateError } = await supabase
+      .from("candidates")
+      .upsert(
+        {
+          handle: cleanHandle,
+          email: email.trim().toLowerCase(),
+          full_name: fullName,
+          headline: headline || "Professional Leader",
+          vault_audit_hash: "0x" + Math.random().toString(16).substring(2, 10)
+        },
+        { onConflict: "handle" }
+      )
+      .select()
+      .single();
+
+    if (candidateError) {
+      return NextResponse.json({ error: candidateError.message }, { status: 500 });
+    }
+
+    // 2. Insert milestones if provided
+    if (milestones && milestones.length > 0) {
+      const records = milestones.map((m: any) => ({
+        candidate_id: candidate.id,
+        company: m.company || "Career Chapter",
+        role: m.role || "Leader",
+        period: m.period || "Confirmed Tenure",
+        calibrated_claim: m.calibratedClaim || m.claim || "",
+        metrics: m.metrics || [],
+        tier: m.tier || "tier_1_identity",
+        is_corroborated: m.isCorroborated || false,
+        corroboration: m.corroboration || null
+      }));
+
+      // Delete existing and insert fresh set for clean draft sync
+      await supabase.from("milestones").delete().eq("candidate_id", candidate.id);
+      await supabase.from("milestones").insert(records);
+    }
 
     return NextResponse.json({
       success: true,
-      message: "Dossier anchored to Vault.",
-      handle,
-      data: record,
+      candidate,
+      savedMilestonesCount: milestones?.length || 0,
+      mode: "persisted"
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || "Failed to persist to Vault" },
-      { status: 500 }
-    );
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Internal Vault Error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-}
-
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const handle = (searchParams.get("handle") || "gharris").toLowerCase();
-
-  const record = globalVault.__VERIFIED_CV_VAULT__![handle] || null;
-
-  return NextResponse.json(
-    {
-      success: true,
-      data: record,
-    },
-    {
-      headers: {
-        "Cache-Control": "no-store, max-age=0",
-      },
-    }
-  );
 }
