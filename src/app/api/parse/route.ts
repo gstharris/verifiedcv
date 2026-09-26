@@ -3,19 +3,13 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 export const dynamic = "force-dynamic";
 
-export interface AtomicClaim {
-  id: string;
-  text: string;
-  isCorroborated: boolean;
-}
-
 export interface ExtractedMilestone {
   id: string;
   company: string;
   role: string;
   period: string;
   claims: string[];
-  calibratedClaim: string; // Unified string for backward compatibility
+  calibratedClaim: string;
   isCorroborated: boolean;
 }
 
@@ -35,9 +29,7 @@ export interface ParsedDossierPayload {
   milestones: ExtractedMilestone[];
 }
 
-// Splits raw section text into discrete achievement line items
 function extractAtomicAchievements(rawLines: string[]): string[] {
-  // 1. Filter out orphan bullet glyphs
   const contentLines = rawLines
     .map((l) => l.trim())
     .filter((l) => Boolean(l) && !/^[●•\-\*–]+$/.test(l));
@@ -47,7 +39,6 @@ function extractAtomicAchievements(rawLines: string[]): string[] {
   const achievements: string[] = [];
   let currentBuffer = "";
 
-  // Common resume action verbs that start new bullet points
   const actionVerbStart = /^(Direct|Directed|Design|Designed|Build|Built|Deploy|Deployed|Partner|Partnered|Found|Founded|Rebuild|Rebuilt|Establish|Established|Engineer|Engineered|Conduct|Conducted|Scale|Scaled|Lead|Led|Restructure|Restructured|Architect|Architected|Manage|Managed|Create|Created|Drive|Drove|Deliver|Delivered)\b/i;
 
   for (let i = 0; i < contentLines.length; i++) {
@@ -57,10 +48,6 @@ function extractAtomicAchievements(rawLines: string[]): string[] {
 
     if (!cleanText) continue;
 
-    // A line begins a new achievement if:
-    // - It had a bullet glyph
-    // - OR previous buffer ended with sentence punctuation (. or ;) AND current line starts with an action verb or capital letter
-    // - OR buffer is empty
     const prevEndedWithPeriod = currentBuffer.endsWith(".") || currentBuffer.endsWith(";");
     const isNewActionSentence = prevEndedWithPeriod && actionVerbStart.test(cleanText);
 
@@ -70,7 +57,6 @@ function extractAtomicAchievements(rawLines: string[]): string[] {
       }
       currentBuffer = cleanText;
     } else {
-      // Continuation of current wrapped sentence
       currentBuffer += " " + cleanText;
     }
   }
@@ -98,13 +84,11 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
   const education: ExtractedEducation[] = [];
   const milestones: ExtractedMilestone[] = [];
 
-  // 1. Candidate Name Detection
   const nonBlank = rawLines.filter(Boolean);
   if (nonBlank.length > 0 && !nonBlank[0].includes("|") && nonBlank[0].length < 50) {
     fullName = nonBlank[0].replace(/[•,]/g, "").trim();
   }
 
-  // 2. Identify Major Resume Section Boundaries
   type SectionType = "HEADER" | "SUMMARY" | "EXPERIENCE" | "SKILLS" | "EDUCATION" | "OTHER";
   let currentSection: SectionType = "HEADER";
 
@@ -121,19 +105,19 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
     const line = rawLines[i];
     if (!line) continue;
 
-    if (/^(PROFESSIONAL SUMMARY|EXECUTIVE SUMMARY|SUMMARY|PROFILE|ABOUT ME)$/i.test(line)) {
+    if (/(?:^|\s)(?:PROFESSIONAL SUMMARY|EXECUTIVE SUMMARY|SUMMARY|PROFILE|ABOUT ME)(?:$|\s)/i.test(line)) {
       currentSection = "SUMMARY";
       continue;
     }
-    if (/^(PROFESSIONAL EXPERIENCE|EXPERIENCE|WORK EXPERIENCE|EMPLOYMENT HISTORY)$/i.test(line)) {
+    if (/(?:^|\s)(?:PROFESSIONAL EXPERIENCE|EXPERIENCE|WORK EXPERIENCE|EMPLOYMENT HISTORY)(?:$|\s)/i.test(line)) {
       currentSection = "EXPERIENCE";
       continue;
     }
-    if (/^(TECHNICAL SKILLS|CORE COMPETENCIES|SKILLS|TECHNOLOGIES|AREAS OF EXPERTISE)$/i.test(line)) {
+    if (/(?:^|\s)(?:TECHNICAL SKILLS|CORE COMPETENCIES|SKILLS|TECHNOLOGIES|AREAS OF EXPERTISE)(?:$|\s)/i.test(line)) {
       currentSection = "SKILLS";
       continue;
     }
-    if (/^(EDUCATION|ACADEMIC BACKGROUND|DEGREES & CERTIFICATIONS|EDUCATION & CREDENTIALS)$/i.test(line)) {
+    if (/(?:^|\s)(?:EDUCATION|ACADEMIC BACKGROUND|DEGREES & CERTIFICATIONS|EDUCATION & CREDENTIALS)(?:$|\s)/i.test(line)) {
       currentSection = "EDUCATION";
       continue;
     }
@@ -141,7 +125,6 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
     sectionLines[currentSection].push(line);
   }
 
-  // 3. Process Summary
   if (sectionLines.SUMMARY.length > 0) {
     summaryStatement = sectionLines.SUMMARY
       .map((l) => l.replace(/^[●•\-\*–]\s*/, "").trim())
@@ -150,7 +133,6 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
       .replace(/\s{2,}/g, " ");
   }
 
-  // 4. Process Skills
   if (sectionLines.SKILLS.length > 0) {
     const rawSkillsText = sectionLines.SKILLS.join(" ");
     const skillTokens = rawSkillsText
@@ -165,7 +147,6 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
     });
   }
 
-  // 5. Process Education
   if (sectionLines.EDUCATION.length > 0) {
     for (let i = 0; i < sectionLines.EDUCATION.length; i++) {
       const line = sectionLines.EDUCATION[i];
@@ -190,7 +171,6 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
     }
   }
 
-  // 6. Process Work Experience into Discrete Chapters & Atomic Achievements
   const yearPattern = /\b(?:19\d{2}|20\d{2})\b/i;
   interface RoleBlock {
     company: string;
@@ -451,7 +431,6 @@ Extract the complete candidate career profile into structured JSON:
           }
         }
 
-        // If no active Gemini key, strip non-printable characters and extract clean text streams
         textContent = rawString.replace(/[^\x20-\x7E\n\t]/g, " ");
       } else {
         textContent = rawString;
