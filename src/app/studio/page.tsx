@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   ShieldCheck,
   CheckCircle2,
@@ -25,7 +24,6 @@ import {
   ClipboardPaste,
   UserCheck,
   X,
-  FileText,
   RotateCcw
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
@@ -41,121 +39,99 @@ interface Milestone {
   tier?: string;
 }
 
-// Canonical Graham Harris baseline record for zero-friction testing
 const GRAHAM_HARRIS_CANONICAL: Milestone[] = [
   {
-    id: "m-gh-yahoo-01",
+    id: "m-gh-geon-01",
+    company: "Ge-on",
+    role: "Head of Product Management",
+    period: "May 2025 to Present",
+    calibratedClaim:
+      "Direct end-to-end product strategy, feature prioritization, and delivery roadmaps for an AI workspace platform, driving a 25% lift in weekly active users during initial rollout. Designed and deployed autonomous agent workflows and proactive push notifications feeding a persistent memory layer. Built functional interactive prototypes in React, Cursor, and modern UI tools to test user workflows prior to engineering sprints.",
+    isCorroborated: false
+  },
+  {
+    id: "m-gh-scd-02",
+    company: "SCD Enterprises / PairedRight",
+    role: "Founder and Head of Product",
+    period: "2018 to March 2026",
+    calibratedClaim:
+      "Founded an operational workflow and recommendation platform for hospitality operators, scaling client revenue by over $1M through automated upselling and real-time guidance. Rebuilt the core recommendation engine using a context-grounded RAG framework. Established an operational golden dataset to benchmark, verify, and regression-test algorithmic changes before deploying updates to frontline staff devices.",
+    isCorroborated: false
+  },
+  {
+    id: "m-gh-yahoo-03",
     company: "Yahoo",
     role: "Head of Product Management",
     period: "2010 — 2024",
     calibratedClaim:
-      "Scaled multi-tenant personalization platform serving 400M+ global monthly active users under sub-50ms latency budgets. Supervised 35+ engineers and data scientists across multi-region edge caching infrastructure.",
+      "Built ad personalization and enterprise platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries. Maintained sub-50ms query latency budgets across global edge infrastructure.",
     isCorroborated: true,
     corroboratedBy: "Senior Director of Core Engineering"
-  },
-  {
-    id: "m-gh-pat-02",
-    company: "USPTO Registry",
-    role: "Lead Inventor",
-    period: "2021",
-    calibratedClaim:
-      "Authored and awarded Patent US-98214-B2: Distributed Cache Partitioning Algorithm across high-throughput distributed microservices.",
-    isCorroborated: true,
-    corroboratedBy: "USPTO Patent Registry"
-  },
-  {
-    id: "m-gh-geon-03",
-    company: "Ge-On",
-    role: "Head of Product Management",
-    period: "2024 — 2025",
-    calibratedClaim:
-      "Architected foundational product specifications and developer telemetry for seed-stage social creator platform, aligning tokenomics and creator retention mechanisms.",
-    isCorroborated: false
-  },
-  {
-    id: "m-gh-pr-04",
-    company: "PairedRight",
-    role: "Founder",
-    period: "2023 — Present",
-    calibratedClaim:
-      "Founded PairedRight, a self-funded hospitality intelligence startup delivering automated recommendation algorithms for dining and beverage experiences.",
-    isCorroborated: false
-  },
-  {
-    id: "m-gh-dk-05",
-    company: "Decker Kitchen",
-    role: "Managing Operator",
-    period: "2018 — 2023",
-    calibratedClaim:
-      "Managed corporate operations, financial structures, and hospitality logistics for acclaimed dining establishment through successful multi-year operation.",
-    isCorroborated: false
   }
 ];
 
 export default function StudioPage() {
-  const router = useRouter();
-
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [activeTab, setActiveTab] = useState<"canvas" | "paste">("canvas");
   const [pasteBuffer, setPasteBuffer] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Claim Modal State
   const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
   const [fullName, setFullName] = useState("Graham Harris");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState("gstharris@gmail.com");
   const [handle, setHandle] = useState("gharris");
-  const [headline, setHeadline] = useState("Product Leader • Personalization & AI Platforms");
+  const [headline, setHeadline] = useState("Head of Product Management • AI Platforms");
   const [isCommitting, setIsCommitting] = useState(false);
   const [isVaultSaved, setIsVaultSaved] = useState(false);
 
+  // CV Ally State
   const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
     {
       sender: "ally",
-      text: "Welcome to Candidate Studio. Paste your career history or upload your resume to extract atomic milestones."
+      text: "Candidate Studio ready. Paste your raw career accomplishments or load your canonical profile to begin claim calibration."
     }
   ]);
   const [chatInput, setChatInput] = useState("");
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Hydrate from Homepage bridge on mount
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    if (sessionStorage.getItem("vcv_load_canonical") === "true") {
-      sessionStorage.removeItem("vcv_load_canonical");
-      loadCanonicalRecord();
-      return;
-    }
+    const stored = sessionStorage.getItem("vcv_pending_payload");
+    if (!stored) return;
 
-    const parsedStored = sessionStorage.getItem("vcv_parsed_milestones");
-    if (parsedStored) {
-      try {
-        const ms = JSON.parse(parsedStored);
-        sessionStorage.removeItem("vcv_parsed_milestones");
-        if (Array.isArray(ms) && ms.length > 0) {
-          setMilestones(ms);
-          const nameStored = sessionStorage.getItem("vcv_parsed_name");
-          const headlineStored = sessionStorage.getItem("vcv_parsed_headline");
-          if (nameStored) setFullName(nameStored);
-          if (headlineStored) setHeadline(headlineStored);
-          setChatMessages((prev) => [
-            ...prev,
-            {
-              sender: "ally",
-              text: `Extracted ${ms.length} career milestones losslessly. Review and calibrate each chapter below.`
-            }
-          ]);
-          return;
-        }
-      } catch {
-        // ignore parse error
+    try {
+      const parsed = JSON.parse(stored);
+      sessionStorage.removeItem("vcv_pending_payload");
+
+      if (parsed.action === "load_canonical") {
+        loadCanonicalRecord();
+        return;
       }
-    }
 
-    const rawPaste = sessionStorage.getItem("vcv_raw_paste");
-    if (rawPaste) {
-      sessionStorage.removeItem("vcv_raw_paste");
-      triggerTextIngress(rawPaste);
+      if (parsed.milestones && Array.isArray(parsed.milestones) && parsed.milestones.length > 0) {
+        setMilestones(parsed.milestones);
+        if (parsed.fullName) setFullName(parsed.fullName);
+        if (parsed.headline) setHeadline(parsed.headline);
+        setActiveTab("canvas");
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            sender: "ally",
+            text: `Successfully ingested ${parsed.milestones.length} career chapters from homepage. Review your atomic claims on the canvas.`
+          }
+        ]);
+        return;
+      }
+
+      if (parsed.rawText && parsed.rawText.trim().length > 0) {
+        executeIngest(parsed.rawText);
+      }
+    } catch {
+      // ignore JSON parse error
     }
   }, []);
 
@@ -168,23 +144,23 @@ export default function StudioPage() {
   const loadCanonicalRecord = () => {
     setMilestones(GRAHAM_HARRIS_CANONICAL);
     setFullName("Graham Harris");
+    setHeadline("Head of Product Management • AI Platforms");
     setHandle("gharris");
-    setHeadline("Product Leader • Personalization & High-Scale AI Platforms");
     setActiveTab("canvas");
     setChatMessages((prev) => [
       ...prev,
       {
         sender: "ally",
-        text: "Loaded Graham Harris authentic career track record (Yahoo, USPTO Patent, Ge-On, PairedRight, and Decker Kitchen). Ready to calibrate and claim handle."
+        text: "Loaded 3 canonical chapters (Ge-on, SCD Enterprises / PairedRight, Yahoo). Review atomic claims on the canvas."
       }
     ]);
   };
 
-  const triggerTextIngress = async (text: string) => {
+  const executeIngest = async (text: string) => {
     setIsProcessing(true);
     setChatMessages((prev) => [
       ...prev,
-      { sender: "ally", text: "Analyzing career track record through parsing engine..." }
+      { sender: "ally", text: "Segmenting career milestones via structural parser..." }
     ]);
 
     try {
@@ -206,18 +182,18 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Extracted ${data.milestones.length} career milestones losslessly (${data.engine || "parsed"}). Review and calibrate claims on your canvas.`
+            text: `Parsed ${data.milestones.length} discrete chapters. All achievement bullets stitched into calibrated claims.`
           }
         ]);
       } else {
-        alert(data.error || "Failed to extract career milestones.");
+        alert(data.error || "Failed to parse text input.");
         setChatMessages((prev) => [
           ...prev,
-          { sender: "ally", text: `Notice: ${data.error || "Could not segment milestones."}` }
+          { sender: "ally", text: `Notice: ${data.error || "Could not parse text."}` }
         ]);
       }
     } catch {
-      alert("Network error communicating with parsing engine.");
+      alert("Network communication error with /api/parse.");
     } finally {
       setIsProcessing(false);
     }
@@ -225,7 +201,7 @@ export default function StudioPage() {
 
   const handleManualPasteSubmit = async () => {
     if (!pasteBuffer.trim() || isProcessing) return;
-    await triggerTextIngress(pasteBuffer.trim());
+    await executeIngest(pasteBuffer.trim());
     setPasteBuffer("");
   };
 
@@ -233,11 +209,6 @@ export default function StudioPage() {
     if (!e.target.files || e.target.files.length === 0 || isProcessing) return;
     const file = e.target.files[0];
     setIsProcessing(true);
-
-    setChatMessages((prev) => [
-      ...prev,
-      { sender: "ally", text: `Uploading ${file.name} to ingestion engine...` }
-    ]);
 
     try {
       const formData = new FormData();
@@ -258,18 +229,18 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Extracted ${data.milestones.length} milestones from ${file.name} (${data.engine || "parsed"}). All career chapters mapped to your canvas.`
+            text: `Extracted ${data.milestones.length} milestones from ${file.name}. Ready for calibration.`
           }
         ]);
       } else {
-        alert(data.error || "Failed to parse document.");
+        alert(data.error || "File parsing failed.");
         setChatMessages((prev) => [
           ...prev,
-          { sender: "ally", text: `Notice: ${data.error || "Could not parse document."}` }
+          { sender: "ally", text: `Notice: ${data.error || "File parsing failed."}` }
         ]);
       }
     } catch {
-      alert("Network error uploading file.");
+      alert("Error uploading file.");
     } finally {
       setIsProcessing(false);
     }
@@ -288,16 +259,16 @@ export default function StudioPage() {
         ...prev,
         {
           sender: "ally",
-          text: `Calibrated metric boundaries. Once you commit to your Vault, this milestone will be ready for role-masked peer corroboration.`
+          text: "Claim calibrated. Socratic check confirms zero confidential metric leak while preserving proof signal."
         }
       ]);
-    }, 600);
+    }, 500);
   };
 
   const handleClaimVaultCommit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!handle || !email || !fullName) {
-      alert("Please provide your full name, corporate email, and desired handle.");
+      alert("Please provide your full legal name, email, and handle.");
       return;
     }
 
@@ -310,7 +281,7 @@ export default function StudioPage() {
           handle,
           email,
           fullName,
-          headline: headline || "Product & Technical Leader",
+          headline,
           milestones
         })
       });
@@ -322,28 +293,27 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Vault permanently saved! Your dossier is now live at verifiedcv.app/${handle.toLowerCase().trim()}.`
+            text: `Vault saved! Live candidate dossier active at verifiedcv.app/${handle.toLowerCase().trim()}`
           }
         ]);
       } else {
         const data = await res.json();
-        alert(data.error || "Failed to commit Vault record.");
+        alert(data.error || "Failed to commit record.");
       }
     } catch {
-      alert("Error committing to Vault. Please try again.");
+      alert("Network error committing to Vault API.");
     } finally {
       setIsCommitting(false);
     }
   };
 
   const addEmptyMilestone = () => {
-    const newId = `m-manual-${Date.now()}`;
     const newM: Milestone = {
-      id: newId,
-      company: "Company or Initiative",
-      role: "Role Title",
-      period: "Year — Present",
-      calibratedClaim: "Describe quantified business execution and operational trade-offs...",
+      id: `m-custom-${Date.now()}`,
+      company: "New Organization",
+      role: "Product Leader",
+      period: "2026 — Present",
+      calibratedClaim: "Quantified execution statement and engineering trade-offs...",
       isCorroborated: false
     };
     setMilestones((prev) => [newM, ...prev]);
@@ -351,16 +321,17 @@ export default function StudioPage() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col antialiased selection:bg-emerald-100">
-      
-      {/* Studio Header */}
+      {/* Studio Top Navigation */}
       <header className="sticky top-0 z-50 bg-white border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Link className="flex items-center gap-2 group" href="/">
+          <Link href="/" className="flex items-center gap-2 group">
             <VerifiedCVLogo className="w-6 h-6 group-hover:scale-105 transition-transform" />
             <span className="font-black text-base text-[#0F172A] tracking-tight">VerifiedCV</span>
           </Link>
           <span className="text-[#E2E8F0]">/</span>
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Candidate Studio</span>
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+            Candidate Studio
+          </span>
         </div>
 
         <div className="flex items-center gap-3">
@@ -372,7 +343,7 @@ export default function StudioPage() {
                 setActiveTab("canvas");
                 setChatMessages((prev) => [
                   ...prev,
-                  { sender: "ally", text: "Studio canvas cleared. Ready for a new upload or paste." }
+                  { sender: "ally", text: "Studio canvas reset. Ready for text paste or upload." }
                 ]);
               }}
               className="text-xs font-semibold text-slate-400 hover:text-red-500 transition-colors px-3 py-1.5 cursor-pointer flex items-center gap-1"
@@ -384,9 +355,9 @@ export default function StudioPage() {
 
           {isVaultSaved ? (
             <Link
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#059669] text-xs font-bold transition-all shadow-2xs cursor-pointer"
               href={`/${handle}`}
               target="_blank"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#059669] text-xs font-bold transition-all shadow-2xs cursor-pointer"
             >
               <span>View Live Dossier</span>
               <ExternalLink className="w-3.5 h-3.5" />
@@ -406,13 +377,12 @@ export default function StudioPage() {
         </div>
       </header>
 
-      {/* Main Studio Body */}
+      {/* Main Studio Split Layout */}
       <div className="flex-1 flex overflow-hidden">
-        
         {/* CV ALLY COPILOT: FIXED 320px WIDTH */}
         <aside className="w-[320px] shrink-0 border-r border-[#E2E8F0] bg-white flex flex-col justify-between h-[calc(100vh-3.5rem)]">
           <div className="p-4 border-b border-[#E2E8F0] flex items-center gap-2.5 bg-[#F8FAFC]">
-            <div className="w-7 h-7 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700">
+            <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#059669]">
               <Bot className="w-4 h-4" />
             </div>
             <div>
@@ -463,10 +433,8 @@ export default function StudioPage() {
           </form>
         </aside>
 
-        {/* LIVE CANVAS */}
+        {/* LIVE CANVAS: MASSIVE RIGHT-SIDE WORKSPACE */}
         <main className="flex-1 overflow-y-auto p-8 max-w-5xl mx-auto space-y-8 antialiased">
-          
-          {/* ZERO STATE OR PASTE MODE ACTIVE */}
           {milestones.length === 0 || activeTab === "paste" ? (
             <div className="bg-white border border-[#E2E8F0] rounded-3xl p-8 sm:p-10 text-center space-y-6 shadow-xs max-w-2xl mx-auto mt-4">
               <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#059669] mx-auto">
@@ -474,9 +442,9 @@ export default function StudioPage() {
               </div>
 
               <div className="space-y-2">
-                <h2 className="text-xl font-black text-[#0F172A]">Ingest Your Career History</h2>
+                <h2 className="text-xl font-black text-[#0F172A]">Ingest Your Career Track Record</h2>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                  Upload your resume file or paste your career experience below to map your history into atomic, testable milestones.
+                  Paste your raw resume text or load your profile below. The canonical parser segments each company, title, and bullet group into discrete milestones.
                 </p>
               </div>
 
@@ -488,7 +456,7 @@ export default function StudioPage() {
                   className="hidden"
                   onChange={handleFileUpload}
                 />
-                
+
                 <button
                   type="button"
                   disabled={isProcessing}
@@ -496,7 +464,7 @@ export default function StudioPage() {
                   className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
                 >
                   <UploadCloud className="w-4 h-4 text-emerald-400" />
-                  <span>{isProcessing ? "Analyzing..." : "Upload Resume (PDF / Word)"}</span>
+                  <span>{isProcessing ? "Analyzing..." : "Upload Document"}</span>
                 </button>
 
                 <button
@@ -506,28 +474,27 @@ export default function StudioPage() {
                   className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
                 >
                   <ClipboardPaste className="w-4 h-4 text-indigo-600" />
-                  <span>Paste Career Text</span>
+                  <span>Paste Resume Text</span>
                 </button>
 
-                {/* Instant Baseline Record Loader */}
                 <button
                   type="button"
                   onClick={loadCanonicalRecord}
                   className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#059669] text-xs font-bold transition-all cursor-pointer shadow-2xs"
                 >
                   <Sparkles className="w-4 h-4" />
-                  <span>Load Graham Harris Record</span>
+                  <span>Load Graham Harris Profile</span>
                 </button>
               </div>
 
               {activeTab === "paste" && (
                 <div className="text-left space-y-3 pt-4 border-t border-[#E2E8F0]">
                   <textarea
-                    rows={8}
+                    rows={10}
                     value={pasteBuffer}
                     onChange={(e) => setPasteBuffer(e.target.value)}
-                    placeholder="Paste your full resume or career history text here..."
-                    className="w-full text-xs p-4 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans bg-[#F8FAFC] leading-relaxed"
+                    placeholder="Paste full resume text here (e.g., 'Ge-on | Head of Product Management | May 2025 to Present...')..."
+                    className="w-full text-xs p-4 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-mono bg-[#F8FAFC] leading-relaxed"
                   />
 
                   <div className="flex items-center justify-between pt-1">
@@ -541,7 +508,7 @@ export default function StudioPage() {
                       </button>
                     ) : (
                       <span className="text-[11px] text-slate-400">
-                        Multi-chapter segmentation preserves all tenure and accomplishments.
+                        Pipe headers and bullet blocks are segmented automatically.
                       </span>
                     )}
 
@@ -559,16 +526,15 @@ export default function StudioPage() {
               )}
             </div>
           ) : (
-            /* POPULATED CANVAS */
+            /* POPULATED CANVAS: INDIVIDUAL CHAPTER CARDS */
             <div className="space-y-6">
-              
               <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
                 <div>
                   <h2 className="text-sm font-black uppercase tracking-wider text-[#0F172A]">
                     Audited Career Milestones ({milestones.length})
                   </h2>
                   <p className="text-xs text-slate-500">
-                    Each chapter is segmented into an atomic, testable claim ready for peer corroboration.
+                    Each chapter is segmented into an atomic claim ready for peer corroboration.
                   </p>
                 </div>
 
@@ -640,7 +606,7 @@ export default function StudioPage() {
                             );
                           }}
                           placeholder="Tenure Dates"
-                          className="text-[11px] font-mono text-slate-500 focus:outline-none text-right w-36"
+                          className="text-[11px] font-mono text-slate-500 focus:outline-none text-right w-44"
                         />
                         {milestone.isCorroborated ? (
                           <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
@@ -653,7 +619,9 @@ export default function StudioPage() {
                         )}
                         <button
                           type="button"
-                          onClick={() => setMilestones((prev) => prev.filter((m) => m.id !== milestone.id))}
+                          onClick={() =>
+                            setMilestones((prev) => prev.filter((m) => m.id !== milestone.id))
+                          }
                           className="text-slate-300 hover:text-red-500 transition-colors p-1 cursor-pointer"
                           title="Delete Milestone"
                         >
@@ -672,7 +640,9 @@ export default function StudioPage() {
                         onChange={(e) => {
                           const val = e.target.value;
                           setMilestones((prev) =>
-                            prev.map((m) => (m.id === milestone.id ? { ...m, calibratedClaim: val } : m))
+                            prev.map((m) =>
+                              m.id === milestone.id ? { ...m, calibratedClaim: val } : m
+                            )
                           );
                         }}
                         className="w-full text-xs text-slate-700 leading-relaxed p-3.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans resize-y bg-[#F8FAFC]"
@@ -681,10 +651,8 @@ export default function StudioPage() {
                   </div>
                 ))}
               </div>
-
             </div>
           )}
-
         </main>
       </div>
 
@@ -726,10 +694,12 @@ export default function StudioPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@company.com"
+                  placeholder="gstharris@gmail.com"
                   className="w-full p-2.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669]"
                 />
-                <span className="text-[10px] text-slate-400 mt-1 block">Used to verify your identity domain.</span>
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Used to verify your identity domain.
+                </span>
               </div>
 
               <div>
@@ -738,7 +708,7 @@ export default function StudioPage() {
                   type="text"
                   value={headline}
                   onChange={(e) => setHeadline(e.target.value)}
-                  placeholder="Product Leader • AI Platforms"
+                  placeholder="Head of Product Management • AI Platforms"
                   className="w-full p-2.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669]"
                 />
               </div>
@@ -753,7 +723,9 @@ export default function StudioPage() {
                     type="text"
                     required
                     value={handle}
-                    onChange={(e) => setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))}
+                    onChange={(e) =>
+                      setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))
+                    }
                     placeholder="gharris"
                     className="w-full p-2.5 rounded-r-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-mono font-bold text-[#059669]"
                   />
@@ -780,7 +752,6 @@ export default function StudioPage() {
           </div>
         </div>
       )}
-
     </div>
   );
 }
