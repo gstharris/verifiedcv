@@ -25,7 +25,8 @@ import {
   ClipboardPaste,
   UserCheck,
   X,
-  FileText
+  FileText,
+  RotateCcw
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 
@@ -40,139 +41,14 @@ interface Milestone {
   tier?: string;
 }
 
-// Resilient resume segmenter that handles single-newline pasted text
-function segmentResumeIntoMilestones(rawText: string): Milestone[] {
-  if (!rawText || rawText.trim().length === 0) return [];
-
-  const clean = rawText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  const lines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
-
-  const yearRangeRegex = /(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:(?:19|20)\d{2}|present|current)/i;
-  const singleYearRegex = /\b(19|20)\d{2}\b/;
-  const dateRegex = /(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+)?(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+)?(?:19|20)\d{2}|present|current)/i;
-
-  const milestones: Milestone[] = [];
-  let currentCompany = "";
-  let currentRole = "";
-  let currentPeriod = "";
-  let currentBullets: string[] = [];
-
-  const flush = () => {
-    if (currentCompany || currentRole || currentBullets.length > 0) {
-      const claimText = currentBullets.join("\n\n").trim() || "Executed core strategic and technical roadmaps.";
-      milestones.push({
-        id: `m-${Date.now()}-${milestones.length}`,
-        company: currentCompany || "Career Chapter",
-        role: currentRole || "Leader / Builder",
-        period: currentPeriod || "Verified Tenure",
-        calibratedClaim: claimText,
-        isCorroborated: false
-      });
-      currentCompany = "";
-      currentRole = "";
-      currentPeriod = "";
-      currentBullets = [];
-    }
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    // Detect section headers to skip
-    if (/^(EXPERIENCE|PROFESSIONAL EXPERIENCE|WORK HISTORY|EMPLOYMENT HISTORY)$/i.test(line)) {
-      continue;
-    }
-
-    // Check if line contains tenure dates
-    const dateMatch = line.match(dateRegex) || line.match(yearRangeRegex) || (line.length < 80 ? line.match(singleYearRegex) : null);
-
-    if (dateMatch) {
-      // Flush previous chapter
-      flush();
-
-      currentPeriod = dateMatch[0].trim();
-      const textWithoutDate = line.replace(currentPeriod, "").replace(/[|•–—,-]/g, " ").trim();
-      const tokens = textWithoutDate.split(/\s{2,}|\t/).filter(Boolean);
-
-      if (tokens.length >= 2) {
-        currentCompany = tokens[0].trim();
-        currentRole = tokens[1].trim();
-      } else if (tokens.length === 1) {
-        currentCompany = tokens[0].trim();
-        currentRole = "Executive / Leader";
-      } else {
-        // If line only had dates, inspect adjacent previous line for company/title
-        if (i > 0 && lines[i - 1].length < 80 && !lines[i - 1].startsWith("•")) {
-          currentCompany = lines[i - 1];
-          currentRole = "Key Leader";
-        } else {
-          currentCompany = "Career Chapter";
-          currentRole = "Key Contributor";
-        }
-      }
-    } else if (line.startsWith("•") || line.startsWith("-") || line.startsWith("*") || line.startsWith("–")) {
-      currentBullets.push(line.replace(/^[•\-\*–]\s*/, "").trim());
-    } else {
-      // Short lines without terminal periods often denote company names or roles
-      if (currentBullets.length === 0 && line.length < 70 && !line.endsWith(".")) {
-        if (!currentCompany) {
-          currentCompany = line;
-        } else if (!currentRole) {
-          currentRole = line;
-        } else {
-          currentBullets.push(line);
-        }
-      } else {
-        currentBullets.push(line);
-      }
-    }
-  }
-
-  flush();
-
-  // If strict date extraction yielded 0 or 1 item because dates were formatted unusually,
-  // segment by major organizational paragraphs instead of dumping everything into 1 block.
-  if (milestones.length <= 1 && clean.length > 500) {
-    const chunks = clean.split(/(?=[A-Z][A-Za-z0-9\s,&]{2,35}(?:\s*[-–—|]\s*|\s+(?:19|20)\d{2}))/g).filter((c) => c.trim().length > 40);
-    if (chunks.length > 1) {
-      return chunks.map((c, idx) => {
-        const cLines = c.trim().split("\n").filter(Boolean);
-        const header = cLines[0] || `Career Chapter ${idx + 1}`;
-        const rest = cLines.slice(1).join("\n\n").trim() || header;
-        return {
-          id: `m-seg-${Date.now()}-${idx}`,
-          company: header.slice(0, 50),
-          role: "Role / Leader",
-          period: "Tenure",
-          calibratedClaim: rest,
-          isCorroborated: false
-        };
-      });
-    }
-  }
-
-  return milestones.length > 0
-    ? milestones
-    : [
-        {
-          id: `m-default-${Date.now()}`,
-          company: "Extracted Chapter",
-          role: "Key Leader",
-          period: "Confirmed Tenure",
-          calibratedClaim: rawText.trim(),
-          isCorroborated: false
-        }
-      ];
-}
-
 export default function StudioPage() {
   const router = useRouter();
 
-  // Transient Ingestion State (Zero fake baseline data)
+  // Ingestion State (Zero ghost data)
   const [milestones, setMilestones] = useState<Milestone[]>([]);
-  const [activeMilestoneId, setActiveMilestoneId] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"canvas" | "paste">("canvas");
   const [pasteBuffer, setPasteBuffer] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Signup / Handle Claim Modal
   const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
@@ -187,14 +63,14 @@ export default function StudioPage() {
   const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
     {
       sender: "ally",
-      text: "Candidate Studio active. Paste your career history or resume text to segment your accomplishments into atomic milestones."
+      text: "Welcome to Candidate Studio. Upload your resume or paste your career text to extract verified milestones via Gemini."
     }
   ]);
   const [chatInput, setChatInput] = useState("");
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Ingress payload recovery from landing page
+  // Transient Ingress from homepage payload
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -205,18 +81,7 @@ export default function StudioPage() {
         sessionStorage.removeItem("vcv_ingest_payload");
 
         if (parsed.text && parsed.text.trim().length > 0) {
-          const parsedMilestones = segmentResumeIntoMilestones(parsed.text);
-          setMilestones(parsedMilestones);
-          if (parsedMilestones.length > 0) {
-            setActiveMilestoneId(parsedMilestones[0].id);
-          }
-          setChatMessages((prev) => [
-            ...prev,
-            {
-              sender: "ally",
-              text: `Parsed ${parsedMilestones.length} discrete career chapters from your input. Review each chapter on the canvas and calibrate your claims.`
-            }
-          ]);
+          triggerTextIngress(parsed.text);
         }
       } catch {
         // ignore parse error
@@ -224,52 +89,98 @@ export default function StudioPage() {
     }
   }, []);
 
-  // Auto-scroll chat
+  // Auto-scroll CV Ally
   useEffect(() => {
     if (chatScrollRef.current) {
       chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
     }
   }, [chatMessages]);
 
-  const handleManualPaste = () => {
-    if (!pasteBuffer.trim()) return;
+  const triggerTextIngress = async (text: string) => {
+    setIsProcessing(true);
+    setChatMessages((prev) => [
+      ...prev,
+      { sender: "ally", text: "Processing career history with Gemini extraction engine..." }
+    ]);
 
-    const parsedMilestones = segmentResumeIntoMilestones(pasteBuffer);
-    setMilestones(parsedMilestones);
-    if (parsedMilestones.length > 0) {
-      setActiveMilestoneId(parsedMilestones[0].id);
+    try {
+      const formData = new FormData();
+      formData.append("text", text);
+
+      const res = await fetch("/api/parse", {
+        method: "POST",
+        body: formData
+      });
+
+      const data = await res.json();
+      if (res.ok && data.milestones) {
+        setMilestones(data.milestones);
+        if (data.fullName && !fullName) setFullName(data.fullName);
+        if (data.headline && !headline) setHeadline(data.headline);
+        setActiveTab("canvas");
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            sender: "ally",
+            text: `Extracted ${data.milestones.length} career milestones losslessly. Review each chapter below and calibrate your claims.`
+          }
+        ]);
+      } else {
+        alert(data.error || "Failed to parse career history.");
+      }
+    } catch {
+      alert("Network error communicating with parsing engine.");
+    } finally {
+      setIsProcessing(false);
     }
+  };
+
+  const handleManualPasteSubmit = async () => {
+    if (!pasteBuffer.trim() || isProcessing) return;
+    await triggerTextIngress(pasteBuffer.trim());
+    setPasteBuffer("");
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0 || isProcessing) return;
+    const file = e.target.files[0];
+    setIsProcessing(true);
 
     setChatMessages((prev) => [
       ...prev,
-      {
-        sender: "ally",
-        text: `Segmented your pasted resume into ${parsedMilestones.length} distinct career chapters. Click any milestone to refine claims or claim your handle.`
-      }
+      { sender: "ally", text: `Uploading and analyzing ${file.name} via Gemini multimodal parser...` }
     ]);
 
-    setPasteBuffer("");
-    setActiveTab("canvas");
-  };
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    const file = e.target.files[0];
+      const res = await fetch("/api/parse", {
+        method: "POST",
+        body: formData
+      });
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = (event.target?.result as string) || "";
-      if (text.startsWith("%PDF")) {
-        alert("Binary PDF detected. Please open your resume, copy all text (Cmd+A -> Cmd+C), and click 'Paste Career Text' for clean parsing.");
-        return;
+      const data = await res.json();
+      if (res.ok && data.milestones) {
+        setMilestones(data.milestones);
+        if (data.fullName && !fullName) setFullName(data.fullName);
+        if (data.headline && !headline) setHeadline(data.headline);
+        setActiveTab("canvas");
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            sender: "ally",
+            text: `Extracted ${data.milestones.length} milestones directly from ${file.name}. Review them on your canvas.`
+          }
+        ]);
+      } else {
+        alert(data.error || "Failed to parse document.");
       }
-      const parsedMilestones = segmentResumeIntoMilestones(text);
-      setMilestones(parsedMilestones);
-      if (parsedMilestones.length > 0) {
-        setActiveMilestoneId(parsedMilestones[0].id);
-      }
-    };
-    reader.readAsText(file);
+    } catch {
+      alert("Network error uploading file.");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleSendMessage = (e: React.FormEvent) => {
@@ -285,7 +196,7 @@ export default function StudioPage() {
         ...prev,
         {
           sender: "ally",
-          text: `Calibrated claim context. Once you save to your Vault, this milestone will be ready for role-masked peer corroboration.`
+          text: `Calibrated metric boundaries. Once you commit your Vault, this milestone will be ready for role-masked peer corroboration.`
         }
       ]);
     }, 600);
@@ -294,7 +205,7 @@ export default function StudioPage() {
   const handleClaimVaultCommit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!handle || !email || !fullName) {
-      alert("Please provide your full name, work email, and desired handle.");
+      alert("Please provide your full name, corporate email, and desired handle.");
       return;
     }
 
@@ -319,7 +230,7 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Vault permanently saved! Your dossier is live at verifiedcv.app/${handle.toLowerCase().trim()}.`
+            text: `Vault permanently initialized. Your dossier is now live at verifiedcv.app/${handle.toLowerCase().trim()}.`
           }
         ]);
       } else {
@@ -333,8 +244,22 @@ export default function StudioPage() {
     }
   };
 
+  const addEmptyMilestone = () => {
+    const newId = `m-manual-${Date.now()}`;
+    const newM: Milestone = {
+      id: newId,
+      company: "Company or Initiative",
+      role: "Role Title",
+      period: "Year — Present",
+      calibratedClaim: "Describe quantified business execution and operational trade-offs...",
+      isCorroborated: false
+    };
+    setMilestones((prev) => [newM, ...prev]);
+  };
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col antialiased selection:bg-emerald-100">
+      
       {/* Studio Header */}
       <header className="sticky top-0 z-50 bg-white border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -347,14 +272,21 @@ export default function StudioPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {milestones.length > 0 && (
+          {milestones.length > 0 && !isVaultSaved && (
             <button
               type="button"
-              onClick={() => setActiveTab("paste")}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
+              onClick={() => {
+                setMilestones([]);
+                setActiveTab("canvas");
+                setChatMessages((prev) => [
+                  ...prev,
+                  { sender: "ally", text: "Studio canvas reset. Ready for a new upload or paste." }
+                ]);
+              }}
+              className="text-xs font-semibold text-slate-400 hover:text-red-500 transition-colors px-3 py-1.5 cursor-pointer flex items-center gap-1"
             >
-              <ClipboardPaste className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Re-paste Resume</span>
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Clear Canvas</span>
             </button>
           )}
 
@@ -368,20 +300,23 @@ export default function StudioPage() {
               <ExternalLink className="w-3.5 h-3.5" />
             </Link>
           ) : (
-            <button
-              type="button"
-              onClick={() => setIsClaimModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-[#059669] hover:bg-emerald-600 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
-            >
-              <UserCheck className="w-3.5 h-3.5" />
-              <span>Save Vault & Claim Handle</span>
-            </button>
+            milestones.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setIsClaimModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-[#059669] hover:bg-emerald-600 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+              >
+                <UserCheck className="w-3.5 h-3.5" />
+                <span>Save Vault & Claim Handle</span>
+              </button>
+            )
           )}
         </div>
       </header>
 
       {/* Main Studio Body: Fixed 320px Sidebar + Full-Width Canvas */}
       <div className="flex-1 flex overflow-hidden">
+        
         {/* CV ALLY COPILOT: FIXED 320px WIDTH */}
         <aside className="w-[320px] shrink-0 border-r border-[#E2E8F0] bg-white flex flex-col justify-between h-[calc(100vh-3.5rem)]">
           <div className="p-4 border-b border-[#E2E8F0] flex items-center gap-2.5 bg-[#F8FAFC]">
@@ -408,6 +343,12 @@ export default function StudioPage() {
                 {msg.text}
               </div>
             ))}
+            {isProcessing && (
+              <div className="bg-[#F8FAFC] border border-[#E2E8F0] text-slate-500 text-xs p-3 rounded-xl flex items-center gap-2">
+                <Clock className="w-3.5 h-3.5 animate-spin text-[#059669]" />
+                <span>Gemini parsing in progress...</span>
+              </div>
+            )}
           </div>
 
           {/* Copilot Input */}
@@ -431,100 +372,136 @@ export default function StudioPage() {
         </aside>
 
         {/* LIVE CANVAS */}
-        <main className="flex-1 overflow-y-auto p-8 max-w-5xl mx-auto space-y-8">
-          {/* ZERO STATE / PASTE MODAL ACTIVE */}
+        <main className="flex-1 overflow-y-auto p-8 max-w-5xl mx-auto space-y-8 antialiased">
+          
+          {/* ZERO STATE OR PASTE MODE ACTIVE */}
           {milestones.length === 0 || activeTab === "paste" ? (
             <div className="bg-white border border-[#E2E8F0] rounded-3xl p-8 sm:p-10 text-center space-y-6 shadow-xs max-w-2xl mx-auto mt-4">
               <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#059669] mx-auto">
-                <ClipboardPaste className="w-7 h-7" />
+                <UploadCloud className="w-7 h-7" />
               </div>
 
               <div className="space-y-2">
-                <h2 className="text-xl font-black text-[#0F172A]">Paste Your Career History</h2>
+                <h2 className="text-xl font-black text-[#0F172A]">Ingest Your Career Track Record</h2>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                  Paste your complete resume or LinkedIn text below. Our engine will segment it into individual company chapters with verified date ranges and bullet points.
+                  Upload your resume file directly (PDF, DOCX, TXT) or paste your career experience below. Gemini extracts your complete history into atomic, testable milestones.
                 </p>
               </div>
 
-              <div className="text-left space-y-3 pt-2">
-                <textarea
-                  rows={10}
-                  value={pasteBuffer}
-                  onChange={(e) => setPasteBuffer(e.target.value)}
-                  placeholder="Paste your resume text here (e.g., Company, Role, Dates, and Bullet points)..."
-                  className="w-full text-xs p-4 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans bg-[#F8FAFC] leading-relaxed"
+              {/* Direct Buttons */}
+              <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.docx,.txt,.md"
+                  className="hidden"
+                  onChange={handleFileUpload}
                 />
+                
+                <button
+                  type="button"
+                  disabled={isProcessing}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  <UploadCloud className="w-4 h-4 text-emerald-400" />
+                  <span>{isProcessing ? "Analyzing..." : "Upload Resume (PDF / Word)"}</span>
+                </button>
 
-                <div className="flex items-center justify-between pt-1">
-                  {milestones.length > 0 ? (
+                <button
+                  type="button"
+                  disabled={isProcessing}
+                  onClick={() => setActiveTab("paste")}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <ClipboardPaste className="w-4 h-4 text-indigo-600" />
+                  <span>Paste Career Text</span>
+                </button>
+              </div>
+
+              {/* Paste Textarea */}
+              {activeTab === "paste" && (
+                <div className="text-left space-y-3 pt-4 border-t border-[#E2E8F0]">
+                  <textarea
+                    rows={8}
+                    value={pasteBuffer}
+                    onChange={(e) => setPasteBuffer(e.target.value)}
+                    placeholder="Paste your full resume or LinkedIn history text here..."
+                    className="w-full text-xs p-4 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans bg-[#F8FAFC] leading-relaxed"
+                  />
+
+                  <div className="flex items-center justify-between pt-1">
+                    {milestones.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("canvas")}
+                        className="text-xs font-bold text-slate-400 hover:text-slate-600"
+                      >
+                        Cancel
+                      </button>
+                    ) : (
+                      <span className="text-[11px] text-slate-400">
+                        Multi-chapter segmentation powered by Gemini.
+                      </span>
+                    )}
+
                     <button
                       type="button"
-                      onClick={() => setActiveTab("canvas")}
-                      className="text-xs font-bold text-slate-400 hover:text-slate-600"
+                      disabled={isProcessing || !pasteBuffer.trim()}
+                      onClick={handleManualPasteSubmit}
+                      className="px-5 py-2.5 bg-[#059669] hover:bg-emerald-600 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
                     >
-                      Back to Canvas
+                      <span>{isProcessing ? "Extracting..." : "Parse Milestones"}</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
                     </button>
-                  ) : (
-                    <span className="text-[11px] text-slate-400">
-                      Lossless ingest: all roles and bullet points will be preserved.
-                    </span>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={handleManualPaste}
-                    className="px-5 py-2.5 bg-[#059669] hover:bg-emerald-600 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
-                  >
-                    <span>Segment into Milestones</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           ) : (
             /* POPULATED CANVAS: INDIVIDUAL MILESTONE CARDS */
             <div className="space-y-6">
+              
               <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
                 <div>
                   <h2 className="text-sm font-black uppercase tracking-wider text-[#0F172A]">
-                    Extracted Career Chapters ({milestones.length})
+                    Audited Career Milestones ({milestones.length})
                   </h2>
                   <p className="text-xs text-slate-500">
-                    Each role is mapped to an atomic, testable milestone ready for peer corroboration.
+                    Each chapter is segmented into an atomic, testable claim ready for peer corroboration.
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    setMilestones((prev) => [
-                      {
-                        id: `m-manual-${Date.now()}`,
-                        company: "Company Name",
-                        role: "Role Title",
-                        period: "Year — Year",
-                        calibratedClaim: "Describe quantified business execution and operational trade-offs...",
-                        isCorroborated: false
-                      },
-                      ...prev
-                    ])
-                  }
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white border border-[#E2E8F0] hover:bg-slate-50 px-3 py-1.5 rounded-lg shadow-2xs transition-colors cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5 text-[#059669]" />
-                  <span>Add Chapter</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("paste")}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white border border-[#E2E8F0] hover:bg-slate-50 px-3 py-1.5 rounded-lg shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <ClipboardPaste className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Re-paste Text</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={addEmptyMilestone}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white border border-[#E2E8F0] hover:bg-slate-50 px-3 py-1.5 rounded-lg shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-[#059669]" />
+                    <span>Add Chapter</span>
+                  </button>
+                </div>
               </div>
 
               {/* Milestones Card Stream */}
-              <div className="space-y-5">
+              <div className="space-y-5 pb-10">
                 {milestones.map((milestone) => (
                   <div
                     key={milestone.id}
-                    className="bg-white border border-[#E2E8F0] rounded-2xl p-5 sm:p-6 shadow-xs space-y-4 hover:border-slate-300 transition-all"
+                    className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-4 hover:border-slate-300 transition-all antialiased"
                   >
-                    {/* Header Row: Company, Role, Dates, Badge, Delete */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#E2E8F0]/70">
+                    {/* Header Row */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-[#E2E8F0]/70">
                       <div className="flex flex-wrap items-center gap-2">
                         <input
                           type="text"
@@ -563,18 +540,16 @@ export default function StudioPage() {
                               prev.map((m) => (m.id === milestone.id ? { ...m, period: val } : m))
                             );
                           }}
-                          placeholder="Dates"
-                          className="text-xs font-mono text-slate-500 focus:outline-none text-right w-28"
+                          placeholder="Tenure Dates"
+                          className="text-[11px] font-mono text-slate-500 focus:outline-none text-right w-36"
                         />
-
                         <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
                           Unsaved Draft
                         </span>
-
                         <button
                           type="button"
                           onClick={() => setMilestones((prev) => prev.filter((m) => m.id !== milestone.id))}
-                          className="text-slate-300 hover:text-red-500 transition-colors p-1"
+                          className="text-slate-300 hover:text-red-500 transition-colors p-1 cursor-pointer"
                           title="Delete Milestone"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -602,8 +577,10 @@ export default function StudioPage() {
                   </div>
                 ))}
               </div>
+
             </div>
           )}
+
         </main>
       </div>
 
@@ -614,18 +591,18 @@ export default function StudioPage() {
             <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
               <div className="flex items-center gap-2">
                 <VerifiedCVLogo className="w-6 h-6" />
-                <h3 className="font-black text-sm text-[#0F172A]">Claim Your Dossier</h3>
+                <h3 className="font-black text-sm text-[#0F172A]">Claim Your Dossier Handle</h3>
               </div>
               <button
                 type="button"
                 onClick={() => setIsClaimModalOpen(false)}
-                className="text-slate-400 hover:text-slate-700 p-1"
+                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleClaimVaultCommit} className="space-y-4 text-xs">
+            <form onSubmit={handleClaimVaultCommit} className="space-y-4 text-xs antialiased">
               <div>
                 <label className="font-bold text-slate-700 block mb-1">Full Legal Name</label>
                 <input
@@ -639,7 +616,7 @@ export default function StudioPage() {
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Work / Corporate Email</label>
+                <label className="font-bold text-slate-700 block mb-1">Corporate / Work Email</label>
                 <input
                   type="email"
                   required
@@ -648,9 +625,18 @@ export default function StudioPage() {
                   placeholder="name@company.com"
                   className="w-full p-2.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669]"
                 />
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  Used to verify your corporate identity domain.
-                </span>
+                <span className="text-[10px] text-slate-400 mt-1 block">Used to verify your identity domain.</span>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Professional Headline</label>
+                <input
+                  type="text"
+                  value={headline}
+                  onChange={(e) => setHeadline(e.target.value)}
+                  placeholder="Product Leader • AI Platforms"
+                  className="w-full p-2.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669]"
+                />
               </div>
 
               <div>
@@ -674,7 +660,7 @@ export default function StudioPage() {
                 <button
                   type="submit"
                   disabled={isCommitting}
-                  className="w-full py-3 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+                  className="w-full py-3 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50 antialiased"
                 >
                   {isCommitting ? (
                     <Clock className="w-4 h-4 animate-spin" />
@@ -690,6 +676,7 @@ export default function StudioPage() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

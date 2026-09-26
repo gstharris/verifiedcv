@@ -1,143 +1,115 @@
 import { NextRequest, NextResponse } from "next/server";
+import { GoogleGenAI, Type } from "@google/genai";
 
 export const dynamic = "force-dynamic";
 
-interface ExtractedMilestone {
-  id: string;
-  company: string;
-  role: string;
-  period: string;
-  rawText: string;
-  calibratedClaim: string;
-  metrics: { label: string; value: string }[];
-  tier: "tier_1_identity";
-  isCorroborated: boolean;
-}
-
-function parseTextIntoMilestones(text: string): ExtractedMilestone[] {
-  if (!text || text.trim().length === 0) return [];
-
-  // Normalize line breaks
-  const clean = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  const lines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
-
-  const yearRangeRegex = /(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:(?:19|20)\d{2}|present|current)/i;
-  const singleYearRegex = /\b(19|20)\d{2}\b/;
-
-  const milestones: ExtractedMilestone[] = [];
-  let currentCompany = "";
-  let currentRole = "";
-  let currentPeriod = "";
-  let currentBullets: string[] = [];
-
-  const flush = () => {
-    if (currentCompany || currentBullets.length > 0) {
-      const claim = currentBullets.join(" ").trim() || "Executed core business and product objectives.";
-      milestones.push({
-        id: `m-parse-${Date.now()}-${milestones.length}`,
-        company: currentCompany || "Career Chapter",
-        role: currentRole || "Leader / Contributor",
-        period: currentPeriod || "Verified Tenure",
-        rawText: claim,
-        calibratedClaim: claim,
-        metrics: [{ label: "Status", value: "Awaiting Calibration" }],
-        tier: "tier_1_identity",
-        isCorroborated: false
-      });
-      currentCompany = "";
-      currentRole = "";
-      currentPeriod = "";
-      currentBullets = [];
-    }
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const hasDate = yearRangeRegex.test(line) || singleYearRegex.test(line);
-
-    if (hasDate && (line.includes("|") || line.includes("—") || line.includes("-") || line.length < 100)) {
-      flush();
-
-      const dateMatch = line.match(yearRangeRegex) || line.match(singleYearRegex);
-      currentPeriod = dateMatch ? dateMatch[0] : "Verified Tenure";
-
-      const lineWithoutDate = line.replace(currentPeriod, "").replace(/[|•–—,-]/g, " ").trim();
-      const parts = lineWithoutDate.split(/\s{2,}|\t/).filter(Boolean);
-
-      if (parts.length >= 2) {
-        currentCompany = parts[0].trim();
-        currentRole = parts[1].trim();
-      } else {
-        currentCompany = lineWithoutDate || "Career Chapter";
-        currentRole = "Key Leader";
-      }
-    } else if (line.startsWith("•") || line.startsWith("-") || line.startsWith("*")) {
-      currentBullets.push(line.replace(/^[•\-\*]\s*/, "").trim());
-    } else {
-      if (currentBullets.length === 0 && line.length < 60 && !line.includes(".")) {
-        if (!currentCompany) currentCompany = line;
-        else if (!currentRole) currentRole = line;
-      } else {
-        currentBullets.push(line);
-      }
-    }
-  }
-
-  flush();
-
-  // Fallback to paragraph splitting if no dates matched
-  if (milestones.length === 0) {
-    const paragraphs = clean.split(/\n\s*\n/).filter((p) => p.trim().length > 30);
-    return paragraphs.map((p, idx) => ({
-      id: `m-block-${Date.now()}-${idx}`,
-      company: `Career Milestone ${idx + 1}`,
-      role: "Key Contributor",
-      period: "Tenure",
-      rawText: p.trim(),
-      calibratedClaim: p.trim(),
-      metrics: [{ label: "Ingest", value: "Parsed Block" }],
-      tier: "tier_1_identity",
-      isCorroborated: false
-    }));
-  }
-
-  return milestones;
-}
-
 export async function POST(req: NextRequest) {
   try {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "GEMINI_API_KEY is not configured in environment variables." },
+        { status: 500 }
+      );
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
+    const pastedText = formData.get("text") as string | null;
 
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    if (!file && (!pastedText || pastedText.trim().length === 0)) {
+      return NextResponse.json(
+        { error: "No resume file or text provided." },
+        { status: 400 }
+      );
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-    let rawText = "";
+    let contents: any[] = [];
 
-    // 1. Text / Markdown / Plain files
-    if (file.name.endsWith(".txt") || file.name.endsWith(".md") || file.type.includes("text")) {
-      rawText = buffer.toString("utf-8");
-    } else {
-      // 2. Fallback text extraction for binary streams (extract printable UTF-8 chunks)
-      rawText = buffer
-        .toString("utf-8")
-        .replace(/[^\x20-\x7E\n\t]/g, " ")
-        .replace(/\s{3,}/g, "\n");
+    const promptText = `
+You are the senior ingestion and parsing engine for VerifiedCV (verifiedcv.app).
+Extract the candidate's career history losslessly into structured, atomic milestones.
+
+Strict Extraction Rules:
+1. Segment every distinct role and organization tenure into its own separate milestone.
+2. 'company': Clean organization name without dates or location clutter.
+3. 'role': Professional title.
+4. 'period': Date range (e.g., "2010 — 2024" or "2024 — Present").
+5. 'calibratedClaim': Comprehensive, cleanly formatted summary of responsibilities, achievements, and impact. Remove noisy bullet artifacts like '•' or weird formatting glyphs.
+6. Do NOT invent experiences or embellish facts. Preserve all real companies, titles, sequences, and metrics losslessly.
+`;
+
+    if (file) {
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const base64Data = buffer.toString("base64");
+      const mimeType = file.type || (file.name.endsWith(".pdf") ? "application/pdf" : "text/plain");
+
+      contents = [
+        {
+          inlineData: {
+            data: base64Data,
+            mimeType: mimeType
+          }
+        },
+        promptText
+      ];
+    } else if (pastedText) {
+      contents = [
+        promptText,
+        `Candidate Resume Content:\n"""\n${pastedText}\n"""`
+      ];
     }
 
-    const milestones = parseTextIntoMilestones(rawText);
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            fullName: { type: Type.STRING },
+            headline: { type: Type.STRING },
+            milestones: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  company: { type: Type.STRING },
+                  role: { type: Type.STRING },
+                  period: { type: Type.STRING },
+                  calibratedClaim: { type: Type.STRING }
+                },
+                required: ["company", "role", "period", "calibratedClaim"]
+              }
+            }
+          },
+          required: ["fullName", "milestones"]
+        }
+      }
+    });
+
+    const parsedJson = JSON.parse(response.text || "{}");
+
+    const formattedMilestones = (parsedJson.milestones || []).map((m: any, idx: number) => ({
+      id: `m-gemini-${Date.now()}-${idx}`,
+      company: m.company || "Career Chapter",
+      role: m.role || "Executive / Leader",
+      period: m.period || "Confirmed Tenure",
+      calibratedClaim: m.calibratedClaim || "",
+      isCorroborated: false
+    }));
 
     return NextResponse.json({
       success: true,
-      fileName: file.name,
-      milestonesCount: milestones.length,
-      milestones: milestones,
-      rawSample: rawText.slice(0, 500)
+      fullName: parsedJson.fullName || "",
+      headline: parsedJson.headline || "",
+      milestones: formattedMilestones
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Parse error";
+    console.error("Gemini Ingress Error:", err);
+    const message = err instanceof Error ? err.message : "Ingestion failed";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
