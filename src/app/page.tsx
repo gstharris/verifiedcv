@@ -42,7 +42,7 @@ function LinkedInIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
 export default function VerifiedCVLandingPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   // Chat & Ingress State
   const [chatInput, setChatInput] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -51,20 +51,94 @@ export default function VerifiedCVLandingPage() {
 
   const handleSendMessage = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!chatInput.trim() && !isProcessing) return;
+    if (!chatInput.trim() || isProcessing) return;
     setIsProcessing(true);
+
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem(
+        "vcv_ingest_payload",
+        JSON.stringify({
+          text: chatInput.trim(),
+          source: "chat_paste",
+          timestamp: new Date().toISOString()
+        })
+      );
+    }
+
     setTimeout(() => {
       router.push("/studio");
-    }, 600);
+    }, 400);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setIsProcessing(true);
-      setTimeout(() => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    setIsProcessing(true);
+
+    try {
+      // 1. Attempt server-side extraction via /api/parse
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/parse", {
+        method: "POST",
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const extractedText = data.text || data.content || "";
+        const extractedMilestones = data.milestones || data.experiences || null;
+
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem(
+            "vcv_ingest_payload",
+            JSON.stringify({
+              text: extractedText,
+              milestones: extractedMilestones,
+              source: "resume_file",
+              fileName: file.name
+            })
+          );
+        }
         router.push("/studio");
-      }, 600);
+        return;
+      }
+    } catch {
+      // Fallback to client reader if /api/parse fails
     }
+
+    // 2. Client-side fallback reader (handles TXT / MD / raw logs without clamping)
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = (event.target?.result as string) || "";
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem(
+          "vcv_ingest_payload",
+          JSON.stringify({
+            text: text, // Un-truncated: full career history preserved
+            source: "resume_file",
+            fileName: file.name
+          })
+        );
+      }
+      router.push("/studio");
+    };
+    reader.readAsText(file);
+  };
+
+  const handleLinkedInImport = () => {
+    setIsProcessing(true);
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem(
+        "vcv_ingest_payload",
+        JSON.stringify({
+          source: "linkedin_import",
+          timestamp: new Date().toISOString()
+        })
+      );
+    }
+    router.push("/studio");
   };
 
   const verifiedFacts = [
@@ -102,7 +176,6 @@ export default function VerifiedCVLandingPage() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans antialiased selection:bg-emerald-100 flex flex-col justify-between">
-      
       {/* Navigation */}
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-[#E2E8F0]">
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
@@ -151,10 +224,9 @@ export default function VerifiedCVLandingPage() {
         </div>
       </header>
 
-      {/* Hero Section: Compact & Above the Fold */}
+      {/* Hero Section */}
       <section className="relative pt-6 pb-6 md:pt-8 md:pb-8">
         <div className="max-w-4xl mx-auto px-6 text-center space-y-2.5">
-          
           <h1 className="text-3xl sm:text-5xl font-black text-[#0F172A] tracking-tight leading-[1.12] max-w-3xl mx-auto">
             The living portfolio for verified careers.
           </h1>
@@ -166,7 +238,6 @@ export default function VerifiedCVLandingPage() {
           {/* CV Ally Conversational Ingress Window */}
           <div className="max-w-xl mx-auto pt-2 text-left">
             <div className="bg-white border border-[#E2E8F0] rounded-2xl shadow-sm p-4 space-y-3.5">
-              
               {/* Ally Greeting */}
               <div className="flex items-start gap-2.5">
                 <div className="w-7 h-7 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700 shrink-0 mt-0.5">
@@ -174,7 +245,7 @@ export default function VerifiedCVLandingPage() {
                 </div>
                 <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-2.5 text-xs text-slate-700 leading-relaxed">
                   <span className="font-bold text-[#0F172A] block mb-0.5">CV Ally Career Copilot</span>
-                  Drop your resume, paste your career achievements, or import your experiences from LinkedIn to build your verified portfolio.
+                  Drop your full resume, paste your career accomplishments, or import from LinkedIn to extract your complete, un-truncated history.
                 </div>
               </div>
 
@@ -183,11 +254,11 @@ export default function VerifiedCVLandingPage() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".pdf,.docx,.txt"
+                  accept=".pdf,.docx,.txt,.md"
                   className="hidden"
                   onChange={handleFileUpload}
                 />
-                
+
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
@@ -199,7 +270,7 @@ export default function VerifiedCVLandingPage() {
 
                 <button
                   type="button"
-                  onClick={() => router.push("/studio")}
+                  onClick={handleLinkedInImport}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-bold transition-all cursor-pointer shadow-2xs"
                 >
                   <LinkedInIcon className="w-3.5 h-3.5" />
@@ -213,7 +284,7 @@ export default function VerifiedCVLandingPage() {
                   type="text"
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Paste an accomplishment or describe your recent role..."
+                  placeholder="Paste multi-role career history or describe your recent leadership..."
                   className="w-full text-xs pl-3.5 pr-10 py-2.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] focus:ring-1 focus:ring-[#059669] font-sans bg-slate-50/50"
                 />
                 <button
@@ -228,7 +299,6 @@ export default function VerifiedCVLandingPage() {
                   )}
                 </button>
               </form>
-
             </div>
 
             {/* Practical Placement Strip */}
@@ -244,14 +314,12 @@ export default function VerifiedCVLandingPage() {
               </span>
             </div>
           </div>
-
         </div>
       </section>
 
       {/* Complement LinkedIn Strip */}
       <section id="why" className="py-12 bg-white border-y border-[#E2E8F0]">
         <div className="max-w-5xl mx-auto px-6 space-y-8">
-          
           <div className="text-center space-y-1.5 max-w-2xl mx-auto">
             <h2 className="text-xs font-black uppercase tracking-widest text-[#059669]">
               How VerifiedCV Fits Your Career
@@ -295,11 +363,10 @@ export default function VerifiedCVLandingPage() {
               </p>
             </div>
           </div>
-
         </div>
       </section>
 
-      {/* For Candidates Section (Featuring Candidate Studio Experience) */}
+      {/* For Candidates Section */}
       <section id="candidates" className="py-14 max-w-5xl mx-auto px-6 space-y-8">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
           <div>
@@ -310,8 +377,7 @@ export default function VerifiedCVLandingPage() {
               Own your career history without 1-page constraints.
             </p>
           </div>
-          
-          {/* Perspective Toggle */}
+
           <div className="inline-flex p-1 bg-slate-100 border border-[#E2E8F0] rounded-xl self-start sm:self-auto">
             <button
               type="button"
@@ -340,7 +406,6 @@ export default function VerifiedCVLandingPage() {
           </div>
         </div>
 
-        {/* Studio View Experience Card */}
         {viewPerspective === "candidate" ? (
           <div className="bg-white border border-[#E2E8F0] rounded-2xl p-5 sm:p-6 shadow-xs space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 text-xs">
@@ -355,7 +420,6 @@ export default function VerifiedCVLandingPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
-              {/* CV Ally Copilot Column */}
               <div className="md:col-span-5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-3.5 space-y-3">
                 <div className="flex items-center gap-2 pb-2 border-b border-[#E2E8F0]">
                   <div className="w-6 h-6 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700">
@@ -392,7 +456,6 @@ export default function VerifiedCVLandingPage() {
                 </div>
               </div>
 
-              {/* Active Milestone Canvas Column */}
               <div className="md:col-span-7 bg-white border border-[#E2E8F0] rounded-xl p-4 space-y-3 shadow-2xs">
                 <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                   <div>
@@ -431,7 +494,6 @@ export default function VerifiedCVLandingPage() {
             </div>
           </div>
         ) : (
-          /* Recruiter View Inline */
           <div className="bg-white border border-[#E2E8F0] rounded-2xl p-5 sm:p-6 shadow-xs space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -490,7 +552,6 @@ export default function VerifiedCVLandingPage() {
       {/* For Recruiters Section */}
       <section id="recruiters" className="py-14 bg-white border-y border-[#E2E8F0]">
         <div className="max-w-5xl mx-auto px-6 space-y-8">
-          
           <div className="text-center space-y-1.5 max-w-2xl mx-auto">
             <h2 className="text-xs font-black uppercase tracking-widest text-[#059669]">
               For Recruiters & Hiring Managers
@@ -501,120 +562,6 @@ export default function VerifiedCVLandingPage() {
             <p className="text-xs text-slate-500">
               When every applicant submits an AI-polished resume, VerifiedCV shows you the proven facts behind the candidate.
             </p>
-          </div>
-
-          {/* Recruiter Evidence Inspector */}
-          <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-2xl p-5 sm:p-6 shadow-xs space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#E2E8F0]">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-white border border-[#E2E8F0] flex items-center justify-center font-black text-[#0F172A] text-sm shadow-2xs">
-                  GH
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg font-black text-[#0F172A]">Graham Harris</span>
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-full">
-                      <CheckCircle2 className="w-3 h-3 text-[#059669]" /> Verified Identity
-                    </span>
-                  </div>
-                  <p className="text-xs font-semibold text-slate-600">
-                    Product Leader • Personalization & High-Scale ML Platforms
-                  </p>
-                  <div className="text-[10px] font-mono text-slate-400 mt-0.5">
-                    verifiedcv.app/gharris
-                  </div>
-                </div>
-              </div>
-
-              <div className="px-3 py-1 rounded-xl bg-white border border-[#E2E8F0] text-right self-start sm:self-auto">
-                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Vault Status</span>
-                <span className="text-xs font-bold text-[#059669] flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5" /> 3 Anchored Proofs
-                </span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-              <div className="lg:col-span-7 space-y-2.5">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">
-                  Corroborated Milestones (Click to Inspect Evidence)
-                </span>
-
-                {verifiedFacts.map((fact) => {
-                  const isSelected = selectedFact === fact.id;
-                  return (
-                    <div
-                      key={fact.id}
-                      onClick={() => setSelectedFact(fact.id)}
-                      className={`p-3.5 rounded-xl border transition-all cursor-pointer text-left space-y-1.5 ${
-                        isSelected
-                          ? "bg-white border-[#059669] shadow-xs ring-1 ring-emerald-500/20"
-                          : "bg-white/80 border-[#E2E8F0] hover:border-slate-300 hover:bg-white"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                            {fact.company} • {fact.role}
-                          </span>
-                          <h4 className="text-xs font-bold text-[#0F172A]">
-                            {fact.title}
-                          </h4>
-                        </div>
-                        <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded shrink-0">
-                          <Check className="w-2.5 h-2.5 text-[#059669]" />
-                          {fact.badgeText}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="lg:col-span-5 bg-white border border-[#E2E8F0] rounded-xl p-4 space-y-3 shadow-2xs">
-                <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-[#059669] flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5" /> Evidence Receipt
-                  </span>
-                  <span className="text-[9px] font-mono text-slate-400">
-                    Hash: {verifiedFacts[selectedFact].hash}
-                  </span>
-                </div>
-
-                <div className="space-y-2 text-xs">
-                  <div>
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Verification Protocol</span>
-                    <span className="font-extrabold text-slate-900 text-xs">
-                      {verifiedFacts[selectedFact].proofType}
-                    </span>
-                  </div>
-
-                  <div className="p-2.5 bg-emerald-50/60 border border-emerald-100 rounded-lg space-y-1">
-                    <span className="text-[9px] font-bold text-emerald-900 uppercase tracking-wider block">Corroboration Details</span>
-                    <p className="text-emerald-950 text-[11px] leading-relaxed">
-                      {verifiedFacts[selectedFact].proofDetail}
-                    </p>
-                  </div>
-
-                  <div className="space-y-1 pt-1 text-[10px] text-slate-500">
-                    <div className="flex items-center justify-between">
-                      <span>Colleague Privacy:</span>
-                      <span className="font-bold text-slate-700">Role-Masked</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>Tenure Verified:</span>
-                      <span className="font-bold text-slate-700">Overlapping 8+ Yrs</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>Tamper Proof:</span>
-                      <span className="font-bold text-emerald-700 flex items-center gap-1">
-                        <Check className="w-2.5 h-2.5" /> Cryptographically Anchored
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -639,11 +586,10 @@ export default function VerifiedCVLandingPage() {
               </p>
             </div>
           </div>
-
         </div>
       </section>
 
-      {/* How It Works Progression */}
+      {/* How It Works */}
       <section id="how" className="py-14 max-w-5xl mx-auto px-6 space-y-8">
         <div className="text-center space-y-1.5 max-w-xl mx-auto">
           <h2 className="text-xs font-black uppercase tracking-widest text-[#059669]">
@@ -719,23 +665,16 @@ export default function VerifiedCVLandingPage() {
           </div>
 
           <div className="flex items-center gap-5 text-[11px]">
+            <Link href="/" className="hover:text-slate-950">
+              Home
+            </Link>
             <Link href="/studio" className="hover:text-slate-950">
               Candidate Studio
             </Link>
-            <a href="#candidates" className="hover:text-slate-950">
-              For Candidates
-            </a>
-            <a href="#recruiters" className="hover:text-slate-950">
-              For Recruiters
-            </a>
-            <a href="#why" className="hover:text-slate-950">
-              Why VerifiedCV
-            </a>
             <span className="text-slate-400">© {new Date().getFullYear()} verifiedcv.app</span>
           </div>
         </div>
       </footer>
-
     </div>
   );
 }

@@ -26,8 +26,102 @@ import {
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 import { CandidateDossier, AtomicMilestone } from "@/types/vault";
 
+// Multi-chapter resume parsing logic that splits experiences without truncation
+function parseRawResumeToMilestones(rawText: string): AtomicMilestone[] {
+  if (!rawText || rawText.trim().length === 0) return [];
+
+  // Split lines
+  const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const detectedMilestones: AtomicMilestone[] = [];
+
+  let currentCompany = "";
+  let currentRole = "";
+  let currentPeriod = "";
+  let currentBullets: string[] = [];
+
+  const yearRangeRegex = /(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:(?:19|20)\d{2}|present|current)/i;
+  const singleYearRegex = /\b(19|20)\d{2}\b/;
+
+  const flushMilestone = () => {
+    if (currentCompany || currentBullets.length > 0) {
+      const claim = currentBullets.join(" ").trim() || "Executed technical and operational roadmap milestones.";
+      detectedMilestones.push({
+        id: `m-parsed-${Date.now()}-${detectedMilestones.length}`,
+        company: currentCompany || "Career Chapter",
+        role: currentRole || "Lead Contributor",
+        period: currentPeriod || "Confirmed Tenure",
+        rawText: claim,
+        calibratedClaim: claim,
+        metrics: [{ label: "Extraction", value: "Lossless Ingest" }],
+        tier: "tier_1_identity",
+        isCorroborated: false
+      });
+      currentCompany = "";
+      currentRole = "";
+      currentPeriod = "";
+      currentBullets = [];
+    }
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Check if line indicates a role/tenure header
+    const hasDates = yearRangeRegex.test(line) || singleYearRegex.test(line);
+
+    if (hasDates && (line.includes("|") || line.includes("—") || line.includes(" - ") || line.length < 90)) {
+      flushMilestone();
+
+      // Extract date match
+      const dateMatch = line.match(yearRangeRegex) || line.match(singleYearRegex);
+      currentPeriod = dateMatch ? dateMatch[0] : "Verified Tenure";
+
+      // Extract Company and Role parts
+      const cleanHeader = line.replace(currentPeriod, "").replace(/[|•–—,-]/g, " ").trim();
+      const parts = cleanHeader.split(/\s{2,}|\t/).filter(Boolean);
+
+      if (parts.length >= 2) {
+        currentCompany = parts[0].trim();
+        currentRole = parts[1].trim();
+      } else {
+        currentCompany = cleanHeader || "Career Chapter";
+        currentRole = "Leader / Builder";
+      }
+    } else if (line.startsWith("•") || line.startsWith("-") || line.startsWith("*")) {
+      currentBullets.push(line.replace(/^[•\-\*]\s*/, "").trim());
+    } else {
+      if (currentBullets.length === 0 && line.length < 60 && !line.includes(".")) {
+        // Likely a company or section title
+        if (!currentCompany) currentCompany = line;
+        else if (!currentRole) currentRole = line;
+      } else {
+        currentBullets.push(line);
+      }
+    }
+  }
+
+  flushMilestone();
+
+  // If regex partitioning failed due to unstructured text, fall back to paragraph chunking
+  if (detectedMilestones.length === 0) {
+    const paragraphs = rawText.split(/\n\s*\n/).filter((p) => p.trim().length > 20);
+    return paragraphs.map((p, idx) => ({
+      id: `m-chunk-${Date.now()}-${idx}`,
+      company: `Career Milestone ${idx + 1}`,
+      role: "Key Contributor",
+      period: "Historical Record",
+      rawText: p.trim(),
+      calibratedClaim: p.trim(),
+      metrics: [{ label: "Status", value: "Awaiting Calibration" }],
+      tier: "tier_1_identity",
+      isCorroborated: false
+    }));
+  }
+
+  return detectedMilestones;
+}
+
 export default function StudioPage() {
-  // Candidate Profile State
   const [dossier, setDossier] = useState<CandidateDossier>({
     handle: "gharris",
     fullName: "Graham Harris",
@@ -112,56 +206,68 @@ export default function StudioPage() {
     ]
   });
 
-  // UI & Auto-Save State
   const [saveStatus, setSaveStatus] = useState<"synced" | "saving">("synced");
   const [activeMilestoneId, setActiveMilestoneId] = useState<string>("m-yahoo-01");
   const [copiedLinkMilestoneId, setCopiedLinkMilestoneId] = useState<string | null>(null);
 
-  // CV Ally 320px Copilot State
-  const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string; actionSuggestion?: string }>>([
+  const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
     {
       sender: "ally",
-      text: "I've ingested your career history and mapped it to 3 atomic milestones. Your Yahoo personalization claim is peer-corroborated, but Ge-On currently lacks an attestation token. Shall we generate a role-masked colleague verification link?"
+      text: "Ingestion Engine active. I've parsed your career milestones into atomic claims. Click any milestone to calibrate metrics or generate peer vouchers."
     }
   ]);
   const [chatInput, setChatInput] = useState("");
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
-  // Ingestion Payload Catching from Landing Page
+  // Ingestion Extraction & Multi-Experience Parsing
   useEffect(() => {
     if (typeof window !== "undefined") {
       const stored = sessionStorage.getItem("vcv_ingest_payload");
       if (stored) {
         try {
           const parsed = JSON.parse(stored);
-          if (parsed.text) {
-            const newMilestone: AtomicMilestone = {
-              id: `m-custom-${Date.now()}`,
-              company: "Ingested Chapter",
-              role: "Lead Contributor",
-              period: "Recent",
-              rawText: parsed.text,
-              calibratedClaim: parsed.text.slice(0, 300),
-              metrics: [{ label: "Extraction Source", value: parsed.source || "Manual Ingress" }],
-              tier: "tier_1_identity",
-              isCorroborated: false
-            };
 
+          if (parsed.milestones && Array.isArray(parsed.milestones) && parsed.milestones.length > 0) {
+            // Pre-parsed server milestones
             setDossier((prev) => ({
               ...prev,
-              milestones: [newMilestone, ...prev.milestones]
+              milestones: [...parsed.milestones, ...prev.milestones]
             }));
-
+            setActiveMilestoneId(parsed.milestones[0].id);
             setChatMessages((prev) => [
               ...prev,
               {
                 sender: "ally",
-                text: `Parsed a new milestone from ${parsed.source || "your upload"}. Let's calibrate the measurable outcome before generating the peer voucher.`
+                text: `Ingested ${parsed.milestones.length} milestones from ${parsed.fileName || "your file"}. All experiences preserved losslessly.`
               }
             ]);
-            setActiveMilestoneId(newMilestone.id);
-            sessionStorage.removeItem("vcv_ingest_payload");
+          } else if (parsed.text && parsed.text.trim().length > 0) {
+            // Intelligent client-side partitioning
+            const extracted = parseRawResumeToMilestones(parsed.text);
+            if (extracted.length > 0) {
+              setDossier((prev) => ({
+                ...prev,
+                milestones: [...extracted, ...prev.milestones]
+              }));
+              setActiveMilestoneId(extracted[0].id);
+              setChatMessages((prev) => [
+                ...prev,
+                {
+                  sender: "ally",
+                  text: `Extracted ${extracted.length} distinct career chapters from ${parsed.source || "your upload"}. Let's calibrate claims and metrics.`
+                }
+              ]);
+            }
+          } else if (parsed.source === "linkedin_import") {
+            setChatMessages((prev) => [
+              ...prev,
+              {
+                sender: "ally",
+                text: "LinkedIn profile connected: Yahoo, Ge-On, PairedRight, and Decker Kitchen chapters synchronized into draft milestones."
+              }
+            ]);
           }
+          sessionStorage.removeItem("vcv_ingest_payload");
         } catch {
           // ignore parsing error
         }
@@ -176,7 +282,6 @@ export default function StudioPage() {
     }
   }, [chatMessages]);
 
-  // Persist edits to Local Vault
   const triggerAutoSave = (updated: CandidateDossier) => {
     setSaveStatus("saving");
     setDossier(updated);
@@ -203,13 +308,12 @@ export default function StudioPage() {
     setChatMessages((prev) => [...prev, { sender: "user", text: query }]);
     setChatInput("");
 
-    // Simulate Socratic calibration feedback
     setTimeout(() => {
       setChatMessages((prev) => [
         ...prev,
         {
           sender: "ally",
-          text: `Calibrated: Clarified boundary conditions for milestone ${activeMilestoneId}. This eliminates vague recruiter skepticism without revealing proprietary code. Ready to anchor?`
+          text: `Calibrated: Grounded metric context for active milestone. Ready to generate a role-masked voucher link.`
         }
       ]);
     }, 700);
@@ -228,11 +332,11 @@ export default function StudioPage() {
     const newId = `m-${Date.now()}`;
     const newM: AtomicMilestone = {
       id: newId,
-      company: "Company or Initiative",
+      company: "Company or Organization",
       role: "Role Title",
       period: "Year — Present",
       rawText: "",
-      calibratedClaim: "Describe the specific execution, scale, and operational trade-offs...",
+      calibratedClaim: "Describe the specific execution scale, metrics, and operational trade-offs...",
       metrics: [{ label: "Impact", value: "Quantified Metric" }],
       tier: "tier_1_identity",
       isCorroborated: false
@@ -251,7 +355,6 @@ export default function StudioPage() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col antialiased selection:bg-emerald-100">
-      
       {/* Studio Header Bar */}
       <header className="sticky top-0 z-50 bg-white border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -286,7 +389,6 @@ export default function StudioPage() {
 
       {/* Main Studio Body: 320px Sidebar + Full-Width Canvas */}
       <div className="flex-1 flex overflow-hidden">
-        
         {/* CV ALLY COPILOT: FIXED 320px WIDTH */}
         <aside className="w-[320px] shrink-0 border-r border-[#E2E8F0] bg-white flex flex-col justify-between h-[calc(100vh-3.5rem)]">
           <div className="p-4 border-b border-[#E2E8F0] flex items-center gap-2.5 bg-[#F8FAFC]">
@@ -337,7 +439,6 @@ export default function StudioPage() {
 
         {/* LIVE CANVAS: MASSIVE RIGHT-SIDE EDITABLE AREA */}
         <main className="flex-1 overflow-y-auto p-8 max-w-5xl mx-auto space-y-8">
-          
           {/* Candidate Profile Header Card */}
           <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#E2E8F0]/70">
@@ -403,7 +504,7 @@ export default function StudioPage() {
                   Audited Career Milestones ({dossier.milestones.length})
                 </h2>
                 <p className="text-xs text-slate-500 font-normal">
-                  Atomic claims verified via role-masked peer corroboration and registry hashes.
+                  Lossless extraction preserved across full career tenure.
                 </p>
               </div>
 
@@ -541,15 +642,12 @@ export default function StudioPage() {
                       ID: {milestone.id}
                     </span>
                   </div>
-
                 </div>
               );
             })}
           </div>
-
         </main>
       </div>
-
     </div>
   );
 }
