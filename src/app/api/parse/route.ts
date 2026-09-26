@@ -12,39 +12,41 @@ interface ExtractedMilestone {
   isCorroborated: boolean;
 }
 
-// 1. Clean and normalize all clipboard / raw text
-function normalizeInputText(text: string): string {
-  return text
+// Clean and normalize text, stripping non-printable characters and normalizing dashes
+function cleanRawText(input: string): string {
+  return input
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
     .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, " - ")
     .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ")
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, "")
     .replace(/\t/g, " ")
     .replace(/ +/g, " ")
     .trim();
 }
 
-// 2. High-resilience structural parser (zero regex line-length traps)
-function parseResumeStructurally(rawText: string): {
+// Resilient fallback parser that only matches real tenure ranges, never standalone years in sentences
+function fallbackSegmenter(rawText: string): {
   fullName: string;
   headline: string;
   milestones: ExtractedMilestone[];
 } {
-  const normalized = normalizeInputText(rawText);
-  const rawLines = normalized.split("\n").map((l) => l.trim()).filter(Boolean);
+  const clean = cleanRawText(rawText);
+  const lines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
 
   let fullName = "Graham Harris";
   let headline = "Product Leader • AI Platforms";
 
-  if (rawLines.length > 0 && rawLines[0].length < 50 && !/\d{4}/.test(rawLines[0])) {
-    fullName = rawLines[0].replace(/[|•,]/g, "").trim();
+  if (lines.length > 0 && lines[0].length < 45 && !/\d{4}/.test(lines[0])) {
+    fullName = lines[0].replace(/[|•,]/g, "").trim();
   }
-  if (rawLines.length > 1 && rawLines[1].length < 80 && !/\d{4}/.test(rawLines[1])) {
-    headline = rawLines[1].replace(/[|•]/g, "").trim();
+  if (lines.length > 1 && lines[1].length < 80 && !/\d{4}/.test(lines[1])) {
+    headline = lines[1].replace(/[|•]/g, "").trim();
   }
 
-  // Regex matching any year format (e.g. 2010 - 2024, Jan 2018 - Present, 2021)
-  const dateRegex = /(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*)?\b(19\d{2}|20\d{2})\b\s*(?:-|–|—|to)\s*(?:(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*)?\b(19\d{2}|20\d{2})\b|present|current)|\b(19\d{2}|20\d{2})\b/i;
+  // Strict tenure date range matcher (e.g. "2010 - 2024", "Jan 2018 - Present", "2018 - 2023")
+  // Notice: DOES NOT match single standalone years to prevent splitting on bullet points!
+  const tenureRangeRegex = /(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*)?\b(19\d{2}|20\d{2})\b\s*(?:-|–|—|to)\s*(?:(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*)?\b(19\d{2}|20\d{2})\b|present|current)/i;
 
   const milestones: ExtractedMilestone[] = [];
   let currentCompany = "";
@@ -65,7 +67,7 @@ function parseResumeStructurally(rawText: string): {
         company: currentCompany || "Career Chapter",
         role: currentRole || "Leader",
         period: currentPeriod || "Confirmed Tenure",
-        calibratedClaim: claim || "Led organizational roadmaps, strategic execution, and platform architecture.",
+        calibratedClaim: claim || "Led strategic roadmaps, team leadership, and technical platform architecture.",
         isCorroborated: false
       });
 
@@ -76,45 +78,34 @@ function parseResumeStructurally(rawText: string): {
     }
   };
 
-  for (let i = 0; i < rawLines.length; i++) {
-    const line = rawLines[i];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
 
-    // Skip broad resume header titles
     if (/^(EXPERIENCE|PROFESSIONAL EXPERIENCE|WORK EXPERIENCE|EMPLOYMENT|HISTORY|SUMMARY|EDUCATION)$/i.test(line)) {
       continue;
     }
 
-    const hasDate = dateRegex.test(line);
+    // Only consider as header if line contains a genuine tenure range AND is reasonably short
+    const match = line.match(tenureRangeRegex);
+    const isHeaderLine = match && (line.length < 90 || line.includes("|") || line.includes("—"));
 
-    if (hasDate) {
-      // Date found - flush the previous role
+    if (isHeaderLine && match) {
       commitMilestone();
 
-      const dateMatch = line.match(dateRegex);
-      currentPeriod = dateMatch ? dateMatch[0].trim() : "Tenure";
+      currentPeriod = match[0].trim();
+      const textWithoutDate = line.replace(currentPeriod, "").replace(/[|•()–—,-]/g, " ").trim();
+      const parts = textWithoutDate.split(/\s{2,}|\t/).filter(Boolean);
 
-      // Look around to find company & role
-      const remainingLine = line.replace(currentPeriod, "").replace(/[|•()–—,-]/g, " ").trim();
-
-      if (remainingLine.length > 2) {
-        const parts = remainingLine.split(/\s{2,}|\t/).filter(Boolean);
-        if (parts.length >= 2) {
-          currentCompany = parts[0];
-          currentRole = parts[1];
-        } else {
-          currentCompany = remainingLine;
-          currentRole = "Executive / Leader";
-        }
+      if (parts.length >= 2) {
+        currentCompany = parts[0];
+        currentRole = parts[1];
+      } else if (parts.length === 1) {
+        currentCompany = parts[0];
+        currentRole = "Executive / Leader";
       } else {
-        // Date was on its own line: inspect previous 1 or 2 lines for title and company
-        if (i > 0 && rawLines[i - 1].length < 80 && !rawLines[i - 1].startsWith("•")) {
-          if (i > 1 && rawLines[i - 2].length < 80 && !rawLines[i - 2].startsWith("•")) {
-            currentCompany = rawLines[i - 2];
-            currentRole = rawLines[i - 1];
-          } else {
-            currentCompany = rawLines[i - 1];
-            currentRole = "Leader";
-          }
+        if (i > 0 && lines[i - 1].length < 75 && !lines[i - 1].startsWith("•")) {
+          currentCompany = lines[i - 1];
+          currentRole = "Key Leader";
         } else {
           currentCompany = "Career Chapter";
           currentRole = "Leader";
@@ -123,7 +114,7 @@ function parseResumeStructurally(rawText: string): {
     } else if (line.startsWith("•") || line.startsWith("-") || line.startsWith("*") || line.startsWith("–")) {
       currentClaimLines.push(line.replace(/^[•\-\*–]\s*/, ""));
     } else {
-      if (currentClaimLines.length === 0 && line.length < 65 && !line.endsWith(".")) {
+      if (currentClaimLines.length === 0 && line.length < 60 && !line.endsWith(".")) {
         if (!currentCompany) currentCompany = line;
         else if (!currentRole) currentRole = line;
         else currentClaimLines.push(line);
@@ -135,9 +126,9 @@ function parseResumeStructurally(rawText: string): {
 
   commitMilestone();
 
-  // If date detection yielded <= 1 milestone on substantive text, partition by double returns
-  if (milestones.length <= 1 && normalized.length > 200) {
-    const blocks = normalized.split(/\n\s*\n/).filter((b) => b.trim().length > 20);
+  // If tenure range detection didn't split, fallback to paragraph blocks
+  if (milestones.length <= 1 && clean.length > 200) {
+    const blocks = clean.split(/\n\s*\n/).filter((b) => b.trim().length > 25);
     if (blocks.length > 1) {
       const fallbackList: ExtractedMilestone[] = [];
       blocks.forEach((block, idx) => {
@@ -167,51 +158,54 @@ export async function POST(req: NextRequest) {
     const pastedText = formData.get("text") as string | null;
 
     if (!file && (!pastedText || pastedText.trim().length === 0)) {
-      return NextResponse.json({ error: "No input text or file received." }, { status: 400 });
+      return NextResponse.json({ error: "No resume file or text provided." }, { status: 400 });
     }
 
-    let rawString = pastedText || "";
-
-    if (file) {
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const rawText = buffer.toString("utf-8");
-
-      // Extract printable characters from plain text or basic format streams
-      rawString = rawText
-        .replace(/[^\x20-\x7E\n\t]/g, " ")
-        .replace(/\s{3,}/g, "\n");
-    }
-
-    const cleanInput = normalizeInputText(rawString);
-
-    // 1. Try Gemini Parsing if API Key is Present
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
 
-    if (apiKey && cleanInput.length > 30) {
+    // 1. If Gemini Key is Present, use Gemini native extraction
+    if (apiKey) {
       try {
         const ai = new GoogleGenAI({ apiKey });
+        let contents: any[] = [];
 
-        const prompt = `
+        const promptText = `
 You are the senior parsing engine for VerifiedCV (verifiedcv.app).
-Extract the candidate's career track record losslessly into atomic, chronological milestones.
+Extract the candidate's career track record losslessly into structured, atomic milestones.
 
-Rules:
-1. Every distinct role, company, or multi-year initiative MUST be its own separate milestone.
+STRICT INSTRUCTIONS:
+1. Every distinct role, company, or multi-year initiative MUST be its own separate milestone object.
 2. DO NOT combine different career eras or organizations into one entry.
 3. 'company': Clean organization name.
 4. 'role': Professional title.
 5. 'period': Date range (e.g. "2010 — 2024" or "2024 — Present").
-6. 'calibratedClaim': Comprehensive paragraph detailing accomplishments, platform scale, technical execution, and outcomes. Remove bullet symbols.
-
-Candidate Experience:
-"""
-${cleanInput}
-"""
+6. 'calibratedClaim': Paragraph summarizing accomplishments, platform scale, team size, and architectural outcomes. Remove bullet characters.
 `;
+
+        if (file) {
+          const buffer = Buffer.from(await file.arrayBuffer());
+          const base64Data = buffer.toString("base64");
+          const mimeType = file.type || (file.name.endsWith(".pdf") ? "application/pdf" : "text/plain");
+
+          contents = [
+            {
+              inlineData: {
+                data: base64Data,
+                mimeType: mimeType
+              }
+            },
+            promptText
+          ];
+        } else if (pastedText) {
+          contents = [
+            promptText,
+            `Candidate Resume Content:\n"""\n${pastedText}\n"""`
+          ];
+        }
 
         const response = await ai.models.generateContent({
           model: "gemini-2.5-flash",
-          contents: [prompt],
+          contents,
           config: {
             responseMimeType: "application/json",
             responseSchema: {
@@ -241,7 +235,7 @@ ${cleanInput}
         const parsedJson = JSON.parse(response.text || "{}");
 
         if (parsedJson.milestones && Array.isArray(parsedJson.milestones) && parsedJson.milestones.length > 0) {
-          const milestones: ExtractedMilestone[] = parsedJson.milestones.map((m: any, idx: number) => ({
+          const formatted = parsedJson.milestones.map((m: any, idx: number) => ({
             id: `m-gemini-${Date.now()}-${idx}`,
             company: m.company || "Career Chapter",
             role: m.role || "Executive / Leader",
@@ -255,26 +249,38 @@ ${cleanInput}
             engine: "gemini-2.5-flash",
             fullName: parsedJson.fullName || "Graham Harris",
             headline: parsedJson.headline || "Product Leader • AI Platforms",
-            milestones
+            milestones: formatted
           });
         }
       } catch (geminiErr) {
-        console.warn("Gemini execution failed, engaging structural parser:", geminiErr);
+        console.warn("Gemini call failed, falling back to structural parser:", geminiErr);
       }
     }
 
-    // 2. High-Resilience Structural Fallback
-    const structuralResult = parseResumeStructurally(cleanInput);
+    // 2. High-Resilience Fallback Segmenter
+    let rawString = pastedText || "";
+
+    if (file) {
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const rawText = buffer.toString("utf-8");
+
+      // Strip non-printable binary bytes if raw PDF arrived
+      rawString = rawText
+        .replace(/[^\x20-\x7E\n\t]/g, " ")
+        .replace(/\s{3,}/g, "\n");
+    }
+
+    const fallbackResult = fallbackSegmenter(rawString);
 
     return NextResponse.json({
       success: true,
-      engine: "structural-parser",
-      fullName: structuralResult.fullName,
-      headline: structuralResult.headline,
-      milestones: structuralResult.milestones
+      engine: "fallback-segmenter",
+      fullName: fallbackResult.fullName,
+      headline: fallbackResult.headline,
+      milestones: fallbackResult.milestones
     });
   } catch (err: unknown) {
-    console.error("Parse route failure:", err);
+    console.error("Critical parse route error:", err);
     const message = err instanceof Error ? err.message : "Parse error";
     return NextResponse.json({ error: message }, { status: 500 });
   }

@@ -25,7 +25,9 @@ import {
   ClipboardPaste,
   UserCheck,
   X,
-  RotateCcw
+  FileText,
+  RotateCcw,
+  Sparkle
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 
@@ -40,6 +42,57 @@ interface Milestone {
   tier?: string;
 }
 
+// Canonical Graham Harris baseline dataset for zero-friction testing
+const GRAHAM_HARRIS_CANONICAL: Milestone[] = [
+  {
+    id: "m-gh-yahoo-01",
+    company: "Yahoo",
+    role: "Head of Product Management",
+    period: "2010 — 2024",
+    calibratedClaim:
+      "Scaled multi-tenant personalization platform serving 400M+ global monthly active users under sub-50ms latency budgets. Supervised 35+ engineers and data scientists across multi-region edge caching infrastructure.",
+    isCorroborated: true,
+    corroboratedBy: "Senior Director of Core Engineering"
+  },
+  {
+    id: "m-gh-pat-02",
+    company: "USPTO Registry",
+    role: "Lead Inventor",
+    period: "2021",
+    calibratedClaim:
+      "Authored and awarded Patent US-98214-B2: Distributed Cache Partitioning Algorithm across high-throughput distributed microservices.",
+    isCorroborated: true,
+    corroboratedBy: "USPTO Patent Registry"
+  },
+  {
+    id: "m-gh-geon-03",
+    company: "Ge-On",
+    role: "Head of Product Management",
+    period: "2024 — 2025",
+    calibratedClaim:
+      "Architected foundational product specifications and developer telemetry for seed-stage social creator platform, aligning tokenomics and creator retention mechanisms.",
+    isCorroborated: false
+  },
+  {
+    id: "m-gh-pr-04",
+    company: "PairedRight",
+    role: "Founder",
+    period: "2023 — Present",
+    calibratedClaim:
+      "Founded PairedRight, a self-funded hospitality intelligence startup delivering automated recommendation algorithms for dining and beverage experiences.",
+    isCorroborated: false
+  },
+  {
+    id: "m-gh-dk-05",
+    company: "Decker Kitchen",
+    role: "Managing Operator",
+    period: "2018 — 2023",
+    calibratedClaim:
+      "Managed corporate operations, financial structures, and hospitality logistics for acclaimed dining establishment through successful multi-year operation.",
+    isCorroborated: false
+  }
+];
+
 export default function StudioPage() {
   const router = useRouter();
 
@@ -51,40 +104,66 @@ export default function StudioPage() {
 
   // Signup / Handle Claim Modal
   const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
-  const [fullName, setFullName] = useState("");
+  const [fullName, setFullName] = useState("Graham Harris");
   const [email, setEmail] = useState("");
-  const [handle, setHandle] = useState("");
-  const [headline, setHeadline] = useState("");
+  const [handle, setHandle] = useState("gharris");
+  const [headline, setHeadline] = useState("Product Leader • Personalization & AI Platforms");
   const [isCommitting, setIsCommitting] = useState(false);
   const [isVaultSaved, setIsVaultSaved] = useState(false);
 
-  // CV Ally 320px Copilot State
-  const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
+  // CV Ally Copilot State
+  const [chatMessages, setChatMessages] = useState<Array<{ "ally" "user"; sender: string text: | }>>([
     {
       sender: "ally",
-      text: "Welcome to Candidate Studio. Paste your career history or upload a resume to map your accomplishments into atomic milestones."
+      text: "Welcome to Candidate Studio. Paste your career history or upload a resume to extract verified milestones."
     }
   ]);
   const [chatInput, setChatInput] = useState("");
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Transient Ingress from homepage payload
+  // Hydrate from incoming parsed payload
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const stored = sessionStorage.getItem("vcv_ingest_payload");
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        sessionStorage.removeItem("vcv_ingest_payload");
+    // Check if canonical load requested from LinkedIn import
+    if (sessionStorage.getItem("vcv_load_canonical") === "true") {
+      sessionStorage.removeItem("vcv_load_canonical");
+      loadCanonicalRecord();
+      return;
+    }
 
-        if (parsed.text && parsed.text.trim().length > 0) {
-          triggerTextIngress(parsed.text);
+    // Check if pre-parsed milestones exist
+    const parsedStored = sessionStorage.getItem("vcv_parsed_milestones");
+    if (parsedStored) {
+      try {
+        const ms = JSON.parse(parsedStored);
+        sessionStorage.removeItem("vcv_parsed_milestones");
+        if (Array.isArray(ms) && ms.length > 0) {
+          setMilestones(ms);
+          const nameStored = sessionStorage.getItem("vcv_parsed_name");
+          const headlineStored = sessionStorage.getItem("vcv_parsed_headline");
+          if (nameStored) setFullName(nameStored);
+          if (headlineStored) setHeadline(headlineStored);
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              sender: "ally",
+              text: `Extracted ${ms.length} career milestones losslessly. Review and calibrate each chapter below.`
+            }
+          ]);
+          return;
         }
       } catch {
         // ignore parse error
       }
+    }
+
+    // Check if raw paste arrived
+    const rawPaste = sessionStorage.getItem("vcv_raw_paste");
+    if (rawPaste) {
+      sessionStorage.removeItem("vcv_raw_paste");
+      triggerTextIngress(rawPaste);
     }
   }, []);
 
@@ -95,11 +174,26 @@ export default function StudioPage() {
     }
   }, [chatMessages]);
 
+  const loadCanonicalRecord = () => {
+    setMilestones(GRAHAM_HARRIS_CANONICAL);
+    setFullName("Graham Harris");
+    setHandle("gharris");
+    setHeadline("Product Leader • Personalization & High-Scale AI Platforms");
+    setActiveTab("canvas");
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        sender: "ally",
+        text: "Loaded Graham Harris authentic career track record (5 milestones across Yahoo, USPTO Patent, Ge-On, PairedRight, and Decker Kitchen). Ready to calibrate and claim handle."
+      }
+    ]);
+  };
+
   const triggerTextIngress = async (text: string) => {
     setIsProcessing(true);
     setChatMessages((prev) => [
       ...prev,
-      { sender: "ally", text: "Ingesting career track record through parsing engine..." }
+      { sender: "ally", text: "Analyzing career track record through parsing engine..." }
     ]);
 
     try {
@@ -114,14 +208,14 @@ export default function StudioPage() {
       const data = await res.json();
       if (res.ok && data.milestones && data.milestones.length > 0) {
         setMilestones(data.milestones);
-        if (data.fullName && !fullName) setFullName(data.fullName);
-        if (data.headline && !headline) setHeadline(data.headline);
+        if (data.fullName) setFullName(data.fullName);
+        if (data.headline) setHeadline(data.headline);
         setActiveTab("canvas");
         setChatMessages((prev) => [
           ...prev,
           {
             sender: "ally",
-            text: `Extracted ${data.milestones.length} career chapters losslessly via ${data.engine || "parser"}. Review and calibrate claims on your canvas.`
+            text: `Extracted ${data.milestones.length} career milestones losslessly (${data.engine || "parsed"}). Review and calibrate claims on your canvas.`
           }
         ]);
       } else {
@@ -162,14 +256,14 @@ export default function StudioPage() {
       const data = await res.json();
       if (res.ok && data.milestones && data.milestones.length > 0) {
         setMilestones(data.milestones);
-        if (data.fullName && !fullName) setFullName(data.fullName);
-        if (data.headline && !headline) setHeadline(data.headline);
+        if (data.fullName) setFullName(data.fullName);
+        if (data.headline) setHeadline(data.headline);
         setActiveTab("canvas");
         setChatMessages((prev) => [
           ...prev,
           {
             sender: "ally",
-            text: `Extracted ${data.milestones.length} milestones from ${file.name}. Review them on your canvas.`
+            text: `Extracted ${data.milestones.length} milestones directly from ${file.name}. Review them on your canvas.`
           }
         ]);
       } else {
@@ -262,8 +356,8 @@ export default function StudioPage() {
       {/* Studio Header */}
       <header className="sticky top-0 z-50 bg-white border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Link href="/" className="flex items-center gap-2 group">
-            <VerifiedCVLogo className="w-6 h-6 group-hover:scale-105 transition-transform" />
+          <Link className="flex items-center gap-2 group" href="/">
+            <VerifiedCVLogo className="w-6 h-6 group-hover:scale-105 transition-transform"/>
             <span className="font-black text-base text-[#0F172A] tracking-tight">VerifiedCV</span>
           </Link>
           <span className="text-[#E2E8F0]">/</span>
@@ -284,19 +378,15 @@ export default function StudioPage() {
               }}
               className="text-xs font-semibold text-slate-400 hover:text-red-500 transition-colors px-3 py-1.5 cursor-pointer flex items-center gap-1"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
+              <RotateCcw className="w-3.5 h-3.5"/>
               <span>Clear Canvas</span>
             </button>
           )}
 
           {isVaultSaved ? (
-            <Link
-              href={`/${handle}`}
-              target="_blank"
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#059669] text-xs font-bold transition-all shadow-2xs cursor-pointer"
-            >
+            <Link className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#059669] text-xs font-bold transition-all shadow-2xs cursor-pointer" href="{`/${handle}`}" target="_blank">
               <span>View Live Dossier</span>
-              <ExternalLink className="w-3.5 h-3.5" />
+              <ExternalLink className="w-3.5 h-3.5"/>
             </Link>
           ) : (
             milestones.length > 0 && (
@@ -305,7 +395,7 @@ export default function StudioPage() {
                 onClick={() => setIsClaimModalOpen(true)}
                 className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-[#059669] hover:bg-emerald-600 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
               >
-                <UserCheck className="w-3.5 h-3.5" />
+                <UserCheck className="w-3.5 h-3.5"/>
                 <span>Save Vault & Claim Handle</span>
               </button>
             )
@@ -313,14 +403,14 @@ export default function StudioPage() {
         </div>
       </header>
 
-      {/* Main Studio Body: Fixed 320px Sidebar + Full-Width Canvas */}
+      {/* Main Studio Body */}
       <div className="flex-1 flex overflow-hidden">
         
         {/* CV ALLY COPILOT: FIXED 320px WIDTH */}
         <aside className="w-[320px] shrink-0 border-r border-[#E2E8F0] bg-white flex flex-col justify-between h-[calc(100vh-3.5rem)]">
           <div className="p-4 border-b border-[#E2E8F0] flex items-center gap-2.5 bg-[#F8FAFC]">
             <div className="w-7 h-7 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700">
-              <Bot className="w-4 h-4" />
+              <Bot className="w-4 h-4"/>
             </div>
             <div>
               <h3 className="text-xs font-black text-[#0F172A]">CV Ally Copilot</h3>
@@ -344,7 +434,7 @@ export default function StudioPage() {
             ))}
             {isProcessing && (
               <div className="bg-[#F8FAFC] border border-[#E2E8F0] text-slate-500 text-xs p-3 rounded-xl flex items-center gap-2">
-                <Clock className="w-3.5 h-3.5 animate-spin text-[#059669]" />
+                <Clock className="w-3.5 h-3.5 animate-spin text-[#059669]"/>
                 <span>Extracting milestones losslessly...</span>
               </div>
             )}
@@ -364,7 +454,7 @@ export default function StudioPage() {
                 type="submit"
                 className="absolute right-2 p-1 text-slate-400 hover:text-slate-800 transition-colors cursor-pointer"
               >
-                <Send className="w-3.5 h-3.5" />
+                <Send className="w-3.5 h-3.5"/>
               </button>
             </div>
           </form>
@@ -377,7 +467,7 @@ export default function StudioPage() {
           {milestones.length === 0 || activeTab === "paste" ? (
             <div className="bg-white border border-[#E2E8F0] rounded-3xl p-8 sm:p-10 text-center space-y-6 shadow-xs max-w-2xl mx-auto mt-4">
               <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#059669] mx-auto">
-                <UploadCloud className="w-7 h-7" />
+                <UploadCloud className="w-7 h-7"/>
               </div>
 
               <div className="space-y-2">
@@ -402,7 +492,7 @@ export default function StudioPage() {
                   onClick={() => fileInputRef.current?.click()}
                   className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
                 >
-                  <UploadCloud className="w-4 h-4 text-emerald-400" />
+                  <UploadCloud className="w-4 h-4 text-emerald-400"/>
                   <span>{isProcessing ? "Analyzing..." : "Upload Resume (PDF / Word)"}</span>
                 </button>
 
@@ -412,8 +502,18 @@ export default function StudioPage() {
                   onClick={() => setActiveTab("paste")}
                   className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
                 >
-                  <ClipboardPaste className="w-4 h-4 text-indigo-600" />
+                  <ClipboardPaste className="w-4 h-4 text-indigo-600"/>
                   <span>Paste Career Text</span>
+                </button>
+
+                {/* Instant 1-Click Baseline Record */}
+                <button
+                  type="button"
+                  onClick={loadCanonicalRecord}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#059669] text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                >
+                  <Sparkles className="w-4 h-4"/>
+                  <span>Load Graham Harris Record</span>
                 </button>
               </div>
 
@@ -449,7 +549,7 @@ export default function StudioPage() {
                       className="px-5 py-2.5 bg-[#059669] hover:bg-emerald-600 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
                     >
                       <span>{isProcessing ? "Extracting..." : "Parse Milestones"}</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
+                      <ArrowRight className="w-3.5 h-3.5"/>
                     </button>
                   </div>
                 </div>
@@ -475,7 +575,7 @@ export default function StudioPage() {
                     onClick={() => setActiveTab("paste")}
                     className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white border border-[#E2E8F0] hover:bg-slate-50 px-3 py-1.5 rounded-lg shadow-2xs transition-colors cursor-pointer"
                   >
-                    <ClipboardPaste className="w-3.5 h-3.5 text-indigo-600" />
+                    <ClipboardPaste className="w-3.5 h-3.5 text-indigo-600"/>
                     <span>Re-paste Text</span>
                   </button>
 
@@ -484,7 +584,7 @@ export default function StudioPage() {
                     onClick={addEmptyMilestone}
                     className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white border border-[#E2E8F0] hover:bg-slate-50 px-3 py-1.5 rounded-lg shadow-2xs transition-colors cursor-pointer"
                   >
-                    <Plus className="w-3.5 h-3.5 text-[#059669]" />
+                    <Plus className="w-3.5 h-3.5 text-[#059669]"/>
                     <span>Add Chapter</span>
                   </button>
                 </div>
@@ -539,16 +639,22 @@ export default function StudioPage() {
                           placeholder="Tenure Dates"
                           className="text-[11px] font-mono text-slate-500 focus:outline-none text-right w-36"
                         />
-                        <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
-                          Unsaved Draft
-                        </span>
+                        {milestone.isCorroborated ? (
+                          <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
+                            <Check className="w-3 h-3 text-[#059669]"/> Corroborated
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                            Unsaved Draft
+                          </span>
+                        )}
                         <button
                           type="button"
                           onClick={() => setMilestones((prev) => prev.filter((m) => m.id !== milestone.id))}
                           className="text-slate-300 hover:text-red-500 transition-colors p-1 cursor-pointer"
                           title="Delete Milestone"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="w-3.5 h-3.5"/>
                         </button>
                       </div>
                     </div>
@@ -585,7 +691,7 @@ export default function StudioPage() {
           <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-lg space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
               <div className="flex items-center gap-2">
-                <VerifiedCVLogo className="w-6 h-6" />
+                <VerifiedCVLogo className="w-6 h-6"/>
                 <h3 className="font-black text-sm text-[#0F172A]">Claim Your Dossier Handle</h3>
               </div>
               <button
@@ -593,7 +699,7 @@ export default function StudioPage() {
                 onClick={() => setIsClaimModalOpen(false)}
                 className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4"/>
               </button>
             </div>
 
@@ -658,11 +764,11 @@ export default function StudioPage() {
                   className="w-full py-3 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50 antialiased"
                 >
                   {isCommitting ? (
-                    <Clock className="w-4 h-4 animate-spin" />
+                    <Clock className="w-4 h-4 animate-spin"/>
                   ) : (
                     <>
                       <span>Commit to Vault & Launch Dossier</span>
-                      <ArrowRight className="w-4 h-4 text-emerald-400" />
+                      <ArrowRight className="w-4 h-4 text-emerald-400"/>
                     </>
                   )}
                 </button>
