@@ -110,7 +110,7 @@ export default function StudioPage() {
   const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
     {
       sender: "ally",
-      text: "Welcome to Candidate Studio. Paste your career history or upload a resume to extract verified milestones."
+      text: "Welcome to Candidate Studio. Paste your career history or upload your resume to extract atomic milestones."
     }
   ]);
   const [chatInput, setChatInput] = useState("");
@@ -174,7 +174,7 @@ export default function StudioPage() {
       ...prev,
       {
         sender: "ally",
-        text: "Loaded Graham Harris authentic career track record (5 milestones across Yahoo, USPTO Patent, Ge-On, PairedRight, and Decker Kitchen). Ready to calibrate and claim handle."
+        text: "Loaded Graham Harris authentic career track record (Yahoo, USPTO Patent, Ge-On, PairedRight, and Decker Kitchen). Ready to calibrate and claim handle."
       }
     ]);
   };
