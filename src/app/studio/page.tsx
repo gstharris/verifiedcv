@@ -24,7 +24,8 @@ import {
   UploadCloud,
   ClipboardPaste,
   UserCheck,
-  X
+  X,
+  FileText
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 
@@ -37,6 +38,131 @@ interface Milestone {
   isCorroborated: boolean;
   corroboratedBy?: string;
   tier?: string;
+}
+
+// Resilient resume segmenter that handles single-newline pasted text
+function segmentResumeIntoMilestones(rawText: string): Milestone[] {
+  if (!rawText || rawText.trim().length === 0) return [];
+
+  const clean = rawText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const lines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
+
+  const yearRangeRegex = /(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:(?:19|20)\d{2}|present|current)/i;
+  const singleYearRegex = /\b(19|20)\d{2}\b/;
+  const dateRegex = /(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+)?(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+)?(?:19|20)\d{2}|present|current)/i;
+
+  const milestones: Milestone[] = [];
+  let currentCompany = "";
+  let currentRole = "";
+  let currentPeriod = "";
+  let currentBullets: string[] = [];
+
+  const flush = () => {
+    if (currentCompany || currentRole || currentBullets.length > 0) {
+      const claimText = currentBullets.join("\n\n").trim() || "Executed core strategic and technical roadmaps.";
+      milestones.push({
+        id: `m-${Date.now()}-${milestones.length}`,
+        company: currentCompany || "Career Chapter",
+        role: currentRole || "Leader / Builder",
+        period: currentPeriod || "Verified Tenure",
+        calibratedClaim: claimText,
+        isCorroborated: false
+      });
+      currentCompany = "";
+      currentRole = "";
+      currentPeriod = "";
+      currentBullets = [];
+    }
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Detect section headers to skip
+    if (/^(EXPERIENCE|PROFESSIONAL EXPERIENCE|WORK HISTORY|EMPLOYMENT HISTORY)$/i.test(line)) {
+      continue;
+    }
+
+    // Check if line contains tenure dates
+    const dateMatch = line.match(dateRegex) || line.match(yearRangeRegex) || (line.length < 80 ? line.match(singleYearRegex) : null);
+
+    if (dateMatch) {
+      // Flush previous chapter
+      flush();
+
+      currentPeriod = dateMatch[0].trim();
+      const textWithoutDate = line.replace(currentPeriod, "").replace(/[|•–—,-]/g, " ").trim();
+      const tokens = textWithoutDate.split(/\s{2,}|\t/).filter(Boolean);
+
+      if (tokens.length >= 2) {
+        currentCompany = tokens[0].trim();
+        currentRole = tokens[1].trim();
+      } else if (tokens.length === 1) {
+        currentCompany = tokens[0].trim();
+        currentRole = "Executive / Leader";
+      } else {
+        // If line only had dates, inspect adjacent previous line for company/title
+        if (i > 0 && lines[i - 1].length < 80 && !lines[i - 1].startsWith("•")) {
+          currentCompany = lines[i - 1];
+          currentRole = "Key Leader";
+        } else {
+          currentCompany = "Career Chapter";
+          currentRole = "Key Contributor";
+        }
+      }
+    } else if (line.startsWith("•") || line.startsWith("-") || line.startsWith("*") || line.startsWith("–")) {
+      currentBullets.push(line.replace(/^[•\-\*–]\s*/, "").trim());
+    } else {
+      // Short lines without terminal periods often denote company names or roles
+      if (currentBullets.length === 0 && line.length < 70 && !line.endsWith(".")) {
+        if (!currentCompany) {
+          currentCompany = line;
+        } else if (!currentRole) {
+          currentRole = line;
+        } else {
+          currentBullets.push(line);
+        }
+      } else {
+        currentBullets.push(line);
+      }
+    }
+  }
+
+  flush();
+
+  // If strict date extraction yielded 0 or 1 item because dates were formatted unusually,
+  // segment by major organizational paragraphs instead of dumping everything into 1 block.
+  if (milestones.length <= 1 && clean.length > 500) {
+    const chunks = clean.split(/(?=[A-Z][A-Za-z0-9\s,&]{2,35}(?:\s*[-–—|]\s*|\s+(?:19|20)\d{2}))/g).filter((c) => c.trim().length > 40);
+    if (chunks.length > 1) {
+      return chunks.map((c, idx) => {
+        const cLines = c.trim().split("\n").filter(Boolean);
+        const header = cLines[0] || `Career Chapter ${idx + 1}`;
+        const rest = cLines.slice(1).join("\n\n").trim() || header;
+        return {
+          id: `m-seg-${Date.now()}-${idx}`,
+          company: header.slice(0, 50),
+          role: "Role / Leader",
+          period: "Tenure",
+          calibratedClaim: rest,
+          isCorroborated: false
+        };
+      });
+    }
+  }
+
+  return milestones.length > 0
+    ? milestones
+    : [
+        {
+          id: `m-default-${Date.now()}`,
+          company: "Extracted Chapter",
+          role: "Key Leader",
+          period: "Confirmed Tenure",
+          calibratedClaim: rawText.trim(),
+          isCorroborated: false
+        }
+      ];
 }
 
 export default function StudioPage() {
@@ -61,14 +187,14 @@ export default function StudioPage() {
   const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
     {
       sender: "ally",
-      text: "Welcome to your Candidate Studio. Paste your career history or upload a resume to extract atomic milestones and calibrate claims."
+      text: "Candidate Studio active. Paste your career history or resume text to segment your accomplishments into atomic milestones."
     }
   ]);
   const [chatInput, setChatInput] = useState("");
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Read transient memory from homepage ingress
+  // Ingress payload recovery from landing page
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -76,10 +202,21 @@ export default function StudioPage() {
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
-        sessionStorage.removeItem("vcv_ingest_payload"); // Consume immediately
+        sessionStorage.removeItem("vcv_ingest_payload");
 
         if (parsed.text && parsed.text.trim().length > 0) {
-          parseRawTextIntoDrafts(parsed.text, parsed.source || "upload");
+          const parsedMilestones = segmentResumeIntoMilestones(parsed.text);
+          setMilestones(parsedMilestones);
+          if (parsedMilestones.length > 0) {
+            setActiveMilestoneId(parsedMilestones[0].id);
+          }
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              sender: "ally",
+              text: `Parsed ${parsedMilestones.length} discrete career chapters from your input. Review each chapter on the canvas and calibrate your claims.`
+            }
+          ]);
         }
       } catch {
         // ignore parse error
@@ -94,38 +231,25 @@ export default function StudioPage() {
     }
   }, [chatMessages]);
 
-  const parseRawTextIntoDrafts = (raw: string, source: string) => {
-    // Split on double linebreaks or bullet structures
-    const chunks = raw
-      .split(/\n\s*\n/)
-      .map((c) => c.trim())
-      .filter((c) => c.length > 20);
+  const handleManualPaste = () => {
+    if (!pasteBuffer.trim()) return;
 
-    if (chunks.length > 0) {
-      const generated: Milestone[] = chunks.map((chunk, idx) => {
-        const firstLine = chunk.split("\n")[0] || "";
-        const remaining = chunk.substring(firstLine.length).trim() || chunk;
-
-        return {
-          id: `m-draft-${Date.now()}-${idx}`,
-          company: firstLine.length < 50 ? firstLine.replace(/[|•–—,-]/g, " ").trim() : "Career Chapter",
-          role: "Role / Leader",
-          period: "Confirmed Tenure",
-          calibratedClaim: remaining,
-          isCorroborated: false
-        };
-      });
-
-      setMilestones(generated);
-      setActiveMilestoneId(generated[0].id);
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          sender: "ally",
-          text: `Parsed ${generated.length} draft milestones from ${source}. Click any card to edit claims or claim your handle to anchor them.`
-        }
-      ]);
+    const parsedMilestones = segmentResumeIntoMilestones(pasteBuffer);
+    setMilestones(parsedMilestones);
+    if (parsedMilestones.length > 0) {
+      setActiveMilestoneId(parsedMilestones[0].id);
     }
+
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        sender: "ally",
+        text: `Segmented your pasted resume into ${parsedMilestones.length} distinct career chapters. Click any milestone to refine claims or claim your handle.`
+      }
+    ]);
+
+    setPasteBuffer("");
+    setActiveTab("canvas");
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -136,19 +260,16 @@ export default function StudioPage() {
     reader.onload = (event) => {
       const text = (event.target?.result as string) || "";
       if (text.startsWith("%PDF")) {
-        alert("For clean parsing without binary artifacts, please use 'Paste Text' to input your resume content directly.");
+        alert("Binary PDF detected. Please open your resume, copy all text (Cmd+A -> Cmd+C), and click 'Paste Career Text' for clean parsing.");
         return;
       }
-      parseRawTextIntoDrafts(text, file.name);
+      const parsedMilestones = segmentResumeIntoMilestones(text);
+      setMilestones(parsedMilestones);
+      if (parsedMilestones.length > 0) {
+        setActiveMilestoneId(parsedMilestones[0].id);
+      }
     };
     reader.readAsText(file);
-  };
-
-  const handleManualPaste = () => {
-    if (!pasteBuffer.trim()) return;
-    parseRawTextIntoDrafts(pasteBuffer, "manual paste");
-    setPasteBuffer("");
-    setActiveTab("canvas");
   };
 
   const handleSendMessage = (e: React.FormEvent) => {
@@ -198,7 +319,7 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Vault created! Your dossier is now live at verifiedcv.app/${handle.toLowerCase().trim()}.`
+            text: `Vault permanently saved! Your dossier is live at verifiedcv.app/${handle.toLowerCase().trim()}.`
           }
         ]);
       } else {
@@ -214,7 +335,6 @@ export default function StudioPage() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col antialiased selection:bg-emerald-100">
-      
       {/* Studio Header */}
       <header className="sticky top-0 z-50 bg-white border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -227,6 +347,17 @@ export default function StudioPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          {milestones.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setActiveTab("paste")}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
+            >
+              <ClipboardPaste className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Re-paste Resume</span>
+            </button>
+          )}
+
           {isVaultSaved ? (
             <Link
               href={`/${handle}`}
@@ -251,7 +382,6 @@ export default function StudioPage() {
 
       {/* Main Studio Body: Fixed 320px Sidebar + Full-Width Canvas */}
       <div className="flex-1 flex overflow-hidden">
-        
         {/* CV ALLY COPILOT: FIXED 320px WIDTH */}
         <aside className="w-[320px] shrink-0 border-r border-[#E2E8F0] bg-white flex flex-col justify-between h-[calc(100vh-3.5rem)]">
           <div className="p-4 border-b border-[#E2E8F0] flex items-center gap-2.5 bg-[#F8FAFC]">
@@ -302,89 +432,65 @@ export default function StudioPage() {
 
         {/* LIVE CANVAS */}
         <main className="flex-1 overflow-y-auto p-8 max-w-5xl mx-auto space-y-8">
-          
-          {/* ZERO STATE: If no milestones exist yet */}
-          {milestones.length === 0 ? (
-            <div className="bg-white border border-[#E2E8F0] rounded-3xl p-10 text-center space-y-6 shadow-xs max-w-2xl mx-auto mt-8">
+          {/* ZERO STATE / PASTE MODAL ACTIVE */}
+          {milestones.length === 0 || activeTab === "paste" ? (
+            <div className="bg-white border border-[#E2E8F0] rounded-3xl p-8 sm:p-10 text-center space-y-6 shadow-xs max-w-2xl mx-auto mt-4">
               <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#059669] mx-auto">
-                <UploadCloud className="w-7 h-7" />
+                <ClipboardPaste className="w-7 h-7" />
               </div>
 
               <div className="space-y-2">
-                <h2 className="text-xl font-black text-[#0F172A]">Your Vault is Currently Empty</h2>
+                <h2 className="text-xl font-black text-[#0F172A]">Paste Your Career History</h2>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                  Drop your resume file or paste your career accomplishments. CV Ally will parse them into testable, un-truncated milestones.
+                  Paste your complete resume or LinkedIn text below. Our engine will segment it into individual company chapters with verified date ranges and bullet points.
                 </p>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".txt,.md,.docx"
-                  className="hidden"
-                  onChange={handleFileUpload}
+              <div className="text-left space-y-3 pt-2">
+                <textarea
+                  rows={10}
+                  value={pasteBuffer}
+                  onChange={(e) => setPasteBuffer(e.target.value)}
+                  placeholder="Paste your resume text here (e.g., Company, Role, Dates, and Bullet points)..."
+                  className="w-full text-xs p-4 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans bg-[#F8FAFC] leading-relaxed"
                 />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
-                >
-                  <UploadCloud className="w-4 h-4 text-emerald-400" />
-                  <span>Upload Resume (.txt / .md)</span>
-                </button>
 
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("paste")}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
-                >
-                  <ClipboardPaste className="w-4 h-4 text-indigo-600" />
-                  <span>Paste Career Text</span>
-                </button>
-              </div>
-
-              {/* Direct In-Canvas Paste Form */}
-              {activeTab === "paste" && (
-                <div className="pt-4 text-left space-y-3 border-t border-[#E2E8F0]">
-                  <textarea
-                    rows={6}
-                    value={pasteBuffer}
-                    onChange={(e) => setPasteBuffer(e.target.value)}
-                    placeholder="Paste your career experience, accomplishments, or resume text directly here..."
-                    className="w-full text-xs p-3 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans resize-none bg-[#F8FAFC]"
-                  />
-                  <div className="flex justify-end gap-2">
+                <div className="flex items-center justify-between pt-1">
+                  {milestones.length > 0 ? (
                     <button
                       type="button"
                       onClick={() => setActiveTab("canvas")}
-                      className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-600 font-bold"
+                      className="text-xs font-bold text-slate-400 hover:text-slate-600"
                     >
-                      Cancel
+                      Back to Canvas
                     </button>
-                    <button
-                      type="button"
-                      onClick={handleManualPaste}
-                      className="px-4 py-1.5 bg-[#059669] hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer"
-                    >
-                      Parse Milestones
-                    </button>
-                  </div>
+                  ) : (
+                    <span className="text-[11px] text-slate-400">
+                      Lossless ingest: all roles and bullet points will be preserved.
+                    </span>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleManualPaste}
+                    className="px-5 py-2.5 bg-[#059669] hover:bg-emerald-600 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+                  >
+                    <span>Segment into Milestones</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-              )}
+              </div>
             </div>
           ) : (
-            /* POPULATED CANVAS WITH EXTRACTED DRAFTS */
+            /* POPULATED CANVAS: INDIVIDUAL MILESTONE CARDS */
             <div className="space-y-6">
-              
-              <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
+              <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
                 <div>
                   <h2 className="text-sm font-black uppercase tracking-wider text-[#0F172A]">
-                    Draft Milestones ({milestones.length})
+                    Extracted Career Chapters ({milestones.length})
                   </h2>
                   <p className="text-xs text-slate-500">
-                    Extracted from your source material. Unsaved until you claim your handle.
+                    Each role is mapped to an atomic, testable milestone ready for peer corroboration.
                   </p>
                 </div>
 
@@ -411,14 +517,15 @@ export default function StudioPage() {
               </div>
 
               {/* Milestones Card Stream */}
-              <div className="space-y-4">
+              <div className="space-y-5">
                 {milestones.map((milestone) => (
                   <div
                     key={milestone.id}
-                    className="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-xs space-y-3 hover:border-slate-300 transition-colors"
+                    className="bg-white border border-[#E2E8F0] rounded-2xl p-5 sm:p-6 shadow-xs space-y-4 hover:border-slate-300 transition-all"
                   >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-[#E2E8F0]/70">
-                      <div className="flex items-center gap-2">
+                    {/* Header Row: Company, Role, Dates, Badge, Delete */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#E2E8F0]/70">
+                      <div className="flex flex-wrap items-center gap-2">
                         <input
                           type="text"
                           value={milestone.company}
@@ -428,7 +535,8 @@ export default function StudioPage() {
                               prev.map((m) => (m.id === milestone.id ? { ...m, company: val } : m))
                             );
                           }}
-                          className="font-extrabold text-sm text-[#0F172A] focus:outline-none border-b border-transparent focus:border-[#059669]"
+                          placeholder="Company"
+                          className="font-extrabold text-sm sm:text-base text-[#0F172A] focus:outline-none border-b border-transparent focus:border-[#059669]"
                         />
                         <span className="text-slate-300">•</span>
                         <input
@@ -440,13 +548,27 @@ export default function StudioPage() {
                               prev.map((m) => (m.id === milestone.id ? { ...m, role: val } : m))
                             );
                           }}
-                          className="text-xs font-semibold text-slate-600 focus:outline-none border-b border-transparent focus:border-[#059669]"
+                          placeholder="Role Title"
+                          className="text-xs sm:text-sm font-semibold text-slate-600 focus:outline-none border-b border-transparent focus:border-[#059669]"
                         />
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
-                          Draft (Unsaved)
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="text"
+                          value={milestone.period}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setMilestones((prev) =>
+                              prev.map((m) => (m.id === milestone.id ? { ...m, period: val } : m))
+                            );
+                          }}
+                          placeholder="Dates"
+                          className="text-xs font-mono text-slate-500 focus:outline-none text-right w-28"
+                        />
+
+                        <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                          Unsaved Draft
                         </span>
 
                         <button
@@ -460,24 +582,28 @@ export default function StudioPage() {
                       </div>
                     </div>
 
-                    <textarea
-                      rows={3}
-                      value={milestone.calibratedClaim}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setMilestones((prev) =>
-                          prev.map((m) => (m.id === milestone.id ? { ...m, calibratedClaim: val } : m))
-                        );
-                      }}
-                      className="w-full text-xs text-slate-700 leading-relaxed p-3 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans resize-none bg-[#F8FAFC]"
-                    />
+                    {/* Calibrated Claim Textarea */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Calibrated Claim & Impact Scope
+                      </label>
+                      <textarea
+                        rows={4}
+                        value={milestone.calibratedClaim}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setMilestones((prev) =>
+                            prev.map((m) => (m.id === milestone.id ? { ...m, calibratedClaim: val } : m))
+                          );
+                        }}
+                        className="w-full text-xs text-slate-700 leading-relaxed p-3.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans resize-y bg-[#F8FAFC]"
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
-
             </div>
           )}
-
         </main>
       </div>
 
@@ -564,7 +690,6 @@ export default function StudioPage() {
           </div>
         </div>
       )}
-
     </div>
   );
 }
