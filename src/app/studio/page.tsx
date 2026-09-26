@@ -63,7 +63,7 @@ export default function StudioPage() {
   const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
     {
       sender: "ally",
-      text: "Welcome to Candidate Studio. Upload your resume or paste your career text to extract verified milestones via Gemini."
+      text: "Welcome to Candidate Studio. Paste your career history or drop a resume file to parse your achievements into verifiable milestones."
     }
   ]);
   const [chatInput, setChatInput] = useState("");
@@ -100,7 +100,7 @@ export default function StudioPage() {
     setIsProcessing(true);
     setChatMessages((prev) => [
       ...prev,
-      { sender: "ally", text: "Processing career history with Gemini extraction engine..." }
+      { sender: "ally", text: "Ingesting career history through parsing engine..." }
     ]);
 
     try {
@@ -113,7 +113,7 @@ export default function StudioPage() {
       });
 
       const data = await res.json();
-      if (res.ok && data.milestones) {
+      if (res.ok && data.milestones && data.milestones.length > 0) {
         setMilestones(data.milestones);
         if (data.fullName && !fullName) setFullName(data.fullName);
         if (data.headline && !headline) setHeadline(data.headline);
@@ -148,7 +148,7 @@ export default function StudioPage() {
 
     setChatMessages((prev) => [
       ...prev,
-      { sender: "ally", text: `Uploading and analyzing ${file.name} via Gemini multimodal parser...` }
+      { sender: "ally", text: `Analyzing ${file.name} through multimodal parsing pipeline...` }
     ]);
 
     try {
@@ -161,7 +161,7 @@ export default function StudioPage() {
       });
 
       const data = await res.json();
-      if (res.ok && data.milestones) {
+      if (res.ok && data.milestones && data.milestones.length > 0) {
         setMilestones(data.milestones);
         if (data.fullName && !fullName) setFullName(data.fullName);
         if (data.headline && !headline) setHeadline(data.headline);
@@ -196,7 +196,7 @@ export default function StudioPage() {
         ...prev,
         {
           sender: "ally",
-          text: `Calibrated metric boundaries. Once you commit your Vault, this milestone will be ready for role-masked peer corroboration.`
+          text: `Calibrated metric boundaries. Once you save to your Vault, this milestone will be ready for role-masked peer corroboration.`
         }
       ]);
     }, 600);
@@ -314,10 +314,10 @@ export default function StudioPage() {
         </div>
       </header>
 
-      {/* Main Studio Body: Fixed 320px Sidebar + Full-Width Canvas */}
+      {/* Main Studio Body */}
       <div className="flex-1 flex overflow-hidden">
         
-        {/* CV ALLY COPILOT: FIXED 320px WIDTH */}
+        {/* CV Ally Copilot: Fixed 320px Width */}
         <aside className="w-[320px] shrink-0 border-r border-[#E2E8F0] bg-white flex flex-col justify-between h-[calc(100vh-3.5rem)]">
           <div className="p-4 border-b border-[#E2E8F0] flex items-center gap-2.5 bg-[#F8FAFC]">
             <div className="w-7 h-7 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700">
@@ -329,7 +329,6 @@ export default function StudioPage() {
             </div>
           </div>
 
-          {/* Chat Stream */}
           <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
             {chatMessages.map((msg, idx) => (
               <div
@@ -346,12 +345,11 @@ export default function StudioPage() {
             {isProcessing && (
               <div className="bg-[#F8FAFC] border border-[#E2E8F0] text-slate-500 text-xs p-3 rounded-xl flex items-center gap-2">
                 <Clock className="w-3.5 h-3.5 animate-spin text-[#059669]" />
-                <span>Gemini parsing in progress...</span>
+                <span>Extracting milestones losslessly...</span>
               </div>
             )}
           </div>
 
-          {/* Copilot Input */}
           <form onSubmit={handleSendMessage} className="p-3 border-t border-[#E2E8F0] bg-white">
             <div className="relative flex items-center">
               <input
@@ -371,7 +369,7 @@ export default function StudioPage() {
           </form>
         </aside>
 
-        {/* LIVE CANVAS */}
+        {/* Live Canvas */}
         <main className="flex-1 overflow-y-auto p-8 max-w-5xl mx-auto space-y-8 antialiased">
           
           {/* ZERO STATE OR PASTE MODE ACTIVE */}
@@ -384,11 +382,10 @@ export default function StudioPage() {
               <div className="space-y-2">
                 <h2 className="text-xl font-black text-[#0F172A]">Ingest Your Career Track Record</h2>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                  Upload your resume file directly (PDF, DOCX, TXT) or paste your career experience below. Gemini extracts your complete history into atomic, testable milestones.
+                  Upload your resume file directly (PDF, DOCX, TXT) or paste your career experience below to map your history into atomic, testable milestones.
                 </p>
               </div>
 
-              {/* Direct Buttons */}
               <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
                 <input
                   ref={fileInputRef}
@@ -419,7 +416,6 @@ export default function StudioPage() {
                 </button>
               </div>
 
-              {/* Paste Textarea */}
               {activeTab === "paste" && (
                 <div className="text-left space-y-3 pt-4 border-t border-[#E2E8F0]">
                   <textarea
@@ -441,7 +437,7 @@ export default function StudioPage() {
                       </button>
                     ) : (
                       <span className="text-[11px] text-slate-400">
-                        Multi-chapter segmentation powered by Gemini.
+                        Multi-chapter segmentation preserves all tenure and accomplishments.
                       </span>
                     )}
 
@@ -459,7 +455,7 @@ export default function StudioPage() {
               )}
             </div>
           ) : (
-            /* POPULATED CANVAS: INDIVIDUAL MILESTONE CARDS */
+            /* POPULATED CANVAS */
             <div className="space-y-6">
               
               <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
@@ -500,7 +496,6 @@ export default function StudioPage() {
                     key={milestone.id}
                     className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-4 hover:border-slate-300 transition-all antialiased"
                   >
-                    {/* Header Row */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-[#E2E8F0]/70">
                       <div className="flex flex-wrap items-center gap-2">
                         <input
@@ -557,7 +552,6 @@ export default function StudioPage() {
                       </div>
                     </div>
 
-                    {/* Calibrated Claim Textarea */}
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                         Calibrated Claim & Impact Scope
