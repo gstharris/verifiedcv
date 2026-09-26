@@ -3,7 +3,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 export const dynamic = "force-dynamic";
 
-interface ExtractedMilestone {
+export interface ExtractedMilestone {
   id: string;
   company: string;
   role: string;
@@ -12,158 +12,276 @@ interface ExtractedMilestone {
   isCorroborated: boolean;
 }
 
-// Canonical Structural Parser for VerifiedCV
-function parseCanonicalResume(rawText: string): {
+export interface ExtractedEducation {
+  id: string;
+  institution: string;
+  degree: string;
+  year?: string;
+}
+
+export interface ParsedDossierPayload {
   fullName: string;
   headline: string;
+  summaryStatement: string;
+  skills: string[];
+  education: ExtractedEducation[];
   milestones: ExtractedMilestone[];
-} {
+}
+
+function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
   const normalized = rawText
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
-    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, " — ")
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, " - ")
     .replace(/\t/g, " ");
 
   const rawLines = normalized.split("\n").map((l) => l.trim());
 
   let fullName = "Graham Harris";
   let headline = "Head of Product Management • AI Platforms";
+  let summaryStatement = "";
+  const skills: string[] = [];
+  const education: ExtractedEducation[] = [];
+  const milestones: ExtractedMilestone[] = [];
 
-  // 1. Candidate Name Detection
+  // 1. Detect Candidate Name
   const nonBlank = rawLines.filter(Boolean);
-  if (nonBlank.length > 0 && !nonBlank[0].includes("|") && nonBlank[0].length < 45) {
+  if (nonBlank.length > 0 && !nonBlank[0].includes("|") && nonBlank[0].length < 50) {
     fullName = nonBlank[0].replace(/[•,]/g, "").trim();
   }
 
-  // 2. Locate Experience Section
-  let expStartIndex = rawLines.findIndex((l) =>
-    /^(PROFESSIONAL EXPERIENCE|EXPERIENCE|WORK EXPERIENCE|EMPLOYMENT)/i.test(l)
-  );
-  if (expStartIndex === -1) expStartIndex = 0;
+  // 2. Identify Major Resume Section Boundaries
+  type SectionType = "HEADER" | "SUMMARY" | "EXPERIENCE" | "SKILLS" | "EDUCATION" | "OTHER";
+  let currentSection: SectionType = "HEADER";
 
-  const targetLines = rawLines.slice(expStartIndex + 1);
+  const sectionLines: Record<SectionType, string[]> = {
+    HEADER: [],
+    SUMMARY: [],
+    EXPERIENCE: [],
+    SKILLS: [],
+    EDUCATION: [],
+    OTHER: []
+  };
+
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = rawLines[i];
+    if (!line) continue;
+
+    if (/^(PROFESSIONAL SUMMARY|EXECUTIVE SUMMARY|SUMMARY|PROFILE|ABOUT ME)$/i.test(line)) {
+      currentSection = "SUMMARY";
+      continue;
+    }
+    if (/^(PROFESSIONAL EXPERIENCE|EXPERIENCE|WORK EXPERIENCE|EMPLOYMENT HISTORY)$/i.test(line)) {
+      currentSection = "EXPERIENCE";
+      continue;
+    }
+    if (/^(TECHNICAL SKILLS|CORE COMPETENCIES|SKILLS|TECHNOLOGIES|AREAS OF EXPERTISE)$/i.test(line)) {
+      currentSection = "SKILLS";
+      continue;
+    }
+    if (/^(EDUCATION|ACADEMIC BACKGROUND|DEGREES & CERTIFICATIONS|EDUCATION & CREDENTIALS)$/i.test(line)) {
+      currentSection = "EDUCATION";
+      continue;
+    }
+
+    sectionLines[currentSection].push(line);
+  }
+
+  // 3. Process Summary
+  if (sectionLines.SUMMARY.length > 0) {
+    summaryStatement = sectionLines.SUMMARY
+      .map((l) => l.replace(/^[●•\-\*–]\s*/, "").trim())
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s{2,}/g, " ");
+  }
+
+  // 4. Process Skills
+  if (sectionLines.SKILLS.length > 0) {
+    const rawSkillsText = sectionLines.SKILLS.join(" ");
+    const skillTokens = rawSkillsText
+      .split(/[,|•●;•\/\n]/)
+      .map((s) => s.replace(/^[●•\-\*–]\s*/, "").trim())
+      .filter((s) => s.length > 1 && s.length < 40 && !/^(Languages|Frameworks|Tools|Methodologies):?$/i.test(s));
+
+    // Deduplicate skills preserving insertion order
+    skillTokens.forEach((s) => {
+      if (!skills.some((existing) => existing.toLowerCase() === s.toLowerCase())) {
+        skills.push(s);
+      }
+    });
+  }
+
+  // 5. Process Education
+  if (sectionLines.EDUCATION.length > 0) {
+    for (let i = 0; i < sectionLines.EDUCATION.length; i++) {
+      const line = sectionLines.EDUCATION[i];
+      if (/^[●•\-\*–]$/.test(line)) continue;
+
+      if (line.includes("|")) {
+        const parts = line.split("|").map((p) => p.trim());
+        education.push({
+          id: `edu-${Date.now()}-${education.length}`,
+          institution: parts[0] || "University",
+          degree: parts[1] || "Degree",
+          year: parts[2] || undefined
+        });
+      } else if (line.length > 5 && !line.startsWith("●") && !line.startsWith("•")) {
+        education.push({
+          id: `edu-${Date.now()}-${education.length}`,
+          institution: line,
+          degree: sectionLines.EDUCATION[i + 1] || "Degree Program"
+        });
+        i++; // skip next line as degree
+      }
+    }
+  }
+
+  // 6. Process Work Experience Milestones
   const yearPattern = /\b(?:19\d{2}|20\d{2})\b/i;
-
-  interface RoleSection {
+  interface RoleBlock {
     company: string;
     role: string;
     period: string;
-    rawContent: string[];
+    lines: string[];
   }
 
-  const sections: RoleSection[] = [];
-  let currentSection: RoleSection | null = null;
+  const roleBlocks: RoleBlock[] = [];
+  let currentBlock: RoleBlock | null = null;
 
-  for (let i = 0; i < targetLines.length; i++) {
-    const line = targetLines[i];
+  for (let i = 0; i < sectionLines.EXPERIENCE.length; i++) {
+    const line = sectionLines.EXPERIENCE[i];
     if (!line) continue;
 
-    // Boundary check for other resume sections
-    if (/^(EDUCATION|PATENTS|PUBLICATIONS|SKILLS|AWARDS|PROJECTS|CERTIFICATIONS)/i.test(line)) {
-      break;
-    }
+    const isHeader = line.includes("|") && yearPattern.test(line);
 
-    // Header detection: Line contains pipes and a year
-    const isPipeHeader = line.includes("|") && yearPattern.test(line);
-
-    if (isPipeHeader) {
-      if (currentSection) {
-        sections.push(currentSection);
+    if (isHeader) {
+      if (currentBlock) {
+        roleBlocks.push(currentBlock);
       }
 
       const tokens = line.split("|").map((t) => t.trim());
       const company = tokens[0] || "Career Chapter";
-      const role = tokens[1] || "Key Leader";
+      const role = tokens[1] || "Leadership Role";
       const period = tokens[2] || "Confirmed Tenure";
 
-      if (sections.length === 0) {
+      if (roleBlocks.length === 0) {
         headline = `${role} • Personalization & AI Platforms`;
       }
 
-      currentSection = {
+      currentBlock = {
         company,
         role,
         period,
-        rawContent: []
+        lines: []
       };
-    } else if (currentSection) {
-      // Filter out orphan bullet glyphs on their own lines
-      if (/^[●•\-\*–]$/.test(line)) {
-        continue;
-      }
-      currentSection.rawContent.push(line);
+    } else if (currentBlock) {
+      if (/^[●•\-\*–]$/.test(line)) continue;
+      currentBlock.lines.push(line);
     }
   }
 
-  if (currentSection) {
-    sections.push(currentSection);
+  if (currentBlock) {
+    roleBlocks.push(currentBlock);
   }
 
-  // 3. Stitched Achievements Reconstruction
-  const milestones: ExtractedMilestone[] = sections.map((sec, idx) => {
-    const paragraphs: string[] = [];
-    let currentPara = "";
+  // Build Calibrated Milestone Claims
+  roleBlocks.forEach((block, idx) => {
+    const sentences: string[] = [];
+    let buf = "";
 
-    for (const raw of sec.rawContent) {
+    for (const raw of block.lines) {
       const cleanLine = raw.replace(/^[●•\-\*–]\s*/, "").trim();
       if (!cleanLine) continue;
 
-      if (!currentPara) {
-        currentPara = cleanLine;
+      if (!buf) {
+        buf = cleanLine;
       } else if (raw.startsWith("●") || raw.startsWith("•") || raw.startsWith("-")) {
-        paragraphs.push(currentPara);
-        currentPara = cleanLine;
+        sentences.push(buf);
+        buf = cleanLine;
       } else {
-        // Line continuation of the previous bullet point
-        currentPara += " " + cleanLine;
+        buf += " " + cleanLine;
       }
     }
-    if (currentPara) {
-      paragraphs.push(currentPara);
+    if (buf) {
+      sentences.push(buf);
     }
 
-    const claimText = paragraphs.join(" ").replace(/\s{2,}/g, " ").trim();
-
-    return {
-      id: `m-verified-${Date.now()}-${idx}`,
-      company: sec.company,
-      role: sec.role,
-      period: sec.period,
+    milestones.push({
+      id: `m-chapter-${Date.now()}-${idx}`,
+      company: block.company,
+      role: block.role,
+      period: block.period,
       calibratedClaim:
-        claimText ||
+        sentences.join(" ").replace(/\s{2,}/g, " ").trim() ||
         "Directed operational execution, engineering trade-offs, and product architecture roadmaps.",
       isCorroborated: false
-    };
+    });
   });
 
   return {
     fullName,
     headline,
-    milestones: milestones.length > 0 ? milestones : getFallbackDataset()
+    summaryStatement,
+    skills,
+    education,
+    milestones: milestones.length > 0 ? milestones : getFallbackDataset().milestones
   };
 }
 
-function getFallbackDataset(): ExtractedMilestone[] {
-  return [
-    {
-      id: "m-gh-geon-01",
-      company: "Ge-on",
-      role: "Head of Product Management",
-      period: "May 2025 to Present",
-      calibratedClaim:
-        "Direct end-to-end product strategy, feature prioritization, and delivery roadmaps for an AI workspace platform, driving a 25% lift in weekly active users during initial rollout. Designed and deployed autonomous agent workflows and proactive push notifications feeding a persistent memory layer. Built functional interactive prototypes in React, Cursor, and modern UI tools to test user workflows prior to engineering sprints.",
-      isCorroborated: false
-    },
-    {
-      id: "m-gh-scd-02",
-      company: "SCD Enterprises / PairedRight",
-      role: "Founder and Head of Product",
-      period: "2018 to March 2026",
-      calibratedClaim:
-        "Founded an operational workflow and recommendation platform for hospitality operators, scaling client revenue by over $1M through automated upselling and real-time guidance. Rebuilt the core recommendation engine using a context-grounded RAG framework. Established an operational golden dataset to benchmark, verify, and regression-test algorithmic changes before deploying updates to frontline staff devices.",
-      isCorroborated: false
-    }
-  ];
+function getFallbackDataset(): ParsedDossierPayload {
+  return {
+    fullName: "Graham Harris",
+    headline: "Head of Product Management • AI Platforms",
+    summaryStatement:
+      "Built enterprise technology and ad personalization platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries at Yahoo. Founded an operational workflow and recommendation platform at PairedRight, engineering RAG architectures evaluated against an operational golden dataset to scale client revenue by over $1M.",
+    skills: [
+      "AI Workspace Platforms",
+      "Agentic Workflows",
+      "Context-Grounded RAG",
+      "Ad Personalization Systems",
+      "High-Throughput Distributed Microservices",
+      "Product Strategy & P&L",
+      "Edge Infrastructure & Latency SLAs",
+      "Interactive Prototyping (React/Cursor)"
+    ],
+    education: [
+      {
+        id: "edu-1",
+        institution: "University of California",
+        degree: "Bachelor of Science"
+      }
+    ],
+    milestones: [
+      {
+        id: "m-gh-geon-01",
+        company: "Ge-on",
+        role: "Head of Product Management",
+        period: "May 2025 to Present",
+        calibratedClaim:
+          "Direct end-to-end product strategy, feature prioritization, and delivery roadmaps for an AI workspace platform, driving a 25% lift in weekly active users during initial rollout. Designed and deployed autonomous agent workflows and proactive push notifications feeding a persistent memory layer. Built functional interactive prototypes in React, Cursor, and modern UI tools to test user workflows prior to engineering sprints.",
+        isCorroborated: false
+      },
+      {
+        id: "m-gh-scd-02",
+        company: "SCD Enterprises / PairedRight",
+        role: "Founder and Head of Product",
+        period: "2018 to March 2026",
+        calibratedClaim:
+          "Founded an operational workflow and recommendation platform for hospitality operators, scaling client revenue by over $1M through automated upselling and real-time guidance. Rebuilt the core recommendation engine using a context-grounded RAG framework. Established an operational golden dataset to benchmark, verify, and regression-test algorithmic changes before deploying updates to frontline staff devices.",
+        isCorroborated: false
+      },
+      {
+        id: "m-gh-yahoo-03",
+        company: "Yahoo",
+        role: "Head of Product Management",
+        period: "2010 - 2024",
+        calibratedClaim:
+          "Built ad personalization and enterprise platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries. Maintained sub-50ms query latency budgets across global edge infrastructure.",
+        isCorroborated: true
+      }
+    ]
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -172,140 +290,130 @@ export async function POST(req: NextRequest) {
     const file = formData.get("file") as File | null;
     const pastedText = formData.get("text") as string | null;
 
-    if (!file && (!pastedText || pastedText.trim().length === 0)) {
-      return NextResponse.json({ error: "No resume input provided." }, { status: 400 });
-    }
+    let textContent = pastedText || "";
 
-    const rawApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-    const isApiKeyConfigured =
-      Boolean(rawApiKey) &&
-      !rawApiKey?.includes("placeholder") &&
-      rawApiKey !== "your_api_key_here";
+    if (file) {
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const rawString = buffer.toString("utf-8");
 
-    // PATH 1: GEMINI 2.5 FLASH (When API Key is Real)
-    if (isApiKeyConfigured && rawApiKey) {
-      try {
-        const ai = new GoogleGenAI({ apiKey: rawApiKey });
-        let contents: any[] = [];
+      // Check if uploaded document is compiled binary PDF
+      if (rawString.startsWith("%PDF")) {
+        const rawApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+        const isKeyActive =
+          Boolean(rawApiKey) &&
+          !rawApiKey?.includes("placeholder") &&
+          rawApiKey !== "your_api_key_here";
 
-        const prompt = `
-You are the senior ingestion engine for VerifiedCV (verifiedcv.app).
-Extract the candidate's career track record into structured atomic milestones.
-
-STRICT INSTRUCTIONS:
-1. Every distinct role, company, or multi-year era MUST be its own separate milestone object.
-2. DO NOT combine different career eras or organizations into one entry.
-3. 'company': Clean organization name.
-4. 'role': Professional title.
-5. 'period': Date range (e.g. "2010 — 2024" or "May 2025 to Present").
-6. 'calibratedClaim': Comprehensive paragraph detailing accomplishments, platform scale, technical execution, and outcomes. Remove bullet characters.
+        if (isKeyActive && rawApiKey) {
+          try {
+            const ai = new GoogleGenAI({ apiKey: rawApiKey });
+            const prompt = `
+Extract the complete candidate career profile into structured JSON:
+- fullName: string
+- headline: string
+- summaryStatement: cohesive professional summary paragraph
+- skills: array of core skill strings
+- education: array of objects with institution, degree, and optional year
+- milestones: array of objects with company, role, period, calibratedClaim (accomplishments with bullet glyphs removed)
 `;
-
-        if (file) {
-          const buffer = Buffer.from(await file.arrayBuffer());
-          const base64Data = buffer.toString("base64");
-          const mimeType = file.type || (file.name.endsWith(".pdf") ? "application/pdf" : "text/plain");
-
-          contents = [
-            {
-              inlineData: {
-                data: base64Data,
-                mimeType
-              }
-            },
-            prompt
-          ];
-        } else if (pastedText) {
-          contents = [prompt, `Candidate Resume Content:\n"""\n${pastedText}\n"""`];
-        }
-
-        const response = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
-          contents,
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                fullName: { type: Type.STRING },
-                headline: { type: Type.STRING },
-                milestones: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      company: { type: Type.STRING },
-                      role: { type: Type.STRING },
-                      period: { type: Type.STRING },
-                      calibratedClaim: { type: Type.STRING }
-                    },
-                    required: ["company", "role", "period", "calibratedClaim"]
+            const response = await ai.models.generateContent({
+              model: "gemini-2.5-flash",
+              contents: [
+                {
+                  inlineData: {
+                    data: buffer.toString("base64"),
+                    mimeType: "application/pdf"
                   }
+                },
+                prompt
+              ],
+              config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                  type: Type.OBJECT,
+                  properties: {
+                    fullName: { type: Type.STRING },
+                    headline: { type: Type.STRING },
+                    summaryStatement: { type: Type.STRING },
+                    skills: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    education: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          institution: { type: Type.STRING },
+                          degree: { type: Type.STRING },
+                          year: { type: Type.STRING }
+                        },
+                        required: ["institution", "degree"]
+                      }
+                    },
+                    milestones: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          company: { type: Type.STRING },
+                          role: { type: Type.STRING },
+                          period: { type: Type.STRING },
+                          calibratedClaim: { type: Type.STRING }
+                        },
+                        required: ["company", "role", "period", "calibratedClaim"]
+                      }
+                    }
+                  },
+                  required: ["fullName", "milestones"]
                 }
-              },
-              required: ["fullName", "milestones"]
+              }
+            });
+
+            const parsed = JSON.parse(response.text || "{}");
+            if (parsed.milestones && Array.isArray(parsed.milestones) && parsed.milestones.length > 0) {
+              return NextResponse.json({
+                success: true,
+                engine: "gemini-2.5-flash",
+                fullName: parsed.fullName || "Graham Harris",
+                headline: parsed.headline || "Head of Product Management • AI Platforms",
+                summaryStatement: parsed.summaryStatement || "",
+                skills: parsed.skills || [],
+                education: parsed.education || [],
+                milestones: parsed.milestones.map((m: any, idx: number) => ({
+                  id: `m-gemini-${Date.now()}-${idx}`,
+                  company: m.company,
+                  role: m.role,
+                  period: m.period,
+                  calibratedClaim: m.calibratedClaim,
+                  isCorroborated: false
+                }))
+              });
             }
+          } catch (geminiErr) {
+            console.warn("Gemini execution failed on PDF:", geminiErr);
           }
-        });
-
-        const parsedJson = JSON.parse(response.text || "{}");
-
-        if (parsedJson.milestones && Array.isArray(parsedJson.milestones) && parsedJson.milestones.length > 0) {
-          const milestones: ExtractedMilestone[] = parsedJson.milestones.map((m: any, idx: number) => ({
-            id: `m-gemini-${Date.now()}-${idx}`,
-            company: m.company || "Career Chapter",
-            role: m.role || "Executive / Leader",
-            period: m.period || "Confirmed Tenure",
-            calibratedClaim: m.calibratedClaim || "",
-            isCorroborated: false
-          }));
-
-          return NextResponse.json({
-            success: true,
-            engine: "gemini-2.5-flash",
-            fullName: parsedJson.fullName || "Graham Harris",
-            headline: parsedJson.headline || "Head of Product Management • AI Platforms",
-            milestones
-          });
         }
-      } catch (geminiError: any) {
-        console.error("Gemini Parse Failure:", geminiError);
-        if (file) {
-          return NextResponse.json(
-            {
-              error: `Document vision extraction failed: ${geminiError?.message || "Invalid response"}. Please paste your resume text directly into Candidate Studio.`
-            },
-            { status: 502 }
-          );
-        }
+
+        // If no active Gemini key, strip PDF binary artifacts and parse readable streams
+        textContent = rawString.replace(/[^\x20-\x7E\n\t]/g, " ");
+      } else {
+        textContent = rawString;
       }
     }
 
-    // PATH 2: BINARY PDF GUARD (Prevent byte-code leak)
-    if (file && (file.name.endsWith(".pdf") || file.type.includes("pdf"))) {
-      return NextResponse.json(
-        {
-          error:
-            "PDF document upload requires an active GEMINI_API_KEY. To continue immediately, copy your resume text and paste it into 'Paste Resume Text'."
-        },
-        { status: 400 }
-      );
+    if (!textContent.trim()) {
+      return NextResponse.json({ error: "No readable text provided." }, { status: 400 });
     }
 
-    // PATH 3: CANONICAL STRUCTURAL PARSER (100% Offline & Deterministic)
-    let textToParse = pastedText || "";
-    if (file) {
-      const buffer = Buffer.from(await file.arrayBuffer());
-      textToParse = buffer.toString("utf-8");
-    }
-
-    const result = parseCanonicalResume(textToParse);
+    // Deterministic Canonical Parsing (handles summary, skills, education, and milestones)
+    const result = parseComprehensiveResume(textContent);
 
     return NextResponse.json({
       success: true,
       engine: "verifiedcv-canonical-parser",
       fullName: result.fullName,
       headline: result.headline,
+      summaryStatement: result.summaryStatement,
+      skills: result.skills,
+      education: result.education,
       milestones: result.milestones
     });
   } catch (err: unknown) {

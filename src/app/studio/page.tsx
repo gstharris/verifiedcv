@@ -24,7 +24,10 @@ import {
   ClipboardPaste,
   UserCheck,
   X,
-  RotateCcw
+  RotateCcw,
+  GraduationCap,
+  Sparkle,
+  FileText
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 
@@ -39,39 +42,80 @@ interface Milestone {
   tier?: string;
 }
 
-const GRAHAM_HARRIS_CANONICAL: Milestone[] = [
-  {
-    id: "m-gh-geon-01",
-    company: "Ge-on",
-    role: "Head of Product Management",
-    period: "May 2025 to Present",
-    calibratedClaim:
-      "Direct end-to-end product strategy, feature prioritization, and delivery roadmaps for an AI workspace platform, driving a 25% lift in weekly active users during initial rollout. Designed and deployed autonomous agent workflows and proactive push notifications feeding a persistent memory layer. Built functional interactive prototypes in React, Cursor, and modern UI tools to test user workflows prior to engineering sprints.",
-    isCorroborated: false
-  },
-  {
-    id: "m-gh-scd-02",
-    company: "SCD Enterprises / PairedRight",
-    role: "Founder and Head of Product",
-    period: "2018 to March 2026",
-    calibratedClaim:
-      "Founded an operational workflow and recommendation platform for hospitality operators, scaling client revenue by over $1M through automated upselling and real-time guidance. Rebuilt the core recommendation engine using a context-grounded RAG framework. Established an operational golden dataset to benchmark, verify, and regression-test algorithmic changes before deploying updates to frontline staff devices.",
-    isCorroborated: false
-  },
-  {
-    id: "m-gh-yahoo-03",
-    company: "Yahoo",
-    role: "Head of Product Management",
-    period: "2010 — 2024",
-    calibratedClaim:
-      "Built ad personalization and enterprise platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries. Maintained sub-50ms query latency budgets across global edge infrastructure.",
-    isCorroborated: true,
-    corroboratedBy: "Senior Director of Core Engineering"
-  }
-];
+interface EducationRecord {
+  id: string;
+  institution: string;
+  degree: string;
+  year?: string;
+}
+
+const GRAHAM_HARRIS_CANONICAL: {
+  fullName: string;
+  headline: string;
+  summary: string;
+  skills: string[];
+  education: EducationRecord[];
+  milestones: Milestone[];
+} = {
+  fullName: "Graham Harris",
+  headline: "Head of Product Management • AI Platforms",
+  summary:
+    "Built enterprise technology and ad personalization platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries at Yahoo. Founded an operational workflow and recommendation platform at PairedRight, engineering RAG architectures evaluated against an operational golden dataset to scale client revenue by over $1M. Restructured complex multi-product SaaS portfolios into modular tiers at Bazaarvoice, reducing sales cycles by 25% and decreasing customer churn by 15%.",
+  skills: [
+    "AI Workspace Platforms",
+    "Agentic Workflows",
+    "Context-Grounded RAG",
+    "Ad Personalization Systems",
+    "High-Throughput Distributed Microservices",
+    "Product Strategy & P&L",
+    "Operational Golden Datasets",
+    "Interactive Prototyping (React/Cursor)"
+  ],
+  education: [
+    {
+      id: "edu-gh-1",
+      institution: "University of California",
+      degree: "Bachelor of Science"
+    }
+  ],
+  milestones: [
+    {
+      id: "m-gh-geon-01",
+      company: "Ge-on",
+      role: "Head of Product Management",
+      period: "May 2025 to Present",
+      calibratedClaim:
+        "Direct end-to-end product strategy, feature prioritization, and delivery roadmaps for an AI workspace platform, driving a 25% lift in weekly active users during initial rollout. Designed and deployed autonomous agent workflows and proactive push notifications that feed a persistent memory layer, allowing the platform to learn creator preferences and maintain context across interactions. Build functional interactive prototypes in React, Cursor, and modern UI tools to test user workflows directly with users prior to engineering sprints.",
+      isCorroborated: false
+    },
+    {
+      id: "m-gh-scd-02",
+      company: "SCD Enterprises / PairedRight",
+      role: "Founder and Head of Product",
+      period: "2018 to March 2026",
+      calibratedClaim:
+        "Founded an operational workflow and recommendation platform for hospitality operators, scaling client revenue by over $1M through automated upselling and real-time guidance. Rebuilt the core recommendation engine using a context-grounded RAG framework, ensuring automated pairing suggestions remained strictly constrained to curated merchant parameters. Established an operational golden dataset to benchmark, verify, and regression-test algorithmic changes before deploying updates to frontline staff devices.",
+      isCorroborated: false
+    },
+    {
+      id: "m-gh-yahoo-03",
+      company: "Yahoo",
+      role: "Head of Product Management",
+      period: "2010 - 2024",
+      calibratedClaim:
+        "Built enterprise technology and ad personalization platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries. Maintained sub-50ms query latency budgets across global edge infrastructure.",
+      isCorroborated: true,
+      corroboratedBy: "Senior Director of Core Engineering"
+    }
+  ]
+};
 
 export default function StudioPage() {
   const [milestones, setMilestones] = useState<Milestone[]>([]);
+  const [summaryStatement, setSummaryStatement] = useState("");
+  const [skills, setSkills] = useState<string[]>([]);
+  const [education, setEducation] = useState<EducationRecord[]>([]);
+
   const [activeTab, setActiveTab] = useState<"canvas" | "paste">("canvas");
   const [pasteBuffer, setPasteBuffer] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -89,7 +133,7 @@ export default function StudioPage() {
   const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
     {
       sender: "ally",
-      text: "Candidate Studio ready. Paste your raw career accomplishments or load your canonical profile to begin claim calibration."
+      text: "Candidate Studio ready. Paste your raw resume or upload your document to calibrate your verified career claims."
     }
   ]);
   const [chatInput, setChatInput] = useState("");
@@ -116,12 +160,16 @@ export default function StudioPage() {
         setMilestones(parsed.milestones);
         if (parsed.fullName) setFullName(parsed.fullName);
         if (parsed.headline) setHeadline(parsed.headline);
+        if (parsed.summaryStatement) setSummaryStatement(parsed.summaryStatement);
+        if (parsed.skills) setSkills(parsed.skills);
+        if (parsed.education) setEducation(parsed.education);
+
         setActiveTab("canvas");
         setChatMessages((prev) => [
           ...prev,
           {
             sender: "ally",
-            text: `Successfully ingested ${parsed.milestones.length} career chapters from homepage. Review your atomic claims on the canvas.`
+            text: `Successfully ingested full career dossier (${parsed.milestones.length} milestones, summary, skills, and education). Ready for calibration.`
           }
         ]);
         return;
@@ -142,16 +190,19 @@ export default function StudioPage() {
   }, [chatMessages]);
 
   const loadCanonicalRecord = () => {
-    setMilestones(GRAHAM_HARRIS_CANONICAL);
-    setFullName("Graham Harris");
-    setHeadline("Head of Product Management • AI Platforms");
+    setFullName(GRAHAM_HARRIS_CANONICAL.fullName);
+    setHeadline(GRAHAM_HARRIS_CANONICAL.headline);
+    setSummaryStatement(GRAHAM_HARRIS_CANONICAL.summary);
+    setSkills(GRAHAM_HARRIS_CANONICAL.skills);
+    setEducation(GRAHAM_HARRIS_CANONICAL.education);
+    setMilestones(GRAHAM_HARRIS_CANONICAL.milestones);
     setHandle("gharris");
     setActiveTab("canvas");
     setChatMessages((prev) => [
       ...prev,
       {
         sender: "ally",
-        text: "Loaded 3 canonical chapters (Ge-on, SCD Enterprises / PairedRight, Yahoo). Review atomic claims on the canvas."
+        text: "Loaded full canonical dossier (Summary, 3 Roles, Skills, and Education). All proof claims ready on your canvas."
       }
     ]);
   };
@@ -160,7 +211,7 @@ export default function StudioPage() {
     setIsProcessing(true);
     setChatMessages((prev) => [
       ...prev,
-      { sender: "ally", text: "Segmenting career milestones via structural parser..." }
+      { sender: "ally", text: "Analyzing and extracting complete dossier via canonical parser..." }
     ]);
 
     try {
@@ -177,12 +228,16 @@ export default function StudioPage() {
         setMilestones(data.milestones);
         if (data.fullName) setFullName(data.fullName);
         if (data.headline) setHeadline(data.headline);
+        if (data.summaryStatement) setSummaryStatement(data.summaryStatement);
+        if (data.skills) setSkills(data.skills);
+        if (data.education) setEducation(data.education);
+
         setActiveTab("canvas");
         setChatMessages((prev) => [
           ...prev,
           {
             sender: "ally",
-            text: `Parsed ${data.milestones.length} discrete chapters. All achievement bullets stitched into calibrated claims.`
+            text: `Extracted ${data.milestones.length} milestones along with your professional summary, skills, and academic credentials.`
           }
         ]);
       } else {
@@ -210,6 +265,11 @@ export default function StudioPage() {
     const file = e.target.files[0];
     setIsProcessing(true);
 
+    setChatMessages((prev) => [
+      ...prev,
+      { sender: "ally", text: `Ingesting ${file.name}...` }
+    ]);
+
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -224,12 +284,16 @@ export default function StudioPage() {
         setMilestones(data.milestones);
         if (data.fullName) setFullName(data.fullName);
         if (data.headline) setHeadline(data.headline);
+        if (data.summaryStatement) setSummaryStatement(data.summaryStatement);
+        if (data.skills) setSkills(data.skills);
+        if (data.education) setEducation(data.education);
+
         setActiveTab("canvas");
         setChatMessages((prev) => [
           ...prev,
           {
             sender: "ally",
-            text: `Extracted ${data.milestones.length} milestones from ${file.name}. Ready for calibration.`
+            text: `Extracted ${data.milestones.length} career milestones and credentials from ${file.name}.`
           }
         ]);
       } else {
@@ -282,6 +346,9 @@ export default function StudioPage() {
           email,
           fullName,
           headline,
+          summaryStatement,
+          skills,
+          education,
           milestones
         })
       });
@@ -335,11 +402,14 @@ export default function StudioPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {milestones.length > 0 && !isVaultSaved && (
+          {(milestones.length > 0 || summaryStatement) && !isVaultSaved && (
             <button
               type="button"
               onClick={() => {
                 setMilestones([]);
+                setSummaryStatement("");
+                setSkills([]);
+                setEducation([]);
                 setActiveTab("canvas");
                 setChatMessages((prev) => [
                   ...prev,
@@ -363,7 +433,7 @@ export default function StudioPage() {
               <ExternalLink className="w-3.5 h-3.5" />
             </Link>
           ) : (
-            milestones.length > 0 && (
+            (milestones.length > 0 || summaryStatement) && (
               <button
                 type="button"
                 onClick={() => setIsClaimModalOpen(true)}
@@ -408,7 +478,7 @@ export default function StudioPage() {
             {isProcessing && (
               <div className="bg-[#F8FAFC] border border-[#E2E8F0] text-slate-500 text-xs p-3 rounded-xl flex items-center gap-2">
                 <Clock className="w-3.5 h-3.5 animate-spin text-[#059669]" />
-                <span>Extracting milestones losslessly...</span>
+                <span>Extracting complete dossier...</span>
               </div>
             )}
           </div>
@@ -435,7 +505,7 @@ export default function StudioPage() {
 
         {/* LIVE CANVAS: MASSIVE RIGHT-SIDE WORKSPACE */}
         <main className="flex-1 overflow-y-auto p-8 max-w-5xl mx-auto space-y-8 antialiased">
-          {milestones.length === 0 || activeTab === "paste" ? (
+          {milestones.length === 0 && !summaryStatement ? (
             <div className="bg-white border border-[#E2E8F0] rounded-3xl p-8 sm:p-10 text-center space-y-6 shadow-xs max-w-2xl mx-auto mt-4">
               <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#059669] mx-auto">
                 <UploadCloud className="w-7 h-7" />
@@ -444,7 +514,7 @@ export default function StudioPage() {
               <div className="space-y-2">
                 <h2 className="text-xl font-black text-[#0F172A]">Ingest Your Career Track Record</h2>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                  Paste your raw resume text or load your profile below. The canonical parser segments each company, title, and bullet group into discrete milestones.
+                  Paste your resume or load your canonical profile below. VerifiedCV automatically structures your Executive Summary, Milestones, Core Competencies, and Academic Credentials.
                 </p>
               </div>
 
@@ -490,27 +560,17 @@ export default function StudioPage() {
               {activeTab === "paste" && (
                 <div className="text-left space-y-3 pt-4 border-t border-[#E2E8F0]">
                   <textarea
-                    rows={10}
+                    rows={12}
                     value={pasteBuffer}
                     onChange={(e) => setPasteBuffer(e.target.value)}
-                    placeholder="Paste full resume text here (e.g., 'Ge-on | Head of Product Management | May 2025 to Present...')..."
+                    placeholder="Paste entire resume text (including Summary, Experience, Skills, and Education)..."
                     className="w-full text-xs p-4 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-mono bg-[#F8FAFC] leading-relaxed"
                   />
 
                   <div className="flex items-center justify-between pt-1">
-                    {milestones.length > 0 ? (
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab("canvas")}
-                        className="text-xs font-bold text-slate-400 hover:text-slate-600 cursor-pointer"
-                      >
-                        Cancel
-                      </button>
-                    ) : (
-                      <span className="text-[11px] text-slate-400">
-                        Pipe headers and bullet blocks are segmented automatically.
-                      </span>
-                    )}
+                    <span className="text-[11px] text-slate-400">
+                      Summary, skills, credentials, and achievements will be extracted into discrete cards.
+                    </span>
 
                     <button
                       type="button"
@@ -526,15 +586,16 @@ export default function StudioPage() {
               )}
             </div>
           ) : (
-            /* POPULATED CANVAS: INDIVIDUAL CHAPTER CARDS */
-            <div className="space-y-6">
+            /* POPULATED CANVAS: FULL CAREER DOSSIER */
+            <div className="space-y-8">
+              {/* Top Controls */}
               <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
                 <div>
                   <h2 className="text-sm font-black uppercase tracking-wider text-[#0F172A]">
-                    Audited Career Milestones ({milestones.length})
+                    Audited Career Dossier
                   </h2>
                   <p className="text-xs text-slate-500">
-                    Each chapter is segmented into an atomic claim ready for peer corroboration.
+                    Review and calibrate atomic statements before committing to your public Vault.
                   </p>
                 </div>
 
@@ -559,98 +620,183 @@ export default function StudioPage() {
                 </div>
               </div>
 
-              {/* Milestones Card Stream */}
-              <div className="space-y-5 pb-10">
-                {milestones.map((milestone) => (
-                  <div
-                    key={milestone.id}
-                    className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-4 hover:border-slate-300 transition-all antialiased"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-[#E2E8F0]/70">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <input
-                          type="text"
-                          value={milestone.company}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setMilestones((prev) =>
-                              prev.map((m) => (m.id === milestone.id ? { ...m, company: val } : m))
-                            );
-                          }}
-                          placeholder="Company"
-                          className="font-extrabold text-sm sm:text-base text-[#0F172A] focus:outline-none border-b border-transparent focus:border-[#059669]"
-                        />
-                        <span className="text-slate-300">•</span>
-                        <input
-                          type="text"
-                          value={milestone.role}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setMilestones((prev) =>
-                              prev.map((m) => (m.id === milestone.id ? { ...m, role: val } : m))
-                            );
-                          }}
-                          placeholder="Role Title"
-                          className="text-xs sm:text-sm font-semibold text-slate-600 focus:outline-none border-b border-transparent focus:border-[#059669]"
-                        />
+              {/* 1. Executive Summary Section */}
+              {summaryStatement && (
+                <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-[#059669]" />
+                      <h3 className="font-extrabold text-xs uppercase tracking-wider text-[#0F172A]">
+                        Professional Executive Summary
+                      </h3>
+                    </div>
+                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                      Portfolio Anchor
+                    </span>
+                  </div>
+                  <textarea
+                    rows={4}
+                    value={summaryStatement}
+                    onChange={(e) => setSummaryStatement(e.target.value)}
+                    className="w-full text-xs text-slate-700 leading-relaxed p-3.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans resize-y bg-[#F8FAFC]"
+                  />
+                </div>
+              )}
+
+              {/* 2. Milestones Card Stream */}
+              <div className="space-y-4">
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">
+                  Career Milestones ({milestones.length})
+                </h3>
+
+                <div className="space-y-5">
+                  {milestones.map((milestone) => (
+                    <div
+                      key={milestone.id}
+                      className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-4 hover:border-slate-300 transition-all antialiased"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-[#E2E8F0]/70">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            type="text"
+                            value={milestone.company}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setMilestones((prev) =>
+                                prev.map((m) => (m.id === milestone.id ? { ...m, company: val } : m))
+                              );
+                            }}
+                            placeholder="Company"
+                            className="font-extrabold text-sm sm:text-base text-[#0F172A] focus:outline-none border-b border-transparent focus:border-[#059669]"
+                          />
+                          <span className="text-slate-300">•</span>
+                          <input
+                            type="text"
+                            value={milestone.role}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setMilestones((prev) =>
+                                prev.map((m) => (m.id === milestone.id ? { ...m, role: val } : m))
+                              );
+                            }}
+                            placeholder="Role Title"
+                            className="text-xs sm:text-sm font-semibold text-slate-600 focus:outline-none border-b border-transparent focus:border-[#059669]"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="text"
+                            value={milestone.period}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setMilestones((prev) =>
+                                prev.map((m) => (m.id === milestone.id ? { ...m, period: val } : m))
+                              );
+                            }}
+                            placeholder="Tenure Dates"
+                            className="text-[11px] font-mono text-slate-500 focus:outline-none text-right w-44"
+                          />
+                          {milestone.isCorroborated ? (
+                            <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
+                              <Check className="w-3 h-3 text-[#059669]" /> Corroborated
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                              Unsaved Draft
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setMilestones((prev) => prev.filter((m) => m.id !== milestone.id))
+                            }
+                            className="text-slate-300 hover:text-red-500 transition-colors p-1 cursor-pointer"
+                            title="Delete Milestone"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="text"
-                          value={milestone.period}
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Calibrated Claim & Impact Scope
+                        </label>
+                        <textarea
+                          rows={4}
+                          value={milestone.calibratedClaim}
                           onChange={(e) => {
                             const val = e.target.value;
                             setMilestones((prev) =>
-                              prev.map((m) => (m.id === milestone.id ? { ...m, period: val } : m))
+                              prev.map((m) =>
+                                m.id === milestone.id ? { ...m, calibratedClaim: val } : m
+                              )
                             );
                           }}
-                          placeholder="Tenure Dates"
-                          className="text-[11px] font-mono text-slate-500 focus:outline-none text-right w-44"
+                          className="w-full text-xs text-slate-700 leading-relaxed p-3.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans resize-y bg-[#F8FAFC]"
                         />
-                        {milestone.isCorroborated ? (
-                          <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
-                            <Check className="w-3 h-3 text-[#059669]" /> Corroborated
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
-                            Unsaved Draft
-                          </span>
-                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 3. Core Competencies & Skills Section */}
+              {skills.length > 0 && (
+                <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <h3 className="font-extrabold text-xs uppercase tracking-wider text-[#0F172A]">
+                      Extracted Competencies & Skills ({skills.length})
+                    </h3>
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {skills.map((skill, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-semibold text-slate-700"
+                      >
+                        <span>{skill}</span>
                         <button
                           type="button"
-                          onClick={() =>
-                            setMilestones((prev) => prev.filter((m) => m.id !== milestone.id))
-                          }
-                          className="text-slate-300 hover:text-red-500 transition-colors p-1 cursor-pointer"
-                          title="Delete Milestone"
+                          onClick={() => setSkills((prev) => prev.filter((_, i) => i !== idx))}
+                          className="text-slate-400 hover:text-red-500"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <X className="w-3 h-3" />
                         </button>
-                      </div>
-                    </div>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        Calibrated Claim & Impact Scope
-                      </label>
-                      <textarea
-                        rows={4}
-                        value={milestone.calibratedClaim}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setMilestones((prev) =>
-                            prev.map((m) =>
-                              m.id === milestone.id ? { ...m, calibratedClaim: val } : m
-                            )
-                          );
-                        }}
-                        className="w-full text-xs text-slate-700 leading-relaxed p-3.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans resize-y bg-[#F8FAFC]"
-                      />
+              {/* 4. Academic Background & Credentials */}
+              {education.length > 0 && (
+                <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <GraduationCap className="w-4 h-4 text-[#059669]" />
+                      <h3 className="font-extrabold text-xs uppercase tracking-wider text-[#0F172A]">
+                        Education & Credentials
+                      </h3>
                     </div>
                   </div>
-                ))}
-              </div>
+                  <div className="space-y-3 pt-1">
+                    {education.map((edu) => (
+                      <div
+                        key={edu.id}
+                        className="flex items-center justify-between p-3.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC]"
+                      >
+                        <div>
+                          <div className="font-bold text-xs text-[#0F172A]">{edu.institution}</div>
+                          <div className="text-[11px] text-slate-500">{edu.degree}</div>
+                        </div>
+                        {edu.year && <span className="text-xs font-mono text-slate-400">{edu.year}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </main>
