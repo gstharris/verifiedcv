@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import Script from "next/script";
 import {
   ShieldCheck,
   CheckCircle2,
@@ -126,31 +125,40 @@ const GRAHAM_HARRIS_CANONICAL: {
   ]
 };
 
-async function extractTextFromClientFile(file: File): Promise<string> {
+// Zero-dependency client file reader
+async function readClientFileAsText(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+
   if (file.name.endsWith(".txt") || file.name.endsWith(".md")) {
-    return await file.text();
+    return new TextDecoder("utf-8").decode(bytes);
   }
 
-  if (file.name.endsWith(".pdf") && typeof window !== "undefined" && (window as any).pdfjsLib) {
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await (window as any).pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    let fullText = "";
+  let result = "";
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+  const rawText = decoder.decode(bytes);
 
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items
-        .map((item: any) => item.str)
-        .join(" ");
-      fullText += pageText + "\n";
+  const stringLiterals = rawText.match(/\(([^()]{2,})\)\s*T[jJ]|\[([^\]]+)\]\s*TJ/g);
+  if (stringLiterals && stringLiterals.length > 5) {
+    const extracted: string[] = [];
+    for (const match of stringLiterals) {
+      const parts = match.match(/\(([^)]+)\)/g);
+      if (parts) {
+        const sentence = parts
+          .map((p) => p.slice(1, -1).replace(/\\([()\\])/g, "$1"))
+          .join(" ")
+          .trim();
+        if (sentence.length > 0) extracted.push(sentence);
+      }
     }
-
-    if (fullText.trim().length > 50) {
-      return fullText;
-    }
+    result = extracted.join("\n");
   }
 
-  return await file.text();
+  if (result.length > 100) {
+    return result;
+  }
+
+  return rawText.replace(/[^\x20-\x7E\n\t]/g, " ").replace(/\s{3,}/g, "\n");
 }
 
 export default function StudioPage() {
@@ -203,7 +211,7 @@ export default function StudioPage() {
           parsed.milestones.map((m: any) => ({
             ...m,
             claims: (Array.isArray(m.claims) ? m.claims : (m.calibratedClaim ? [m.calibratedClaim] : [])).filter(
-              (c: string) => c.length >= 10 && /[a-zA-Z]/.test(c)
+              (c: string) => c.replace(/[^a-zA-Z]/g, "").length >= 15
             )
           }))
         );
@@ -277,7 +285,7 @@ export default function StudioPage() {
         const formattedMilestones = data.milestones.map((m: any) => ({
           ...m,
           claims: (Array.isArray(m.claims) ? m.claims : (m.calibratedClaim ? [m.calibratedClaim] : [])).filter(
-            (c: string) => c.length >= 10 && /[a-zA-Z]/.test(c)
+            (c: string) => c.replace(/[^a-zA-Z]/g, "").length >= 15
           )
         }));
 
@@ -323,11 +331,11 @@ export default function StudioPage() {
 
     setChatMessages((prev) => [
       ...prev,
-      { sender: "ally", text: `Ingesting ${file.name}...` }
+      { sender: "ally", text: `Extracting text from ${file.name}...` }
     ]);
 
     try {
-      const extractedText = await extractTextFromClientFile(file);
+      const extractedText = await readClientFileAsText(file);
 
       const formData = new FormData();
       if (extractedText && extractedText.trim().length > 30) {
@@ -346,7 +354,7 @@ export default function StudioPage() {
         const formattedMilestones = data.milestones.map((m: any) => ({
           ...m,
           claims: (Array.isArray(m.claims) ? m.claims : (m.calibratedClaim ? [m.calibratedClaim] : [])).filter(
-            (c: string) => c.length >= 10 && /[a-zA-Z]/.test(c)
+            (c: string) => c.replace(/[^a-zA-Z]/g, "").length >= 15
           )
         }));
 
@@ -492,18 +500,6 @@ export default function StudioPage() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col antialiased selection:bg-emerald-100">
-      {/* PDF.js Browser Runtime CDN Script */}
-      <Script
-        src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"
-        strategy="lazyOnload"
-        onLoad={() => {
-          if (typeof window !== "undefined" && (window as any).pdfjsLib) {
-            (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc =
-              "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-          }
-        }}
-      />
-
       {/* Studio Top Navigation */}
       <header className="sticky top-0 z-50 bg-white border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -619,7 +615,7 @@ export default function StudioPage() {
           </form>
         </aside>
 
-        {/* LIVE CANVAS: MASSIVE RIGHT-SIDE WORKSPACE */}
+        {/* LIVE CANVAS */}
         <main className="flex-1 overflow-y-auto p-8 max-w-5xl mx-auto space-y-8 antialiased">
           {milestones.length === 0 && !summaryStatement ? (
             <div className="bg-white border border-[#E2E8F0] rounded-3xl p-8 sm:p-10 text-center space-y-6 shadow-xs max-w-2xl mx-auto mt-4">
@@ -630,7 +626,7 @@ export default function StudioPage() {
               <div className="space-y-2">
                 <h2 className="text-xl font-black text-[#0F172A]">Ingest Your Career Track Record</h2>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                  Paste your resume or load your canonical profile below. VerifiedCV automatically breaks your accomplishments into atomic, testable claim line items.
+                  Paste your resume or load your canonical profile below. VerifiedCV automatically structures your Executive Summary, Milestones, Core Competencies, and Academic Credentials.
                 </p>
               </div>
 
@@ -702,9 +698,8 @@ export default function StudioPage() {
               )}
             </div>
           ) : (
-            /* POPULATED CANVAS: FULL CAREER DOSSIER */
+            /* POPULATED CANVAS */
             <div className="space-y-8">
-              {/* Top Controls */}
               <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
                 <div>
                   <h2 className="text-sm font-black uppercase tracking-wider text-[#0F172A]">
@@ -736,7 +731,7 @@ export default function StudioPage() {
                 </div>
               </div>
 
-              {/* 1. Executive Summary Section */}
+              {/* 1. Executive Summary */}
               {summaryStatement && (
                 <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
@@ -759,7 +754,7 @@ export default function StudioPage() {
                 </div>
               )}
 
-              {/* 2. Milestones Card Stream with Individual Line-Item Claims */}
+              {/* 2. Milestones Card Stream with Individual Line Items */}
               <div className="space-y-4">
                 <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">
                   Career Milestones ({milestones.length})
@@ -771,7 +766,6 @@ export default function StudioPage() {
                       key={milestone.id}
                       className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-4 hover:border-slate-300 transition-all antialiased"
                     >
-                      {/* Header Row: Company, Role, Period */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-[#E2E8F0]/70">
                         <div className="flex flex-wrap items-center gap-2">
                           <input
@@ -884,7 +878,7 @@ export default function StudioPage() {
                 </div>
               </div>
 
-              {/* 3. Core Competencies & Skills Section */}
+              {/* 3. Core Competencies & Skills */}
               {skills.length > 0 && (
                 <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
@@ -912,7 +906,7 @@ export default function StudioPage() {
                 </div>
               )}
 
-              {/* 4. Academic Background & Credentials */}
+              {/* 4. Education & Credentials */}
               {education.length > 0 && (
                 <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">

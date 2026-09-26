@@ -3,7 +3,6 @@
 import React, { useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import Script from "next/script";
 import {
   ShieldCheck,
   CheckCircle2,
@@ -38,33 +37,44 @@ function LinkedInIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
   );
 }
 
-// Client-side text extraction using in-browser PDF.js
-async function extractTextFromClientFile(file: File): Promise<string> {
+// Zero-dependency in-browser file text extraction
+async function readClientFileAsText(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+
+  // If plain text or markdown, decode directly
   if (file.name.endsWith(".txt") || file.name.endsWith(".md")) {
-    return await file.text();
+    return new TextDecoder("utf-8").decode(bytes);
   }
 
-  if (file.name.endsWith(".pdf") && typeof window !== "undefined" && (window as any).pdfjsLib) {
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await (window as any).pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    let fullText = "";
+  // Pure in-browser text extraction from document byte streams
+  let result = "";
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+  const rawText = decoder.decode(bytes);
 
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items
-        .map((item: any) => item.str)
-        .join(" ");
-      fullText += pageText + "\n";
+  // Match text parenthetical strings in PDF streams: (Text here) Tj or [(Text) ...] TJ
+  const stringLiterals = rawText.match(/\(([^()]{2,})\)\s*T[jJ]|\[([^\]]+)\]\s*TJ/g);
+  if (stringLiterals && stringLiterals.length > 5) {
+    const extracted: string[] = [];
+    for (const match of stringLiterals) {
+      const parts = match.match(/\(([^)]+)\)/g);
+      if (parts) {
+        const sentence = parts
+          .map((p) => p.slice(1, -1).replace(/\\([()\\])/g, "$1"))
+          .join(" ")
+          .trim();
+        if (sentence.length > 0) extracted.push(sentence);
+      }
     }
-
-    if (fullText.trim().length > 50) {
-      return fullText;
-    }
+    result = extracted.join("\n");
   }
 
-  // Fallback to native text reading
-  return await file.text();
+  if (result.length > 100) {
+    return result;
+  }
+
+  // Fallback: extract clean printable UTF-8 lines
+  return rawText.replace(/[^\x20-\x7E\n\t]/g, " ").replace(/\s{3,}/g, "\n");
 }
 
 export default function VerifiedCVLandingPage() {
@@ -133,8 +143,7 @@ export default function VerifiedCVLandingPage() {
     setIsProcessing(true);
 
     try {
-      // 1. Extract pure text directly in the browser
-      const extractedText = await extractTextFromClientFile(file);
+      const extractedText = await readClientFileAsText(file);
 
       const formData = new FormData();
       if (extractedText && extractedText.trim().length > 30) {
@@ -210,18 +219,6 @@ export default function VerifiedCVLandingPage() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans antialiased selection:bg-emerald-100 flex flex-col justify-between">
-      {/* PDF.js Browser Runtime CDN Script */}
-      <Script
-        src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"
-        strategy="lazyOnload"
-        onLoad={() => {
-          if (typeof window !== "undefined" && (window as any).pdfjsLib) {
-            (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc =
-              "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-          }
-        }}
-      />
-
       {/* Navigation */}
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-[#E2E8F0]">
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
