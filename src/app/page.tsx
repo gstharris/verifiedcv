@@ -43,7 +43,6 @@ export default function VerifiedCVLandingPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Chat & Ingress State
   const [chatInput, setChatInput] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [viewPerspective, setViewPerspective] = useState<"candidate" | "recruiter">("candidate");
@@ -70,45 +69,11 @@ export default function VerifiedCVLandingPage() {
     }, 400);
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
     setIsProcessing(true);
 
-    try {
-      // 1. Attempt server-side extraction via /api/parse
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const res = await fetch("/api/parse", {
-        method: "POST",
-        body: formData
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const extractedText = data.text || data.content || "";
-        const extractedMilestones = data.milestones || data.experiences || null;
-
-        if (typeof window !== "undefined") {
-          sessionStorage.setItem(
-            "vcv_ingest_payload",
-            JSON.stringify({
-              text: extractedText,
-              milestones: extractedMilestones,
-              source: "resume_file",
-              fileName: file.name
-            })
-          );
-        }
-        router.push("/studio");
-        return;
-      }
-    } catch {
-      // Fallback to client reader if /api/parse fails
-    }
-
-    // 2. Client-side fallback reader (handles TXT / MD / raw logs without clamping)
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = (event.target?.result as string) || "";
@@ -116,7 +81,7 @@ export default function VerifiedCVLandingPage() {
         sessionStorage.setItem(
           "vcv_ingest_payload",
           JSON.stringify({
-            text: text, // Un-truncated: full career history preserved
+            text: text,
             source: "resume_file",
             fileName: file.name
           })
@@ -245,7 +210,7 @@ export default function VerifiedCVLandingPage() {
                 </div>
                 <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-2.5 text-xs text-slate-700 leading-relaxed">
                   <span className="font-bold text-[#0F172A] block mb-0.5">CV Ally Career Copilot</span>
-                  Drop your full resume, paste your career accomplishments, or import from LinkedIn to extract your complete, un-truncated history.
+                  Drop your resume, paste your career accomplishments, or import from LinkedIn to extract your complete, un-truncated history.
                 </div>
               </div>
 
@@ -589,7 +554,7 @@ export default function VerifiedCVLandingPage() {
         </div>
       </section>
 
-      {/* How It Works */}
+      {/* How It Works progression */}
       <section id="how" className="py-14 max-w-5xl mx-auto px-6 space-y-8">
         <div className="text-center space-y-1.5 max-w-xl mx-auto">
           <h2 className="text-xs font-black uppercase tracking-widest text-[#059669]">
