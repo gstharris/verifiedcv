@@ -41,7 +41,7 @@ interface Milestone {
   tier?: string;
 }
 
-// Canonical Graham Harris baseline dataset for zero-friction testing
+// Canonical Graham Harris baseline record for zero-friction testing
 const GRAHAM_HARRIS_CANONICAL: Milestone[] = [
   {
     id: "m-gh-yahoo-01",
