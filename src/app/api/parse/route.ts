@@ -18,8 +18,8 @@ function extractTextFromPdfBuffer(buffer: Buffer): string {
   const binaryString = buffer.toString("binary");
   const extractedChunks: string[] = [];
 
-  // Match all FlateDecode streams in the PDF
-  const streamRegex = /<</Filter\s*\/FlateDecode[\s\S]*?>>\s*stream[\r\n]+([\s\S]*?)[\r\n]+endstream/g;
+  // Match all FlateDecode streams in the PDF using RegExp constructor to prevent escape collisions
+  const streamRegex = new RegExp("<<\\/Filter\\s*\\/FlateDecode[\\s\\S]*?>>\\s*stream[\\r\\n]+([\\s\\S]*?)[\\r\\n]+endstream", "g");
   let match: RegExpExecArray | null;
 
   while ((match = streamRegex.exec(binaryString)) !== null) {
@@ -27,11 +27,9 @@ function extractTextFromPdfBuffer(buffer: Buffer): string {
       const compressedBytes = Buffer.from(match[1], "binary");
       const decompressed = zlib.inflateSync(compressedBytes).toString("utf-8");
 
-      // Extract string literals from PDF text operators: (Text) Tj or [(T) -10 (ext)] TJ
       const textMatches = decompressed.match(/\((.*?)\)\s*T[jJ]|\[(.*?)\]\s*TJ/g);
       if (textMatches) {
         for (const tm of textMatches) {
-          // Extract text inside parentheses
           const innerStrings = tm.match(/\(([^)]*)\)/g);
           if (innerStrings) {
             const line = innerStrings
@@ -45,7 +43,7 @@ function extractTextFromPdfBuffer(buffer: Buffer): string {
         }
       }
     } catch {
-      // Continue if an individual stream is an image or font asset
+      // Continue if an individual stream is binary image or font data
     }
   }
 
@@ -69,7 +67,7 @@ function normalizeText(text: string): string {
     .trim();
 }
 
-// 3. Anchor-Based Deterministic Career Segmenter
+// 3. Anchor-Based Career Chapter Segmenter
 function segmentResumeIntoChapters(text: string): {
   fullName: string;
   headline: string;
@@ -88,10 +86,8 @@ function segmentResumeIntoChapters(text: string): {
     headline = lines[1].replace(/[|•]/g, "").trim();
   }
 
-  // Strict date range regex matching genuine tenure spans
   const dateRangeRegex = /(?:(?:\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s*)?\b(19\d{2}|20\d{2})\b\s*(?:—|-|–|to)\s*(?:\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s*)?\b(19\d{2}|20\d{2})\b|\b(19\d{2}|20\d{2})\b\s*(?:—|-|–|to)\s*(?:Present|Current)|(?:\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+)?\b(19\d{2}|20\d{2})\b)/i;
 
-  // Identify all line indices that represent job tenure anchors
   interface Anchor {
     lineIndex: number;
     period: string;
@@ -108,7 +104,6 @@ function segmentResumeIntoChapters(text: string): {
     }
 
     const match = line.match(dateRangeRegex);
-    // An anchor must contain a date and either be short or contain structural delimiters
     if (match && (line.length < 90 || line.includes("|") || line.includes("—") || line.includes(" - "))) {
       const period = match[0].trim();
       const lineWithoutDate = line.replace(period, "").replace(/[|•()–—,-]/g, " ").trim();
@@ -124,7 +119,6 @@ function segmentResumeIntoChapters(text: string): {
         company = parts[0].trim();
         role = "Key Leader";
       } else {
-        // Date was on its own line: inspect previous 1 or 2 lines
         if (i > 0 && lines[i - 1].length < 75 && !lines[i - 1].startsWith("•")) {
           if (i > 1 && lines[i - 2].length < 75 && !lines[i - 2].startsWith("•")) {
             company = lines[i - 2];
@@ -145,7 +139,6 @@ function segmentResumeIntoChapters(text: string): {
 
   const milestones: ExtractedMilestone[] = [];
 
-  // Construct milestone cards between anchor boundaries
   for (let a = 0; a < anchors.length; a++) {
     const current = anchors[a];
     const next = anchors[a + 1];
@@ -153,7 +146,6 @@ function segmentResumeIntoChapters(text: string): {
     const startIndex = current.lineIndex + 1;
     const endIndex = next ? next.lineIndex : lines.length;
 
-    // Everything between this anchor and the next is part of the accomplishment claim
     const claimLines = lines
       .slice(startIndex, endIndex)
       .filter((l) => !/^(EXPERIENCE|WORK EXPERIENCE|EDUCATION)$/i.test(l))
@@ -170,7 +162,6 @@ function segmentResumeIntoChapters(text: string): {
     });
   }
 
-  // Fallback if no anchors triggered
   if (milestones.length === 0) {
     const blocks = clean.split(/\n\s*\n/).filter((b) => b.trim().length > 25);
     blocks.forEach((block, idx) => {
@@ -216,7 +207,6 @@ export async function POST(req: NextRequest) {
 
     const cleanInput = normalizeText(plaintextContent);
 
-    // 1. TIER A: GEMINI MULTIMODAL / STRUCTURED EXTRACTION
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
 
     if (apiKey && cleanInput.length > 30) {
@@ -295,7 +285,6 @@ ${cleanInput}
       }
     }
 
-    // 2. TIER B: ZERO-DEPENDENCY NATIVE ANCHOR ENGINE
     const fallbackResult = segmentResumeIntoChapters(cleanInput);
 
     return NextResponse.json({
