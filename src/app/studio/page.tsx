@@ -41,6 +41,7 @@ interface Milestone {
   tier?: string;
 }
 
+// Canonical Graham Harris baseline dataset for zero-friction testing
 const GRAHAM_HARRIS_CANONICAL: Milestone[] = [
   {
     id: "m-gh-yahoo-01",
@@ -235,7 +236,7 @@ export default function StudioPage() {
 
     setChatMessages((prev) => [
       ...prev,
-      { sender: "ally", text: `Reading and extracting text from ${file.name}...` }
+      { sender: "ally", text: `Uploading ${file.name} to ingestion engine...` }
     ]);
 
     try {
@@ -475,7 +476,7 @@ export default function StudioPage() {
               <div className="space-y-2">
                 <h2 className="text-xl font-black text-[#0F172A]">Ingest Your Career History</h2>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                  Upload your resume file directly (PDF, Word, TXT) or paste your career experience below to map your history into atomic, testable milestones.
+                  Upload your resume file or paste your career experience below to map your history into atomic, testable milestones.
                 </p>
               </div>
 

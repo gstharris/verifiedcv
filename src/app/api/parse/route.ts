@@ -12,134 +12,78 @@ interface ExtractedMilestone {
   isCorroborated: boolean;
 }
 
-// Clean text and scrub any PostScript / PDF byte artifacts
-function sanitizeText(raw: string): string {
-  // If raw PDF markers leaked through, strip them out completely
-  let text = raw.replace(/\d+\s+\d+\s+obj[\s\S]*?endobj/g, " ");
-  text = text.replace(/<<[\s\S]*?>>/g, " ");
-  text = text.replace(/stream[\s\S]*?endstream/g, " ");
-  text = text.replace(/%PDF-[\d.]+/g, " ");
-
-  return text
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, " — ")
-    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ")
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, "")
-    .replace(/\t/g, " ")
-    .replace(/ +/g, " ")
-    .trim();
-}
-
-// Segment plain text cleanly into discrete company milestones
-function parseCleanText(cleanText: string): {
+// Deterministic semantic parser for plain text (never touches binary PDFs)
+function parsePlainTextResume(rawText: string): {
   fullName: string;
   headline: string;
   milestones: ExtractedMilestone[];
 } {
-  const lines = cleanText.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+  const clean = rawText
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, " — ")
+    .replace(/\t/g, " ")
+    .trim();
+
+  // Split on double linebreaks or distinct company/role paragraphs
+  const chunks = clean.split(/\n\s*\n/).map((c) => c.trim()).filter((c) => c.length > 25);
 
   let fullName = "Graham Harris";
   let headline = "Product Leader • AI Platforms";
 
-  if (lines.length > 0 && lines[0].length < 45 && !/\d{4}/.test(lines[0])) {
-    fullName = lines[0].replace(/[|•,]/g, "").trim();
+  const firstLines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (firstLines.length > 0 && firstLines[0].length < 40 && !/\d{4}/.test(firstLines[0])) {
+    fullName = firstLines[0];
   }
-  if (lines.length > 1 && lines[1].length < 80 && !/\d{4}/.test(lines[1])) {
-    headline = lines[1].replace(/[|•]/g, "").trim();
+  if (firstLines.length > 1 && firstLines[1].length < 75 && !/\d{4}/.test(firstLines[1])) {
+    headline = firstLines[1];
   }
 
   const dateRangeRegex = /(?:(?:\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s*)?\b(19\d{2}|20\d{2})\b\s*(?:—|-|–|to)\s*(?:\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s*)?\b(19\d{2}|20\d{2})\b|\b(19\d{2}|20\d{2})\b\s*(?:—|-|–|to)\s*(?:Present|Current)|(?:\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+)?\b(19\d{2}|20\d{2})\b)/i;
 
-  interface ChapterHeader {
-    index: number;
-    period: string;
-    company: string;
-    role: string;
-  }
+  const milestones: ExtractedMilestone[] = [];
 
-  const headers: ChapterHeader[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    const lines = chunk.split("\n").map((l) => l.trim()).filter(Boolean);
+    const headerLine = lines[0] || "";
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    if (/^(EXPERIENCE|PROFESSIONAL EXPERIENCE|WORK EXPERIENCE|EMPLOYMENT|HISTORY|SUMMARY|EDUCATION|SKILLS)$/i.test(line)) {
+    // Skip generic resume section headers
+    if (/^(EXPERIENCE|PROFESSIONAL EXPERIENCE|WORK HISTORY|SUMMARY|EDUCATION|SKILLS)$/i.test(headerLine)) {
       continue;
     }
 
-    const match = line.match(dateRangeRegex);
-    if (match && (line.length < 90 || line.includes("|") || line.includes("—") || line.includes(" - "))) {
-      const period = match[0].trim();
-      const sanitized = line.replace(period, "").replace(/[|•()–—,-]/g, " ").trim();
-      const parts = sanitized.split(/\s{2,}|\t/).filter(Boolean);
+    const dateMatch = chunk.match(dateRangeRegex);
+    const period = dateMatch ? dateMatch[0].trim() : "Tenure";
 
-      let company = "";
-      let role = "";
+    let company = "";
+    let role = "";
 
-      if (parts.length >= 2) {
-        company = parts[0].trim();
-        role = parts[1].trim();
-      } else if (parts.length === 1) {
-        company = parts[0].trim();
-        role = "Key Leader";
-      } else {
-        if (i > 0 && lines[i - 1].length < 75 && !lines[i - 1].startsWith("•")) {
-          if (i > 1 && lines[i - 2].length < 75 && !lines[i - 2].startsWith("•")) {
-            company = lines[i - 2];
-            role = lines[i - 1];
-          } else {
-            company = lines[i - 1];
-            role = "Leader";
-          }
-        } else {
-          company = "Career Chapter";
-          role = "Leader";
-        }
-      }
+    const parts = headerLine.replace(period, "").replace(/[|•()–—,-]/g, " ").split(/\s{2,}|\t/).filter(Boolean);
 
-      headers.push({ index: i, period, company, role });
+    if (parts.length >= 2) {
+      company = parts[0];
+      role = parts[1];
+    } else if (parts.length === 1) {
+      company = parts[0];
+      role = lines.length > 1 && lines[1].length < 50 && !lines[1].startsWith("•") ? lines[1] : "Key Leader";
+    } else {
+      company = `Career Chapter ${milestones.length + 1}`;
+      role = "Executive / Leader";
     }
-  }
-
-  const milestones: ExtractedMilestone[] = [];
-
-  for (let h = 0; h < headers.length; h++) {
-    const current = headers[h];
-    const next = headers[h + 1];
-
-    const startIndex = current.index + 1;
-    const endIndex = next ? next.index : lines.length;
 
     const claimLines = lines
-      .slice(startIndex, endIndex)
-      .filter((l) => !/^(EXPERIENCE|WORK EXPERIENCE|EDUCATION)$/i.test(l))
+      .filter((l) => l !== headerLine && !l.includes(period))
       .map((l) => l.replace(/^[•\-\*–]\s*/, "").trim())
       .filter(Boolean);
 
     milestones.push({
-      id: `m-chapter-${Date.now()}-${h}`,
-      company: current.company || "Career Chapter",
-      role: current.role || "Leader",
-      period: current.period || "Confirmed Tenure",
-      calibratedClaim: claimLines.join(" ").replace(/\s{2,}/g, " ").trim() || "Led strategic roadmaps, team leadership, and technical platform architecture.",
+      id: `m-parsed-${Date.now()}-${milestones.length}`,
+      company: company.slice(0, 45),
+      role: role.slice(0, 45),
+      period,
+      calibratedClaim: claimLines.join(" ").replace(/\s{2,}/g, " ").trim() || chunk,
       isCorroborated: false
-    });
-  }
-
-  if (milestones.length === 0) {
-    const blocks = cleanText.split(/\n\s*\n/).filter((b) => b.trim().length > 25);
-    blocks.forEach((block, idx) => {
-      const bLines = block.trim().split("\n").filter(Boolean);
-      const header = bLines[0] || `Role ${idx + 1}`;
-      const rest = bLines.slice(1).join(" ").trim() || header;
-      milestones.push({
-        id: `m-block-${Date.now()}-${idx}`,
-        company: header.slice(0, 45),
-        role: "Leader",
-        period: "Tenure",
-        calibratedClaim: rest,
-        isCorroborated: false
-      });
     });
   }
 
@@ -153,45 +97,54 @@ export async function POST(req: NextRequest) {
     const pastedText = formData.get("text") as string | null;
 
     if (!file && (!pastedText || pastedText.trim().length === 0)) {
-      return NextResponse.json({ error: "No resume input provided." }, { status: 400 });
+      return NextResponse.json({ error: "No resume input received." }, { status: 400 });
     }
-
-    let inputString = pastedText || "";
-
-    if (file) {
-      const buffer = Buffer.from(await file.arrayBuffer());
-      inputString = buffer.toString("utf-8");
-    }
-
-    const clean = sanitizeText(inputString);
 
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
 
-    if (apiKey && clean.length > 40) {
+    // 1. TIER A: GEMINI MULTIMODAL INGESTION
+    if (apiKey) {
       try {
         const ai = new GoogleGenAI({ apiKey });
+        let contents: any[] = [];
 
-        const prompt = `
+        const promptText = `
 You are the senior ingestion engine for VerifiedCV (verifiedcv.app).
-Extract the candidate's career track record losslessly into structured milestones.
+Extract the candidate's career track record losslessly into structured, atomic milestones.
 
-STRICT RULES:
-1. Every distinct role, company, or multi-year era MUST be its own separate milestone object.
-2. DO NOT combine different career eras into one entry.
+STRICT INSTRUCTIONS:
+1. Every distinct job, company, or multi-year era MUST be its own separate milestone object.
+2. DO NOT combine different career eras or organizations into one entry.
 3. 'company': Clean organization name.
 4. 'role': Professional title.
-5. 'period': Date range (e.g. "2010 — 2024").
-6. 'calibratedClaim': Paragraph summarizing accomplishments, platform scale, technical execution, and outcomes. Remove bullet characters.
-
-RESUME CONTENT:
-"""
-${clean}
-"""
+5. 'period': Date range (e.g. "2010 — 2024" or "2024 — Present").
+6. 'calibratedClaim': Comprehensive paragraph detailing accomplishments, platform scale, technical execution, and outcomes. Remove bullet characters.
 `;
+
+        if (file) {
+          const buffer = Buffer.from(await file.arrayBuffer());
+          const base64Data = buffer.toString("base64");
+          const mimeType = file.type || (file.name.endsWith(".pdf") ? "application/pdf" : "text/plain");
+
+          contents = [
+            {
+              inlineData: {
+                data: base64Data,
+                mimeType: mimeType
+              }
+            },
+            promptText
+          ];
+        } else if (pastedText) {
+          contents = [
+            promptText,
+            `Candidate Resume Content:\n"""\n${pastedText}\n"""`
+          ];
+        }
 
         const response = await ai.models.generateContent({
           model: "gemini-2.5-flash",
-          contents: [prompt],
+          contents,
           config: {
             responseMimeType: "application/json",
             responseSchema: {
@@ -238,22 +191,41 @@ ${clean}
             milestones
           });
         }
-      } catch (geminiErr) {
-        console.warn("Gemini parsing bypassed, using clean text segmentation:", geminiErr);
+      } catch (geminiError: any) {
+        console.error("Gemini Ingress Error:", geminiError);
+        if (file) {
+          return NextResponse.json(
+            { error: `Gemini parsing failed on this document: ${geminiError?.message || "Invalid response"}. Please paste your resume text directly.` },
+            { status: 502 }
+          );
+        }
       }
     }
 
-    const fallbackResult = parseCleanText(clean);
+    // 2. TIER B: PLAIN TEXT FALLBACK
+    // If user uploaded a binary PDF without GEMINI_API_KEY configured, do NOT run binary string readers!
+    if (file && (file.name.endsWith(".pdf") || file.type.includes("pdf"))) {
+      return NextResponse.json(
+        {
+          error: "PDF parsing requires GEMINI_API_KEY to be configured in your environment. To continue without an API key, please open your resume, copy all text (Cmd+A -> Cmd+C), and paste it directly into Candidate Studio."
+        },
+        { status: 400 }
+      );
+    }
 
-    return NextResponse.json({
-      success: true,
-      engine: "sanitized-text-parser",
-      fullName: fallbackResult.fullName,
-      headline: fallbackResult.headline,
-      milestones: fallbackResult.milestones
-    });
+    if (pastedText) {
+      const fallbackResult = parsePlainTextResume(pastedText);
+      return NextResponse.json({
+        success: true,
+        engine: "plaintext-segmenter",
+        fullName: fallbackResult.fullName,
+        headline: fallbackResult.headline,
+        milestones: fallbackResult.milestones
+      });
+    }
+
+    return NextResponse.json({ error: "Could not parse input. Please paste your career text directly." }, { status: 422 });
   } catch (err: unknown) {
-    console.error("Parse route error:", err);
     const message = err instanceof Error ? err.message : "Parse error";
     return NextResponse.json({ error: message }, { status: 500 });
   }
