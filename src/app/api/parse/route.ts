@@ -3,12 +3,19 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 export const dynamic = "force-dynamic";
 
+export interface AtomicClaim {
+  id: string;
+  text: string;
+  isCorroborated: boolean;
+}
+
 export interface ExtractedMilestone {
   id: string;
   company: string;
   role: string;
   period: string;
-  calibratedClaim: string;
+  claims: string[];
+  calibratedClaim: string; // Unified string for backward compatibility
   isCorroborated: boolean;
 }
 
@@ -28,6 +35,53 @@ export interface ParsedDossierPayload {
   milestones: ExtractedMilestone[];
 }
 
+// Splits raw section text into discrete achievement line items
+function extractAtomicAchievements(rawLines: string[]): string[] {
+  // 1. Filter out orphan bullet glyphs
+  const contentLines = rawLines
+    .map((l) => l.trim())
+    .filter((l) => Boolean(l) && !/^[●•\-\*–]+$/.test(l));
+
+  if (contentLines.length === 0) return [];
+
+  const achievements: string[] = [];
+  let currentBuffer = "";
+
+  // Common resume action verbs that start new bullet points
+  const actionVerbStart = /^(Direct|Directed|Design|Designed|Build|Built|Deploy|Deployed|Partner|Partnered|Found|Founded|Rebuild|Rebuilt|Establish|Established|Engineer|Engineered|Conduct|Conducted|Scale|Scaled|Lead|Led|Restructure|Restructured|Architect|Architected|Manage|Managed|Create|Created|Drive|Drove|Deliver|Delivered)\b/i;
+
+  for (let i = 0; i < contentLines.length; i++) {
+    const raw = contentLines[i];
+    const startsWithBullet = /^[●•\-\*–]/.test(raw);
+    const cleanText = raw.replace(/^[●•\-\*–]\s*/, "").trim();
+
+    if (!cleanText) continue;
+
+    // A line begins a new achievement if:
+    // - It had a bullet glyph
+    // - OR previous buffer ended with sentence punctuation (. or ;) AND current line starts with an action verb or capital letter
+    // - OR buffer is empty
+    const prevEndedWithPeriod = currentBuffer.endsWith(".") || currentBuffer.endsWith(";");
+    const isNewActionSentence = prevEndedWithPeriod && actionVerbStart.test(cleanText);
+
+    if (startsWithBullet || isNewActionSentence || !currentBuffer) {
+      if (currentBuffer) {
+        achievements.push(currentBuffer.replace(/\s{2,}/g, " ").trim());
+      }
+      currentBuffer = cleanText;
+    } else {
+      // Continuation of current wrapped sentence
+      currentBuffer += " " + cleanText;
+    }
+  }
+
+  if (currentBuffer) {
+    achievements.push(currentBuffer.replace(/\s{2,}/g, " ").trim());
+  }
+
+  return achievements.filter((a) => a.length > 5);
+}
+
 function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
   const normalized = rawText
     .replace(/\r\n/g, "\n")
@@ -44,7 +98,7 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
   const education: ExtractedEducation[] = [];
   const milestones: ExtractedMilestone[] = [];
 
-  // 1. Detect Candidate Name
+  // 1. Candidate Name Detection
   const nonBlank = rawLines.filter(Boolean);
   if (nonBlank.length > 0 && !nonBlank[0].includes("|") && nonBlank[0].length < 50) {
     fullName = nonBlank[0].replace(/[•,]/g, "").trim();
@@ -104,7 +158,6 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
       .map((s) => s.replace(/^[●•\-\*–]\s*/, "").trim())
       .filter((s) => s.length > 1 && s.length < 40 && !/^(Languages|Frameworks|Tools|Methodologies):?$/i.test(s));
 
-    // Deduplicate skills preserving insertion order
     skillTokens.forEach((s) => {
       if (!skills.some((existing) => existing.toLowerCase() === s.toLowerCase())) {
         skills.push(s);
@@ -132,12 +185,12 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
           institution: line,
           degree: sectionLines.EDUCATION[i + 1] || "Degree Program"
         });
-        i++; // skip next line as degree
+        i++;
       }
     }
   }
 
-  // 6. Process Work Experience Milestones
+  // 6. Process Work Experience into Discrete Chapters & Atomic Achievements
   const yearPattern = /\b(?:19\d{2}|20\d{2})\b/i;
   interface RoleBlock {
     company: string;
@@ -176,7 +229,6 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
         lines: []
       };
     } else if (currentBlock) {
-      if (/^[●•\-\*–]$/.test(line)) continue;
       currentBlock.lines.push(line);
     }
   }
@@ -185,36 +237,17 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
     roleBlocks.push(currentBlock);
   }
 
-  // Build Calibrated Milestone Claims
   roleBlocks.forEach((block, idx) => {
-    const sentences: string[] = [];
-    let buf = "";
-
-    for (const raw of block.lines) {
-      const cleanLine = raw.replace(/^[●•\-\*–]\s*/, "").trim();
-      if (!cleanLine) continue;
-
-      if (!buf) {
-        buf = cleanLine;
-      } else if (raw.startsWith("●") || raw.startsWith("•") || raw.startsWith("-")) {
-        sentences.push(buf);
-        buf = cleanLine;
-      } else {
-        buf += " " + cleanLine;
-      }
-    }
-    if (buf) {
-      sentences.push(buf);
-    }
+    const items = extractAtomicAchievements(block.lines);
+    const unifiedClaim = items.join(" ");
 
     milestones.push({
       id: `m-chapter-${Date.now()}-${idx}`,
       company: block.company,
       role: block.role,
       period: block.period,
-      calibratedClaim:
-        sentences.join(" ").replace(/\s{2,}/g, " ").trim() ||
-        "Directed operational execution, engineering trade-offs, and product architecture roadmaps.",
+      claims: items.length > 0 ? items : ["Directed operational execution, engineering trade-offs, and product architecture roadmaps."],
+      calibratedClaim: unifiedClaim || "Directed operational execution, engineering trade-offs, and product architecture roadmaps.",
       isCorroborated: false
     });
   });
@@ -234,7 +267,7 @@ function getFallbackDataset(): ParsedDossierPayload {
     fullName: "Graham Harris",
     headline: "Head of Product Management • AI Platforms",
     summaryStatement:
-      "Built enterprise technology and ad personalization platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries at Yahoo. Founded an operational workflow and recommendation platform at PairedRight, engineering RAG architectures evaluated against an operational golden dataset to scale client revenue by over $1M.",
+      "Built enterprise technology and ad personalization platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries at Yahoo. Founded an operational workflow and recommendation platform at PairedRight, engineering RAG architectures evaluated against an operational golden dataset to scale client revenue by over $1M. Restructured complex multi-product SaaS portfolios into modular tiers at Bazaarvoice, reducing sales cycles by 25% and decreasing customer churn by 15%.",
     skills: [
       "AI Workspace Platforms",
       "Agentic Workflows",
@@ -258,8 +291,15 @@ function getFallbackDataset(): ParsedDossierPayload {
         company: "Ge-on",
         role: "Head of Product Management",
         period: "May 2025 to Present",
+        claims: [
+          "Direct end-to-end product strategy, feature prioritization, and delivery roadmaps for an AI workspace platform, driving a 25% lift in weekly active users during initial rollout.",
+          "Designed and deployed autonomous agent workflows and proactive push notifications that feed a persistent memory layer, allowing the platform to learn creator preferences and maintain context across interactions.",
+          "Build functional interactive prototypes in React, Cursor, and modern UI tools to test user workflows, edge cases, and interface ergonomics directly with users prior to engineering sprints.",
+          "Designed and deployed self-serve onboarding journeys and workspace configuration flows, lifting new user activation and account setup completion by 20%.",
+          "Partner daily with engineering, data science, and design in Agile cadences to manage backlogs, set acceptance criteria, and ensure system stability."
+        ],
         calibratedClaim:
-          "Direct end-to-end product strategy, feature prioritization, and delivery roadmaps for an AI workspace platform, driving a 25% lift in weekly active users during initial rollout. Designed and deployed autonomous agent workflows and proactive push notifications feeding a persistent memory layer. Built functional interactive prototypes in React, Cursor, and modern UI tools to test user workflows prior to engineering sprints.",
+          "Direct end-to-end product strategy, feature prioritization, and delivery roadmaps for an AI workspace platform, driving a 25% lift in weekly active users during initial rollout. Designed and deployed autonomous agent workflows and proactive push notifications feeding a persistent memory layer.",
         isCorroborated: false
       },
       {
@@ -267,8 +307,17 @@ function getFallbackDataset(): ParsedDossierPayload {
         company: "SCD Enterprises / PairedRight",
         role: "Founder and Head of Product",
         period: "2018 to March 2026",
+        claims: [
+          "Founded an operational workflow and recommendation platform for hospitality operators, scaling client revenue by over $1M through automated upselling and real-time guidance.",
+          "Rebuilt the core recommendation engine using a context-grounded RAG framework, ensuring automated pairing suggestions remained strictly constrained to curated merchant parameters.",
+          "Established an operational golden dataset to benchmark, verify, and regression-test algorithmic changes, ensuring recommendation accuracy before deploying updates to frontline staff devices.",
+          "Designed operator dashboards and administrative consoles, providing business owners visibility and control over recommendation rules, inventory availability, and pricing thresholds.",
+          "Engineered API integration layers connecting customer-facing mobile interfaces directly with legacy point-of-sale and back-office systems of record to maintain data synchronization.",
+          "Designed and deployed automated quote-to-cash workflows, multi-party fee reconciliation, and transactional audit trails, eliminating manual reporting and reducing operational overhead by 10%.",
+          "Conducted hundreds of hours of on-site customer discovery shadowing managers and frontline operators during live shifts, converting ground-level friction into structured product specifications."
+        ],
         calibratedClaim:
-          "Founded an operational workflow and recommendation platform for hospitality operators, scaling client revenue by over $1M through automated upselling and real-time guidance. Rebuilt the core recommendation engine using a context-grounded RAG framework. Established an operational golden dataset to benchmark, verify, and regression-test algorithmic changes before deploying updates to frontline staff devices.",
+          "Founded an operational workflow and recommendation platform for hospitality operators, scaling client revenue by over $1M through automated upselling and real-time guidance. Rebuilt the core recommendation engine using a context-grounded RAG framework.",
         isCorroborated: false
       },
       {
@@ -276,6 +325,10 @@ function getFallbackDataset(): ParsedDossierPayload {
         company: "Yahoo",
         role: "Head of Product Management",
         period: "2010 - 2024",
+        claims: [
+          "Built ad personalization and enterprise platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries.",
+          "Maintained sub-50ms query latency budgets across global edge infrastructure."
+        ],
         calibratedClaim:
           "Built ad personalization and enterprise platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries. Maintained sub-50ms query latency budgets across global edge infrastructure.",
         isCorroborated: true
@@ -296,7 +349,6 @@ export async function POST(req: NextRequest) {
       const buffer = Buffer.from(await file.arrayBuffer());
       const rawString = buffer.toString("utf-8");
 
-      // Check if uploaded document is compiled binary PDF
       if (rawString.startsWith("%PDF")) {
         const rawApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
         const isKeyActive =
@@ -314,7 +366,12 @@ Extract the complete candidate career profile into structured JSON:
 - summaryStatement: cohesive professional summary paragraph
 - skills: array of core skill strings
 - education: array of objects with institution, degree, and optional year
-- milestones: array of objects with company, role, period, calibratedClaim (accomplishments with bullet glyphs removed)
+- milestones: array of objects:
+  - company: string
+  - role: string
+  - period: string
+  - claims: array of individual achievement claim strings (each bullet point separated)
+  - calibratedClaim: unified summary string
 `;
             const response = await ai.models.generateContent({
               model: "gemini-2.5-flash",
@@ -356,9 +413,10 @@ Extract the complete candidate career profile into structured JSON:
                           company: { type: Type.STRING },
                           role: { type: Type.STRING },
                           period: { type: Type.STRING },
+                          claims: { type: Type.ARRAY, items: { type: Type.STRING } },
                           calibratedClaim: { type: Type.STRING }
                         },
-                        required: ["company", "role", "period", "calibratedClaim"]
+                        required: ["company", "role", "period", "claims"]
                       }
                     }
                   },
@@ -382,7 +440,8 @@ Extract the complete candidate career profile into structured JSON:
                   company: m.company,
                   role: m.role,
                   period: m.period,
-                  calibratedClaim: m.calibratedClaim,
+                  claims: Array.isArray(m.claims) ? m.claims : [m.calibratedClaim || ""],
+                  calibratedClaim: m.calibratedClaim || (Array.isArray(m.claims) ? m.claims.join(" ") : ""),
                   isCorroborated: false
                 }))
               });
@@ -392,7 +451,7 @@ Extract the complete candidate career profile into structured JSON:
           }
         }
 
-        // If no active Gemini key, strip PDF binary artifacts and parse readable streams
+        // If no active Gemini key, strip non-printable characters and extract clean text streams
         textContent = rawString.replace(/[^\x20-\x7E\n\t]/g, " ");
       } else {
         textContent = rawString;
@@ -403,7 +462,6 @@ Extract the complete candidate career profile into structured JSON:
       return NextResponse.json({ error: "No readable text provided." }, { status: 400 });
     }
 
-    // Deterministic Canonical Parsing (handles summary, skills, education, and milestones)
     const result = parseComprehensiveResume(textContent);
 
     return NextResponse.json({

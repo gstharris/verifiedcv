@@ -36,7 +36,8 @@ interface Milestone {
   company: string;
   role: string;
   period: string;
-  calibratedClaim: string;
+  claims: string[];
+  calibratedClaim?: string;
   isCorroborated: boolean;
   corroboratedBy?: string;
   tier?: string;
@@ -84,8 +85,13 @@ const GRAHAM_HARRIS_CANONICAL: {
       company: "Ge-on",
       role: "Head of Product Management",
       period: "May 2025 to Present",
-      calibratedClaim:
-        "Direct end-to-end product strategy, feature prioritization, and delivery roadmaps for an AI workspace platform, driving a 25% lift in weekly active users during initial rollout. Designed and deployed autonomous agent workflows and proactive push notifications that feed a persistent memory layer, allowing the platform to learn creator preferences and maintain context across interactions. Build functional interactive prototypes in React, Cursor, and modern UI tools to test user workflows directly with users prior to engineering sprints.",
+      claims: [
+        "Direct end-to-end product strategy, feature prioritization, and delivery roadmaps for an AI workspace platform, driving a 25% lift in weekly active users during initial rollout.",
+        "Designed and deployed autonomous agent workflows and proactive push notifications that feed a persistent memory layer, allowing the platform to learn creator preferences and maintain context across interactions.",
+        "Build functional interactive prototypes in React, Cursor, and modern UI tools to test user workflows, edge cases, and interface ergonomics directly with users prior to engineering sprints.",
+        "Designed and deployed self-serve onboarding journeys and workspace configuration flows, lifting new user activation and account setup completion by 20%.",
+        "Partner daily with engineering, data science, and design in Agile cadences to manage backlogs, set acceptance criteria, and ensure system stability."
+      ],
       isCorroborated: false
     },
     {
@@ -93,8 +99,15 @@ const GRAHAM_HARRIS_CANONICAL: {
       company: "SCD Enterprises / PairedRight",
       role: "Founder and Head of Product",
       period: "2018 to March 2026",
-      calibratedClaim:
-        "Founded an operational workflow and recommendation platform for hospitality operators, scaling client revenue by over $1M through automated upselling and real-time guidance. Rebuilt the core recommendation engine using a context-grounded RAG framework, ensuring automated pairing suggestions remained strictly constrained to curated merchant parameters. Established an operational golden dataset to benchmark, verify, and regression-test algorithmic changes before deploying updates to frontline staff devices.",
+      claims: [
+        "Founded an operational workflow and recommendation platform for hospitality operators, scaling client revenue by over $1M through automated upselling and real-time guidance.",
+        "Rebuilt the core recommendation engine using a context-grounded RAG framework, ensuring automated pairing suggestions remained strictly constrained to curated merchant parameters.",
+        "Established an operational golden dataset to benchmark, verify, and regression-test algorithmic changes, ensuring recommendation accuracy before deploying updates to frontline staff devices.",
+        "Designed operator dashboards and administrative consoles, providing business owners visibility and control over recommendation rules, inventory availability, and pricing thresholds.",
+        "Engineered API integration layers connecting customer-facing mobile interfaces directly with legacy point-of-sale and back-office systems of record to maintain data synchronization.",
+        "Designed and deployed automated quote-to-cash workflows, multi-party fee reconciliation, and transactional audit trails, eliminating manual reporting and reducing operational overhead by 10%.",
+        "Conducted hundreds of hours of on-site customer discovery shadowing managers and frontline operators during live shifts, converting ground-level friction into structured product specifications."
+      ],
       isCorroborated: false
     },
     {
@@ -102,8 +115,10 @@ const GRAHAM_HARRIS_CANONICAL: {
       company: "Yahoo",
       role: "Head of Product Management",
       period: "2010 - 2024",
-      calibratedClaim:
-        "Built enterprise technology and ad personalization platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries. Maintained sub-50ms query latency budgets across global edge infrastructure.",
+      claims: [
+        "Built ad personalization and enterprise platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries.",
+        "Maintained sub-50ms query latency budgets across global edge infrastructure."
+      ],
       isCorroborated: true,
       corroboratedBy: "Senior Director of Core Engineering"
     }
@@ -157,7 +172,12 @@ export default function StudioPage() {
       }
 
       if (parsed.milestones && Array.isArray(parsed.milestones) && parsed.milestones.length > 0) {
-        setMilestones(parsed.milestones);
+        setMilestones(
+          parsed.milestones.map((m: any) => ({
+            ...m,
+            claims: Array.isArray(m.claims) ? m.claims : (m.calibratedClaim ? [m.calibratedClaim] : [])
+          }))
+        );
         if (parsed.fullName) setFullName(parsed.fullName);
         if (parsed.headline) setHeadline(parsed.headline);
         if (parsed.summaryStatement) setSummaryStatement(parsed.summaryStatement);
@@ -169,7 +189,7 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Successfully ingested full career dossier (${parsed.milestones.length} milestones, summary, skills, and education). Ready for calibration.`
+            text: `Successfully ingested full career dossier (${parsed.milestones.length} milestones, line-item achievements, summary, and skills). Ready for calibration.`
           }
         ]);
         return;
@@ -202,7 +222,7 @@ export default function StudioPage() {
       ...prev,
       {
         sender: "ally",
-        text: "Loaded full canonical dossier (Summary, 3 Roles, Skills, and Education). All proof claims ready on your canvas."
+        text: "Loaded full canonical dossier (Summary, 3 Roles with individual line-item achievements, Skills, and Education). All proof claims ready on your canvas."
       }
     ]);
   };
@@ -225,7 +245,12 @@ export default function StudioPage() {
 
       const data = await res.json();
       if (res.ok && data.milestones && data.milestones.length > 0) {
-        setMilestones(data.milestones);
+        const formattedMilestones = data.milestones.map((m: any) => ({
+          ...m,
+          claims: Array.isArray(m.claims) ? m.claims : (m.calibratedClaim ? [m.calibratedClaim] : [])
+        }));
+
+        setMilestones(formattedMilestones);
         if (data.fullName) setFullName(data.fullName);
         if (data.headline) setHeadline(data.headline);
         if (data.summaryStatement) setSummaryStatement(data.summaryStatement);
@@ -237,7 +262,7 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Extracted ${data.milestones.length} milestones along with your professional summary, skills, and academic credentials.`
+            text: `Extracted ${data.milestones.length} milestones with individual achievement line items, professional summary, skills, and academic credentials.`
           }
         ]);
       } else {
@@ -281,7 +306,12 @@ export default function StudioPage() {
 
       const data = await res.json();
       if (res.ok && data.milestones && data.milestones.length > 0) {
-        setMilestones(data.milestones);
+        const formattedMilestones = data.milestones.map((m: any) => ({
+          ...m,
+          claims: Array.isArray(m.claims) ? m.claims : (m.calibratedClaim ? [m.calibratedClaim] : [])
+        }));
+
+        setMilestones(formattedMilestones);
         if (data.fullName) setFullName(data.fullName);
         if (data.headline) setHeadline(data.headline);
         if (data.summaryStatement) setSummaryStatement(data.summaryStatement);
@@ -293,7 +323,7 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Extracted ${data.milestones.length} career milestones and credentials from ${file.name}.`
+            text: `Extracted ${data.milestones.length} career milestones with individual achievements from ${file.name}.`
           }
         ]);
       } else {
@@ -379,11 +409,46 @@ export default function StudioPage() {
       id: `m-custom-${Date.now()}`,
       company: "New Organization",
       role: "Product Leader",
-      period: "2026 — Present",
-      calibratedClaim: "Quantified execution statement and engineering trade-offs...",
+      period: "2026 - Present",
+      claims: ["Direct end-to-end product strategy, feature prioritization, and delivery roadmaps..."],
       isCorroborated: false
     };
     setMilestones((prev) => [newM, ...prev]);
+  };
+
+  const updateMilestoneClaim = (milestoneId: string, claimIndex: number, newText: string) => {
+    setMilestones((prev) =>
+      prev.map((m) => {
+        if (m.id !== milestoneId) return m;
+        const updatedClaims = [...m.claims];
+        updatedClaims[claimIndex] = newText;
+        return { ...m, claims: updatedClaims };
+      })
+    );
+  };
+
+  const addClaimToMilestone = (milestoneId: string) => {
+    setMilestones((prev) =>
+      prev.map((m) => {
+        if (m.id !== milestoneId) return m;
+        return {
+          ...m,
+          claims: [...m.claims, "Describe quantified business execution and operational trade-offs..."]
+        };
+      })
+    );
+  };
+
+  const deleteClaimFromMilestone = (milestoneId: string, claimIndex: number) => {
+    setMilestones((prev) =>
+      prev.map((m) => {
+        if (m.id !== milestoneId) return m;
+        return {
+          ...m,
+          claims: m.claims.filter((_, idx) => idx !== claimIndex)
+        };
+      })
+    );
   };
 
   return (
@@ -514,7 +579,7 @@ export default function StudioPage() {
               <div className="space-y-2">
                 <h2 className="text-xl font-black text-[#0F172A]">Ingest Your Career Track Record</h2>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                  Paste your resume or load your canonical profile below. VerifiedCV automatically structures your Executive Summary, Milestones, Core Competencies, and Academic Credentials.
+                  Paste your resume or load your canonical profile below. VerifiedCV automatically breaks your accomplishments into atomic, testable claim line items.
                 </p>
               </div>
 
@@ -643,18 +708,19 @@ export default function StudioPage() {
                 </div>
               )}
 
-              {/* 2. Milestones Card Stream */}
+              {/* 2. Milestones Card Stream with Individual Line-Item Claims */}
               <div className="space-y-4">
                 <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">
                   Career Milestones ({milestones.length})
                 </h3>
 
-                <div className="space-y-5">
+                <div className="space-y-6">
                   {milestones.map((milestone) => (
                     <div
                       key={milestone.id}
                       className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-4 hover:border-slate-300 transition-all antialiased"
                     >
+                      {/* Header Row: Company, Role, Period */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-[#E2E8F0]/70">
                         <div className="flex flex-wrap items-center gap-2">
                           <input
@@ -719,23 +785,48 @@ export default function StudioPage() {
                         </div>
                       </div>
 
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                          Calibrated Claim & Impact Scope
-                        </label>
-                        <textarea
-                          rows={4}
-                          value={milestone.calibratedClaim}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setMilestones((prev) =>
-                              prev.map((m) =>
-                                m.id === milestone.id ? { ...m, calibratedClaim: val } : m
-                              )
-                            );
-                          }}
-                          className="w-full text-xs text-slate-700 leading-relaxed p-3.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans resize-y bg-[#F8FAFC]"
-                        />
+                      {/* Line-Item Atomic Achievements Stream */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                            Atomic Achievement Claims ({milestone.claims.length})
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => addClaimToMilestone(milestone.id)}
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-[#059669] hover:text-emerald-700 transition-colors cursor-pointer"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>Add Line Item</span>
+                          </button>
+                        </div>
+
+                        <div className="space-y-2.5">
+                          {milestone.claims.map((claimText, claimIdx) => (
+                            <div
+                              key={claimIdx}
+                              className="group flex items-start gap-2.5 p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] focus-within:border-[#059669] focus-within:bg-white transition-all"
+                            >
+                              <div className="mt-1 w-1.5 h-1.5 rounded-full bg-[#059669] shrink-0" />
+                              <textarea
+                                rows={2}
+                                value={claimText}
+                                onChange={(e) =>
+                                  updateMilestoneClaim(milestone.id, claimIdx, e.target.value)
+                                }
+                                className="flex-1 text-xs text-slate-700 leading-relaxed focus:outline-none font-sans resize-y bg-transparent"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => deleteClaimFromMilestone(milestone.id, claimIdx)}
+                                className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all p-1 cursor-pointer shrink-0"
+                                title="Delete Line Item"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   ))}
