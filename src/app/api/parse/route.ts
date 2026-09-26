@@ -12,26 +12,19 @@ interface ExtractedMilestone {
   isCorroborated: boolean;
 }
 
-// Clean and normalize text, stripping non-printable characters and normalizing dashes
-function cleanRawText(input: string): string {
-  return input
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, " - ")
-    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ")
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, "")
-    .replace(/\t/g, " ")
-    .replace(/ +/g, " ")
-    .trim();
-}
-
-// Resilient fallback parser that only matches real tenure ranges, never standalone years in sentences
-function fallbackSegmenter(rawText: string): {
+// Clean plaintext fallback segmenter for plain text pastes only (never runs on binary PDFs)
+function parsePlainTextFallback(text: string): {
   fullName: string;
   headline: string;
   milestones: ExtractedMilestone[];
 } {
-  const clean = cleanRawText(rawText);
+  const clean = text
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, " - ")
+    .replace(/\t/g, " ")
+    .trim();
+
   const lines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
 
   let fullName = "Graham Harris";
@@ -44,57 +37,42 @@ function fallbackSegmenter(rawText: string): {
     headline = lines[1].replace(/[|•]/g, "").trim();
   }
 
-  // Strict tenure date range matcher (e.g. "2010 - 2024", "Jan 2018 - Present", "2018 - 2023")
-  // Notice: DOES NOT match single standalone years to prevent splitting on bullet points!
-  const tenureRangeRegex = /(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*)?\b(19\d{2}|20\d{2})\b\s*(?:-|–|—|to)\s*(?:(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*)?\b(19\d{2}|20\d{2})\b|present|current)/i;
+  // Strict date range matcher (requires two dates or a date + Present)
+  const rangeRegex = /(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*)?\b(19\d{2}|20\d{2})\b\s*(?:-|–|—|to)\s*(?:(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*)?\b(19\d{2}|20\d{2})\b|present|current)/i;
 
   const milestones: ExtractedMilestone[] = [];
   let currentCompany = "";
   let currentRole = "";
   let currentPeriod = "";
-  let currentClaimLines: string[] = [];
+  let currentPoints: string[] = [];
 
-  const commitMilestone = () => {
-    if (currentCompany || currentRole || currentClaimLines.length > 0) {
-      const claim = currentClaimLines
-        .join(" ")
-        .replace(/^[•\-\*–]\s*/g, "")
-        .replace(/\s{2,}/g, " ")
-        .trim();
-
+  const flush = () => {
+    if (currentCompany || currentRole || currentPoints.length > 0) {
       milestones.push({
-        id: `m-seg-${Date.now()}-${milestones.length}`,
+        id: `m-fallback-${Date.now()}-${milestones.length}`,
         company: currentCompany || "Career Chapter",
         role: currentRole || "Leader",
         period: currentPeriod || "Confirmed Tenure",
-        calibratedClaim: claim || "Led strategic roadmaps, team leadership, and technical platform architecture.",
+        calibratedClaim: currentPoints.join(" ").replace(/^[•\-\*–]\s*/g, "").trim() || "Executed core business and technical leadership.",
         isCorroborated: false
       });
-
       currentCompany = "";
       currentRole = "";
       currentPeriod = "";
-      currentClaimLines = [];
+      currentPoints = [];
     }
   };
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    if (/^(EXPERIENCE|PROFESSIONAL EXPERIENCE|WORK HISTORY|SUMMARY|EDUCATION)$/i.test(line)) continue;
 
-    if (/^(EXPERIENCE|PROFESSIONAL EXPERIENCE|WORK EXPERIENCE|EMPLOYMENT|HISTORY|SUMMARY|EDUCATION)$/i.test(line)) {
-      continue;
-    }
-
-    // Only consider as header if line contains a genuine tenure range AND is reasonably short
-    const match = line.match(tenureRangeRegex);
-    const isHeaderLine = match && (line.length < 90 || line.includes("|") || line.includes("—"));
-
-    if (isHeaderLine && match) {
-      commitMilestone();
-
+    const match = line.match(rangeRegex);
+    if (match && (line.length < 90 || line.includes("|") || line.includes("—"))) {
+      flush();
       currentPeriod = match[0].trim();
-      const textWithoutDate = line.replace(currentPeriod, "").replace(/[|•()–—,-]/g, " ").trim();
-      const parts = textWithoutDate.split(/\s{2,}|\t/).filter(Boolean);
+      const rest = line.replace(currentPeriod, "").replace(/[|•()–—,-]/g, " ").trim();
+      const parts = rest.split(/\s{2,}|\t/).filter(Boolean);
 
       if (parts.length >= 2) {
         currentCompany = parts[0];
@@ -103,48 +81,39 @@ function fallbackSegmenter(rawText: string): {
         currentCompany = parts[0];
         currentRole = "Executive / Leader";
       } else {
-        if (i > 0 && lines[i - 1].length < 75 && !lines[i - 1].startsWith("•")) {
-          currentCompany = lines[i - 1];
-          currentRole = "Key Leader";
-        } else {
-          currentCompany = "Career Chapter";
-          currentRole = "Leader";
-        }
+        currentCompany = (i > 0 && lines[i - 1].length < 70 && !lines[i - 1].startsWith("•")) ? lines[i - 1] : "Career Chapter";
+        currentRole = "Leader";
       }
-    } else if (line.startsWith("•") || line.startsWith("-") || line.startsWith("*") || line.startsWith("–")) {
-      currentClaimLines.push(line.replace(/^[•\-\*–]\s*/, ""));
+    } else if (line.startsWith("•") || line.startsWith("-") || line.startsWith("*")) {
+      currentPoints.push(line.replace(/^[•\-\*]\s*/, ""));
     } else {
-      if (currentClaimLines.length === 0 && line.length < 60 && !line.endsWith(".")) {
+      if (currentPoints.length === 0 && line.length < 60 && !line.endsWith(".")) {
         if (!currentCompany) currentCompany = line;
         else if (!currentRole) currentRole = line;
-        else currentClaimLines.push(line);
+        else currentPoints.push(line);
       } else {
-        currentClaimLines.push(line);
+        currentPoints.push(line);
       }
     }
   }
 
-  commitMilestone();
+  flush();
 
-  // If tenure range detection didn't split, fallback to paragraph blocks
-  if (milestones.length <= 1 && clean.length > 200) {
-    const blocks = clean.split(/\n\s*\n/).filter((b) => b.trim().length > 25);
+  if (milestones.length <= 1 && clean.length > 150) {
+    const blocks = clean.split(/\n\s*\n/).filter((b) => b.trim().length > 20);
     if (blocks.length > 1) {
-      const fallbackList: ExtractedMilestone[] = [];
-      blocks.forEach((block, idx) => {
-        const bLines = block.trim().split("\n").filter(Boolean);
-        const header = bLines[0] || `Role ${idx + 1}`;
-        const rest = bLines.slice(1).join(" ").trim() || header;
-        fallbackList.push({
+      return {
+        fullName,
+        headline,
+        milestones: blocks.map((b, idx) => ({
           id: `m-block-${Date.now()}-${idx}`,
-          company: header.slice(0, 45),
+          company: b.split("\n")[0].slice(0, 45) || `Role ${idx + 1}`,
           role: "Leader",
           period: "Tenure",
-          calibratedClaim: rest,
+          calibratedClaim: b.split("\n").slice(1).join(" ").trim() || b,
           isCorroborated: false
-        });
-      });
-      return { fullName, headline, milestones: fallbackList };
+        }))
+      };
     }
   }
 
@@ -163,23 +132,28 @@ export async function POST(req: NextRequest) {
 
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
 
-    // 1. If Gemini Key is Present, use Gemini native extraction
+    // DIAGNOSTIC LOGGING
+    console.log("[VerifiedCV Ingress] API Key present:", Boolean(apiKey));
+    console.log("[VerifiedCV Ingress] File upload:", file ? `${file.name} (${file.type}, ${file.size} bytes)` : "none");
+    console.log("[VerifiedCV Ingress] Pasted text length:", pastedText ? pastedText.length : 0);
+
+    // 1. PRIMARY PATH: GOOGLE GEMINI MULTIMODAL INGESTION
     if (apiKey) {
       try {
         const ai = new GoogleGenAI({ apiKey });
         let contents: any[] = [];
 
         const promptText = `
-You are the senior parsing engine for VerifiedCV (verifiedcv.app).
+You are the senior ingestion engine for VerifiedCV (verifiedcv.app).
 Extract the candidate's career track record losslessly into structured, atomic milestones.
 
 STRICT INSTRUCTIONS:
-1. Every distinct role, company, or multi-year initiative MUST be its own separate milestone object.
+1. Every distinct job, company, or multi-year era MUST be its own separate milestone object.
 2. DO NOT combine different career eras or organizations into one entry.
 3. 'company': Clean organization name.
 4. 'role': Professional title.
 5. 'period': Date range (e.g. "2010 — 2024" or "2024 — Present").
-6. 'calibratedClaim': Paragraph summarizing accomplishments, platform scale, team size, and architectural outcomes. Remove bullet characters.
+6. 'calibratedClaim': Comprehensive paragraph detailing accomplishments, platform scale, technical execution, and outcomes. Remove bullet characters.
 `;
 
         if (file) {
@@ -235,7 +209,7 @@ STRICT INSTRUCTIONS:
         const parsedJson = JSON.parse(response.text || "{}");
 
         if (parsedJson.milestones && Array.isArray(parsedJson.milestones) && parsedJson.milestones.length > 0) {
-          const formatted = parsedJson.milestones.map((m: any, idx: number) => ({
+          const milestones: ExtractedMilestone[] = parsedJson.milestones.map((m: any, idx: number) => ({
             id: `m-gemini-${Date.now()}-${idx}`,
             company: m.company || "Career Chapter",
             role: m.role || "Executive / Leader",
@@ -249,38 +223,51 @@ STRICT INSTRUCTIONS:
             engine: "gemini-2.5-flash",
             fullName: parsedJson.fullName || "Graham Harris",
             headline: parsedJson.headline || "Product Leader • AI Platforms",
-            milestones: formatted
+            milestones
           });
         }
-      } catch (geminiErr) {
-        console.warn("Gemini call failed, falling back to structural parser:", geminiErr);
+      } catch (geminiError: any) {
+        console.error("[VerifiedCV Ingress] Gemini API call failed:", geminiError);
+        // Do NOT silently corrupt binary PDFs with fallback string parsing
+        if (file && (file.name.endsWith(".pdf") || file.type.includes("pdf"))) {
+          return NextResponse.json(
+            {
+              error: `Gemini parsing failed on this PDF: ${geminiError?.message || "Unknown error"}. Please check GEMINI_API_KEY or paste your resume text directly.`
+            },
+            { status: 502 }
+          );
+        }
+      }
+    } else {
+      // API Key is missing
+      if (file && (file.name.endsWith(".pdf") || file.type.includes("pdf"))) {
+        return NextResponse.json(
+          {
+            error: "GEMINI_API_KEY is not configured in your environment. PDFs cannot be parsed without Gemini. Please configure GEMINI_API_KEY in .env.local or paste plain text."
+          },
+          { status: 500 }
+        );
       }
     }
 
-    // 2. High-Resilience Fallback Segmenter
-    let rawString = pastedText || "";
-
-    if (file) {
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const rawText = buffer.toString("utf-8");
-
-      // Strip non-printable binary bytes if raw PDF arrived
-      rawString = rawText
-        .replace(/[^\x20-\x7E\n\t]/g, " ")
-        .replace(/\s{3,}/g, "\n");
+    // 2. FALLBACK PATH: ONLY FOR PLAIN TEXT PASTES
+    if (pastedText) {
+      const fallbackResult = parsePlainTextFallback(pastedText);
+      return NextResponse.json({
+        success: true,
+        engine: "plaintext-fallback",
+        fullName: fallbackResult.fullName,
+        headline: fallbackResult.headline,
+        milestones: fallbackResult.milestones
+      });
     }
 
-    const fallbackResult = fallbackSegmenter(rawString);
-
-    return NextResponse.json({
-      success: true,
-      engine: "fallback-segmenter",
-      fullName: fallbackResult.fullName,
-      headline: fallbackResult.headline,
-      milestones: fallbackResult.milestones
-    });
+    return NextResponse.json(
+      { error: "Could not extract resume data. Please paste your career text directly." },
+      { status: 422 }
+    );
   } catch (err: unknown) {
-    console.error("Critical parse route error:", err);
+    console.error("[VerifiedCV Ingress] Critical error:", err);
     const message = err instanceof Error ? err.message : "Parse error";
     return NextResponse.json({ error: message }, { status: 500 });
   }

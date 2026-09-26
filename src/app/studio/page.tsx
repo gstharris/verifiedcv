@@ -125,14 +125,12 @@ export default function StudioPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // Check if canonical load requested from LinkedIn import
     if (sessionStorage.getItem("vcv_load_canonical") === "true") {
       sessionStorage.removeItem("vcv_load_canonical");
       loadCanonicalRecord();
       return;
     }
 
-    // Check if pre-parsed milestones exist
     const parsedStored = sessionStorage.getItem("vcv_parsed_milestones");
     if (parsedStored) {
       try {
@@ -158,7 +156,6 @@ export default function StudioPage() {
       }
     }
 
-    // Check if raw paste arrived
     const rawPaste = sessionStorage.getItem("vcv_raw_paste");
     if (rawPaste) {
       sessionStorage.removeItem("vcv_raw_paste");
@@ -166,7 +163,6 @@ export default function StudioPage() {
     }
   }, []);
 
-  // Auto-scroll CV Ally
   useEffect(() => {
     if (chatScrollRef.current) {
       chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
@@ -219,6 +215,10 @@ export default function StudioPage() {
         ]);
       } else {
         alert(data.error || "Failed to extract career milestones.");
+        setChatMessages((prev) => [
+          ...prev,
+          { sender: "ally", text: `Error: ${data.error || "Failed to extract milestones."}` }
+        ]);
       }
     } catch {
       alert("Network error communicating with parsing engine.");
@@ -240,7 +240,7 @@ export default function StudioPage() {
 
     setChatMessages((prev) => [
       ...prev,
-      { sender: "ally", text: `Analyzing ${file.name} through document parser...` }
+      { sender: "ally", text: `Analyzing ${file.name} through parsing engine...` }
     ]);
 
     try {
@@ -267,6 +267,10 @@ export default function StudioPage() {
         ]);
       } else {
         alert(data.error || "Failed to parse document.");
+        setChatMessages((prev) => [
+          ...prev,
+          { sender: "ally", text: `Error parsing file: ${data.error || "Unknown error"}` }
+        ]);
       }
     } catch {
       alert("Network error uploading file.");
