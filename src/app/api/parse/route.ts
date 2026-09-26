@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI, Type } from "@google/genai";
-import pdfParse from "pdf-parse";
+import zlib from "zlib";
 
 export const dynamic = "force-dynamic";
 
@@ -13,29 +13,73 @@ interface ExtractedMilestone {
   isCorroborated: boolean;
 }
 
-// 1. Text Sanitizer
-function cleanExtractedText(raw: string): string {
-  return raw
+// 1. Native Zero-Dependency PDF Text Extractor using Node's built-in zlib
+function extractTextFromPdfBuffer(buffer: Buffer): string {
+  const binaryString = buffer.toString("binary");
+  const extractedChunks: string[] = [];
+
+  // Match all FlateDecode streams in the PDF
+  const streamRegex = /<</Filter\s*\/FlateDecode[\s\S]*?>>\s*stream[\r\n]+([\s\S]*?)[\r\n]+endstream/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = streamRegex.exec(binaryString)) !== null) {
+    try {
+      const compressedBytes = Buffer.from(match[1], "binary");
+      const decompressed = zlib.inflateSync(compressedBytes).toString("utf-8");
+
+      // Extract string literals from PDF text operators: (Text) Tj or [(T) -10 (ext)] TJ
+      const textMatches = decompressed.match(/\((.*?)\)\s*T[jJ]|\[(.*?)\]\s*TJ/g);
+      if (textMatches) {
+        for (const tm of textMatches) {
+          // Extract text inside parentheses
+          const innerStrings = tm.match(/\(([^)]*)\)/g);
+          if (innerStrings) {
+            const line = innerStrings
+              .map((s) => s.slice(1, -1).replace(/\\([()\\])/g, "$1"))
+              .join(" ")
+              .trim();
+            if (line.length > 0) {
+              extractedChunks.push(line);
+            }
+          }
+        }
+      }
+    } catch {
+      // Continue if an individual stream is an image or font asset
+    }
+  }
+
+  if (extractedChunks.length > 0) {
+    return extractedChunks.join("\n");
+  }
+
+  // Fallback: extract printable ASCII characters
+  return buffer.toString("utf-8").replace(/[^\x20-\x7E\n\t]/g, " ").replace(/\s{3,}/g, "\n");
+}
+
+// 2. Text Normalizer
+function normalizeText(text: string): string {
+  return text
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
-    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, " - ")
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, " — ")
     .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ")
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, "")
     .replace(/\t/g, " ")
     .replace(/ +/g, " ")
     .trim();
 }
 
-// 2. High-Accuracy Structural Segmenter (Local Engine)
-function segmentTextIntoMilestones(cleanedText: string): {
+// 3. Anchor-Based Deterministic Career Segmenter
+function segmentResumeIntoChapters(text: string): {
   fullName: string;
   headline: string;
   milestones: ExtractedMilestone[];
 } {
-  const lines = cleanedText.split("\n").map((l) => l.trim()).filter(Boolean);
+  const clean = normalizeText(text);
+  const lines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
 
   let fullName = "Graham Harris";
-  let headline = "Product Leader • AI Platforms";
+  let headline = "Product Leader • Personalization & AI Platforms";
 
   if (lines.length > 0 && lines[0].length < 45 && !/\d{4}/.test(lines[0])) {
     fullName = lines[0].replace(/[|•,]/g, "").trim();
@@ -44,106 +88,104 @@ function segmentTextIntoMilestones(cleanedText: string): {
     headline = lines[1].replace(/[|•]/g, "").trim();
   }
 
-  // Matches genuine employment date ranges
-  const dateRangeRegex = /(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*)?\b(19\d{2}|20\d{2})\b\s*(?:-|–|—|to)\s*(?:(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*)?\b(19\d{2}|20\d{2})\b|present|current)/i;
+  // Strict date range regex matching genuine tenure spans
+  const dateRangeRegex = /(?:(?:\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s*)?\b(19\d{2}|20\d{2})\b\s*(?:—|-|–|to)\s*(?:\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s*)?\b(19\d{2}|20\d{2})\b|\b(19\d{2}|20\d{2})\b\s*(?:—|-|–|to)\s*(?:Present|Current)|(?:\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+)?\b(19\d{2}|20\d{2})\b)/i;
 
-  const milestones: ExtractedMilestone[] = [];
-  let currentCompany = "";
-  let currentRole = "";
-  let currentPeriod = "";
-  let currentBullets: string[] = [];
+  // Identify all line indices that represent job tenure anchors
+  interface Anchor {
+    lineIndex: number;
+    period: string;
+    company: string;
+    role: string;
+  }
 
-  const commitMilestone = () => {
-    if (currentCompany || currentRole || currentBullets.length > 0) {
-      const claim = currentBullets
-        .join(" ")
-        .replace(/^[•\-\*–]\s*/g, "")
-        .replace(/\s{2,}/g, " ")
-        .trim();
-
-      milestones.push({
-        id: `m-parsed-${Date.now()}-${milestones.length}`,
-        company: currentCompany || "Career Chapter",
-        role: currentRole || "Leader",
-        period: currentPeriod || "Confirmed Tenure",
-        calibratedClaim: claim || "Led key strategic initiatives, product development, and operational scale.",
-        isCorroborated: false
-      });
-
-      currentCompany = "";
-      currentRole = "";
-      currentPeriod = "";
-      currentBullets = [];
-    }
-  };
+  const anchors: Anchor[] = [];
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-
-    if (/^(EXPERIENCE|PROFESSIONAL EXPERIENCE|WORK EXPERIENCE|EMPLOYMENT|HISTORY|SUMMARY|EDUCATION)$/i.test(line)) {
+    if (/^(EXPERIENCE|PROFESSIONAL EXPERIENCE|WORK EXPERIENCE|EMPLOYMENT|HISTORY|SUMMARY|EDUCATION|SKILLS)$/i.test(line)) {
       continue;
     }
 
     const match = line.match(dateRangeRegex);
-    const isRoleHeader = match && (line.length < 90 || line.includes("|") || line.includes("—") || line.includes(" - "));
+    // An anchor must contain a date and either be short or contain structural delimiters
+    if (match && (line.length < 90 || line.includes("|") || line.includes("—") || line.includes(" - "))) {
+      const period = match[0].trim();
+      const lineWithoutDate = line.replace(period, "").replace(/[|•()–—,-]/g, " ").trim();
+      const parts = lineWithoutDate.split(/\s{2,}|\t/).filter(Boolean);
 
-    if (isRoleHeader && match) {
-      commitMilestone();
+      let company = "";
+      let role = "";
 
-      currentPeriod = match[0].trim();
-      const sanitized = line.replace(currentPeriod, "").replace(/[|•()–—,-]/g, " ").trim();
-      const tokens = sanitized.split(/\s{2,}|\t/).filter(Boolean);
-
-      if (tokens.length >= 2) {
-        currentCompany = tokens[0];
-        currentRole = tokens[1];
-      } else if (tokens.length === 1) {
-        currentCompany = tokens[0];
-        currentRole = "Executive / Leader";
+      if (parts.length >= 2) {
+        company = parts[0].trim();
+        role = parts[1].trim();
+      } else if (parts.length === 1) {
+        company = parts[0].trim();
+        role = "Key Leader";
       } else {
+        // Date was on its own line: inspect previous 1 or 2 lines
         if (i > 0 && lines[i - 1].length < 75 && !lines[i - 1].startsWith("•")) {
-          currentCompany = lines[i - 1];
-          currentRole = "Key Leader";
+          if (i > 1 && lines[i - 2].length < 75 && !lines[i - 2].startsWith("•")) {
+            company = lines[i - 2];
+            role = lines[i - 1];
+          } else {
+            company = lines[i - 1];
+            role = "Leader";
+          }
         } else {
-          currentCompany = "Career Chapter";
-          currentRole = "Leader";
+          company = "Career Chapter";
+          role = "Leader";
         }
       }
-    } else if (line.startsWith("•") || line.startsWith("-") || line.startsWith("*") || line.startsWith("–")) {
-      currentBullets.push(line.replace(/^[•\-\*–]\s*/, ""));
-    } else {
-      if (currentBullets.length === 0 && line.length < 65 && !line.endsWith(".")) {
-        if (!currentCompany) currentCompany = line;
-        else if (!currentRole) currentRole = line;
-        else currentBullets.push(line);
-      } else {
-        currentBullets.push(line);
-      }
+
+      anchors.push({ lineIndex: i, period, company, role });
     }
   }
 
-  commitMilestone();
+  const milestones: ExtractedMilestone[] = [];
 
-  // If date-matching only found 1 milestone, split on multi-line paragraph boundaries
-  if (milestones.length <= 1 && cleanedText.length > 250) {
-    const chunks = cleanedText.split(/\n\s*\n/).filter((c) => c.trim().length > 30);
-    if (chunks.length > 1) {
-      const fallbackList: ExtractedMilestone[] = [];
-      chunks.forEach((chunk, idx) => {
-        const cLines = chunk.trim().split("\n").filter(Boolean);
-        const header = cLines[0] || `Role ${idx + 1}`;
-        const rest = cLines.slice(1).join(" ").trim() || header;
-        fallbackList.push({
-          id: `m-block-${Date.now()}-${idx}`,
-          company: header.slice(0, 45),
-          role: "Leader",
-          period: "Tenure",
-          calibratedClaim: rest,
-          isCorroborated: false
-        });
+  // Construct milestone cards between anchor boundaries
+  for (let a = 0; a < anchors.length; a++) {
+    const current = anchors[a];
+    const next = anchors[a + 1];
+
+    const startIndex = current.lineIndex + 1;
+    const endIndex = next ? next.lineIndex : lines.length;
+
+    // Everything between this anchor and the next is part of the accomplishment claim
+    const claimLines = lines
+      .slice(startIndex, endIndex)
+      .filter((l) => !/^(EXPERIENCE|WORK EXPERIENCE|EDUCATION)$/i.test(l))
+      .map((l) => l.replace(/^[•\-\*–]\s*/, "").trim())
+      .filter(Boolean);
+
+    milestones.push({
+      id: `m-parsed-${Date.now()}-${a}`,
+      company: current.company || "Career Chapter",
+      role: current.role || "Leader",
+      period: current.period || "Confirmed Tenure",
+      calibratedClaim: claimLines.join(" ").replace(/\s{2,}/g, " ").trim() || "Led strategic roadmaps, team leadership, and technical platform architecture.",
+      isCorroborated: false
+    });
+  }
+
+  // Fallback if no anchors triggered
+  if (milestones.length === 0) {
+    const blocks = clean.split(/\n\s*\n/).filter((b) => b.trim().length > 25);
+    blocks.forEach((block, idx) => {
+      const bLines = block.trim().split("\n").filter(Boolean);
+      const header = bLines[0] || `Role ${idx + 1}`;
+      const rest = bLines.slice(1).join(" ").trim() || header;
+      milestones.push({
+        id: `m-block-${Date.now()}-${idx}`,
+        company: header.slice(0, 45),
+        role: "Leader",
+        period: "Tenure",
+        calibratedClaim: rest,
+        isCorroborated: false
       });
-      return { fullName, headline, milestones: fallbackList };
-    }
+    });
   }
 
   return { fullName, headline, milestones };
@@ -159,39 +201,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No resume file or text received." }, { status: 400 });
     }
 
-    let extractedPlaintext = "";
+    let plaintextContent = "";
 
-    // 1. EXTRACT REAL PLAINTEXT FROM PDF OR TXT
     if (file) {
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-
+      const buffer = Buffer.from(await file.arrayBuffer());
       if (file.name.endsWith(".pdf") || file.type.includes("pdf")) {
-        try {
-          const pdfData = await pdfParse(buffer);
-          extractedPlaintext = pdfData.text;
-        } catch (pdfErr) {
-          console.warn("pdf-parse extraction failed, falling back to ASCII stream reader:", pdfErr);
-          extractedPlaintext = buffer.toString("utf-8").replace(/[^\x20-\x7E\n\t]/g, " ");
-        }
+        plaintextContent = extractTextFromPdfBuffer(buffer);
       } else {
-        extractedPlaintext = buffer.toString("utf-8");
+        plaintextContent = buffer.toString("utf-8");
       }
     } else if (pastedText) {
-      extractedPlaintext = pastedText;
+      plaintextContent = pastedText;
     }
 
-    const cleanContent = cleanExtractedText(extractedPlaintext);
+    const cleanInput = normalizeText(plaintextContent);
 
-    // 2. TIER A: IF GEMINI API KEY IS CONFIGURED, USE LLM SCHEMA EXTRACTION
+    // 1. TIER A: GEMINI MULTIMODAL / STRUCTURED EXTRACTION
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
 
-    if (apiKey && cleanContent.length > 30) {
+    if (apiKey && cleanInput.length > 30) {
       try {
         const ai = new GoogleGenAI({ apiKey });
 
-        const promptText = `
-You are the senior parsing engine for VerifiedCV (verifiedcv.app).
+        const prompt = `
+You are the senior ingestion engine for VerifiedCV (verifiedcv.app).
 Extract the candidate's career track record losslessly into structured, atomic milestones.
 
 STRICT INSTRUCTIONS:
@@ -202,15 +235,15 @@ STRICT INSTRUCTIONS:
 5. 'period': Date range (e.g. "2010 — 2024" or "2024 — Present").
 6. 'calibratedClaim': Paragraph summarizing accomplishments, platform scale, technical execution, and outcomes. Remove bullet characters.
 
-RESUME CONTENT:
+RESUME TEXT:
 """
-${cleanContent}
+${cleanInput}
 """
 `;
 
         const response = await ai.models.generateContent({
           model: "gemini-2.5-flash",
-          contents: [promptText],
+          contents: [prompt],
           config: {
             responseMimeType: "application/json",
             responseSchema: {
@@ -257,17 +290,17 @@ ${cleanContent}
             milestones
           });
         }
-      } catch (geminiError) {
-        console.warn("Gemini call failed; falling back to local structural parser:", geminiError);
+      } catch (geminiErr) {
+        console.warn("Gemini call failed, utilizing native anchor engine:", geminiErr);
       }
     }
 
-    // 3. TIER B: DETERMINISTIC LOCAL STRUCTURAL PARSER (100% OFFLINE / ZERO API KEY DEPENDENCY)
-    const fallbackResult = segmentTextIntoMilestones(cleanContent);
+    // 2. TIER B: ZERO-DEPENDENCY NATIVE ANCHOR ENGINE
+    const fallbackResult = segmentResumeIntoChapters(cleanInput);
 
     return NextResponse.json({
       success: true,
-      engine: "pdf-parse-local",
+      engine: "native-zlib-anchor-engine",
       fullName: fallbackResult.fullName,
       headline: fallbackResult.headline,
       milestones: fallbackResult.milestones
