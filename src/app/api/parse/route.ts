@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenAI, Type } from "@google/genai";
+import { extractText } from "unpdf";
 
 export const dynamic = "force-dynamic";
 
@@ -29,18 +29,16 @@ export interface ParsedDossierPayload {
   milestones: ExtractedMilestone[];
 }
 
-// 1. Strict Alphabetical Scrubber (Kills all lone bullet glyphs and symbols)
 function cleanSentence(text: string): string {
   return text
-    .replace(/[\u200B-\u200D\uFEFF]/g, "") // Zero-width spaces
-    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ") // Non-breaking spaces
-    .replace(/^[●•\-\*–—◦‣⁃·\d\.\)\s]+/g, "") // Leading bullets/numbers
-    .replace(/[●•\-\*–—◦‣⁃·]+/g, " ") // Mid-sentence rogue bullets
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ")
+    .replace(/^[●•\-\*–—◦‣⁃·\d\.\)\s]+/g, "")
+    .replace(/[●•\-\*–—◦‣⁃·]+/g, " ")
     .replace(/\s{2,}/g, " ")
     .trim();
 }
 
-// Validates that an item is a genuine English achievement claim
 function isValidAchievement(text: string): boolean {
   const lettersOnly = text.replace(/[^a-zA-Z]/g, "");
   return lettersOnly.length >= 15;
@@ -85,7 +83,6 @@ function extractAtomicAchievements(rawLines: string[]): string[] {
   return achievements.filter(isValidAchievement);
 }
 
-// Strict classification between Skills and Academic Credentials
 function isEducationItem(text: string): boolean {
   return /\b(university|college|bachelor|master|b\.s\.|b\.a\.|m\.s\.|m\.b\.a\.|ph\.d\.|degree|polytechnic|institute of technology|graduated)\b/i.test(text);
 }
@@ -166,11 +163,10 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
 
     skillTokens.forEach((s) => {
       if (isEducationItem(s)) {
-        // Reroute leaked degree item into education
         education.push({
           id: `edu-routed-${Date.now()}-${education.length}`,
           institution: s,
-          degree: "Degree / Certification"
+          degree: "Degree / Credential"
         });
       } else if (!skills.some((existing) => existing.toLowerCase() === s.toLowerCase()) && s.length >= 2) {
         skills.push(s);
@@ -284,115 +280,26 @@ export async function POST(req: NextRequest) {
     let textContent = pastedText || "";
 
     if (file) {
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const rawString = buffer.toString("utf-8");
+      const buffer = await file.arrayBuffer();
 
-      if (rawString.startsWith("%PDF")) {
-        const rawApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-        const isKeyActive =
-          Boolean(rawApiKey) &&
-          !rawApiKey?.includes("placeholder") &&
-          rawApiKey !== "your_api_key_here";
-
-        if (isKeyActive && rawApiKey) {
-          try {
-            const ai = new GoogleGenAI({ apiKey: rawApiKey });
-            const prompt = `
-Extract the complete candidate career profile into structured JSON:
-- fullName: string
-- headline: string
-- summaryStatement: cohesive professional summary paragraph
-- skills: array of core skill strings
-- education: array of objects with institution, degree, and optional year
-- milestones: array of objects with company, role, period, claims (array of strings, each bullet point separated, no bullet characters), calibratedClaim
-`;
-            const response = await ai.models.generateContent({
-              model: "gemini-2.5-flash",
-              contents: [
-                {
-                  inlineData: {
-                    data: buffer.toString("base64"),
-                    mimeType: "application/pdf"
-                  }
-                },
-                prompt
-              ],
-              config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                  type: Type.OBJECT,
-                  properties: {
-                    fullName: { type: Type.STRING },
-                    headline: { type: Type.STRING },
-                    summaryStatement: { type: Type.STRING },
-                    skills: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    education: {
-                      type: Type.ARRAY,
-                      items: {
-                        type: Type.OBJECT,
-                        properties: {
-                          institution: { type: Type.STRING },
-                          degree: { type: Type.STRING },
-                          year: { type: Type.STRING }
-                        },
-                        required: ["institution", "degree"]
-                      }
-                    },
-                    milestones: {
-                      type: Type.ARRAY,
-                      items: {
-                        type: Type.OBJECT,
-                        properties: {
-                          company: { type: Type.STRING },
-                          role: { type: Type.STRING },
-                          period: { type: Type.STRING },
-                          claims: { type: Type.ARRAY, items: { type: Type.STRING } },
-                          calibratedClaim: { type: Type.STRING }
-                        },
-                        required: ["company", "role", "period", "claims"]
-                      }
-                    }
-                  },
-                  required: ["fullName", "milestones"]
-                }
-              }
-            });
-
-            const parsed = JSON.parse(response.text || "{}");
-            if (parsed.milestones && Array.isArray(parsed.milestones) && parsed.milestones.length > 0) {
-              return NextResponse.json({
-                success: true,
-                engine: "gemini-2.5-flash",
-                fullName: parsed.fullName || "Graham Harris",
-                headline: parsed.headline || "Head of Product Management • AI Platforms",
-                summaryStatement: parsed.summaryStatement || "",
-                skills: parsed.skills || [],
-                education: parsed.education || [],
-                milestones: parsed.milestones.map((m: any, idx: number) => ({
-                  id: `m-gemini-${Date.now()}-${idx}`,
-                  company: m.company,
-                  role: m.role,
-                  period: m.period,
-                  claims: (Array.isArray(m.claims) ? m.claims : [m.calibratedClaim || ""]).filter(isValidAchievement),
-                  calibratedClaim: m.calibratedClaim || (Array.isArray(m.claims) ? m.claims.join(" ") : ""),
-                  isCorroborated: false
-                }))
-              });
-            }
-          } catch (geminiErr) {
-            console.warn("Gemini execution failed on PDF:", geminiErr);
-          }
+      if (file.name.endsWith(".pdf") || file.type.includes("pdf")) {
+        try {
+          const { text } = await extractText(new Uint8Array(buffer));
+          textContent = Array.isArray(text) ? text.join("\n") : (text || "");
+        } catch (pdfErr) {
+          console.error("unpdf extraction failed:", pdfErr);
+          return NextResponse.json(
+            { error: "Failed to extract text from PDF document." },
+            { status: 400 }
+          );
         }
-
-        // Clean printable ASCII characters for local extraction
-        textContent = rawString.replace(/[^\x20-\x7E\n\t]/g, " ");
       } else {
-        textContent = rawString;
+        textContent = Buffer.from(buffer).toString("utf-8");
       }
     }
 
     if (!textContent.trim()) {
-      return NextResponse.json({ error: "No readable text provided." }, { status: 400 });
+      return NextResponse.json({ error: "No readable resume content found." }, { status: 400 });
     }
 
     const result = parseComprehensiveResume(textContent);

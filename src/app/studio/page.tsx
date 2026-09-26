@@ -125,42 +125,6 @@ const GRAHAM_HARRIS_CANONICAL: {
   ]
 };
 
-// Zero-dependency client file reader
-async function readClientFileAsText(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
-
-  if (file.name.endsWith(".txt") || file.name.endsWith(".md")) {
-    return new TextDecoder("utf-8").decode(bytes);
-  }
-
-  let result = "";
-  const decoder = new TextDecoder("utf-8", { fatal: false });
-  const rawText = decoder.decode(bytes);
-
-  const stringLiterals = rawText.match(/\(([^()]{2,})\)\s*T[jJ]|\[([^\]]+)\]\s*TJ/g);
-  if (stringLiterals && stringLiterals.length > 5) {
-    const extracted: string[] = [];
-    for (const match of stringLiterals) {
-      const parts = match.match(/\(([^)]+)\)/g);
-      if (parts) {
-        const sentence = parts
-          .map((p) => p.slice(1, -1).replace(/\\([()\\])/g, "$1"))
-          .join(" ")
-          .trim();
-        if (sentence.length > 0) extracted.push(sentence);
-      }
-    }
-    result = extracted.join("\n");
-  }
-
-  if (result.length > 100) {
-    return result;
-  }
-
-  return rawText.replace(/[^\x20-\x7E\n\t]/g, " ").replace(/\s{3,}/g, "\n");
-}
-
 export default function StudioPage() {
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [summaryStatement, setSummaryStatement] = useState("");
@@ -331,18 +295,12 @@ export default function StudioPage() {
 
     setChatMessages((prev) => [
       ...prev,
-      { sender: "ally", text: `Extracting text from ${file.name}...` }
+      { sender: "ally", text: `Ingesting ${file.name}...` }
     ]);
 
     try {
-      const extractedText = await readClientFileAsText(file);
-
       const formData = new FormData();
-      if (extractedText && extractedText.trim().length > 30) {
-        formData.append("text", extractedText);
-      } else {
-        formData.append("file", file);
-      }
+      formData.append("file", file);
 
       const res = await fetch("/api/parse", {
         method: "POST",
@@ -381,7 +339,7 @@ export default function StudioPage() {
         ]);
       }
     } catch {
-      alert("Error extracting document text.");
+      alert("Error uploading file.");
     } finally {
       setIsProcessing(false);
     }

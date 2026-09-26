@@ -37,46 +37,6 @@ function LinkedInIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
   );
 }
 
-// Zero-dependency in-browser file text extraction
-async function readClientFileAsText(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
-
-  // If plain text or markdown, decode directly
-  if (file.name.endsWith(".txt") || file.name.endsWith(".md")) {
-    return new TextDecoder("utf-8").decode(bytes);
-  }
-
-  // Pure in-browser text extraction from document byte streams
-  let result = "";
-  const decoder = new TextDecoder("utf-8", { fatal: false });
-  const rawText = decoder.decode(bytes);
-
-  // Match text parenthetical strings in PDF streams: (Text here) Tj or [(Text) ...] TJ
-  const stringLiterals = rawText.match(/\(([^()]{2,})\)\s*T[jJ]|\[([^\]]+)\]\s*TJ/g);
-  if (stringLiterals && stringLiterals.length > 5) {
-    const extracted: string[] = [];
-    for (const match of stringLiterals) {
-      const parts = match.match(/\(([^)]+)\)/g);
-      if (parts) {
-        const sentence = parts
-          .map((p) => p.slice(1, -1).replace(/\\([()\\])/g, "$1"))
-          .join(" ")
-          .trim();
-        if (sentence.length > 0) extracted.push(sentence);
-      }
-    }
-    result = extracted.join("\n");
-  }
-
-  if (result.length > 100) {
-    return result;
-  }
-
-  // Fallback: extract clean printable UTF-8 lines
-  return rawText.replace(/[^\x20-\x7E\n\t]/g, " ").replace(/\s{3,}/g, "\n");
-}
-
 export default function VerifiedCVLandingPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -143,14 +103,8 @@ export default function VerifiedCVLandingPage() {
     setIsProcessing(true);
 
     try {
-      const extractedText = await readClientFileAsText(file);
-
       const formData = new FormData();
-      if (extractedText && extractedText.trim().length > 30) {
-        formData.append("text", extractedText);
-      } else {
-        formData.append("file", file);
-      }
+      formData.append("file", file);
 
       const res = await fetch("/api/parse", {
         method: "POST",
@@ -165,7 +119,7 @@ export default function VerifiedCVLandingPage() {
         alert(data.error || "Could not parse document. Routing to Candidate Studio.");
       }
     } catch {
-      alert("Error extracting document text. Routing to Candidate Studio.");
+      alert("Error uploading file. Routing to Candidate Studio.");
     } finally {
       setIsProcessing(false);
     }
@@ -283,7 +237,7 @@ export default function VerifiedCVLandingPage() {
             Prove your track record upfront. Replace unverified resumes with forensic proof signals, peer corroboration, and registry links that bypass automated screening filters.
           </p>
 
-          {/* Conversational Ingress Window */}
+          {/* Conversational Ingress Window with Multi-line Safe Textarea */}
           <div className="max-w-xl mx-auto pt-6 text-left">
             <div className="bg-white border border-[#E2E8F0] rounded-2xl shadow-sm p-5 space-y-4">
               <div className="flex items-start gap-3">
