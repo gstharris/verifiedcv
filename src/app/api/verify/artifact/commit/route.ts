@@ -1,71 +1,55 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabase } from "@/lib/supabase";
 
 export const runtime = "nodejs";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    const {
-      experienceId,
-      artifactType,
-      sha256Hash,
-      ocrData,
-      trustDelta,
-      storageUrl,
-    } = await req.json();
-
-    if (!experienceId || !sha256Hash) {
-      return NextResponse.json({ error: "Missing experience or hash." }, { status: 400 });
+    const supabase = getSupabase();
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json(
+        { success: false, error: "Invalid JSON request payload." },
+        { status: 400 }
+      );
     }
 
-    // 1. Insert into claim_artifacts
-    const { data: artifact, error: insertError } = await supabase
-      .from("claim_artifacts")
-      .insert({
-        experience_id: experienceId,
-        artifact_type: artifactType,
-        storage_url: storageUrl || "vault://redacted_local_hash",
-        file_hash_sha256: sha256Hash,
-        ocr_extracted_data: ocrData,
-        trust_delta_applied: trustDelta,
-        status: "MATCHED",
-        is_publicly_visible: true,
-      })
-      .select()
-      .single();
+    const { artifactId, candidateHandle, documentHash, title, type } = body || {};
 
-    if (insertError) throw insertError;
+    if (!artifactId || !candidateHandle || !documentHash) {
+      return NextResponse.json(
+        { success: false, error: "artifactId, candidateHandle, and documentHash are required." },
+        { status: 400 }
+      );
+    }
 
-    // 2. Fetch current company claims and apply incremental confidence bump
-    const { data: claims } = await supabase
-      .from("claims")
-      .select("id, pith_fidelity_score")
-      .eq("experience_id", experienceId);
+    if (supabase) {
+      const { error: dbError } = await supabase.from("artifacts").upsert({
+        id: artifactId,
+        candidate_handle: candidateHandle,
+        document_hash: documentHash,
+        title: title || "Work Artifact",
+        type: type || "DECK",
+        verified_at: new Date().toISOString(),
+      });
 
-    if (claims && claims.length > 0) {
-      for (const claim of claims) {
-        // Increment score without exceeding 70% (Tier 1 baseline limit for artifacts + AI)
-        const updatedScore = Math.min((claim.pith_fidelity_score || 45) + trustDelta, 70);
-        await supabase
-          .from("claims")
-          .update({ pith_fidelity_score: updatedScore })
-          .eq("id", claim.id);
+      if (dbError) {
+        console.warn("Supabase artifact upsert warning:", dbError.message);
       }
     }
 
     return NextResponse.json({
       success: true,
-      artifact,
-      message: `Artifact authenticated. Added +${trustDelta}% baseline proof across this role.`,
+      documentHash,
+      status: "ANCHORED",
     });
   } catch (error: any) {
+    console.error("Artifact commit error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to commit artifact." },
+      { success: false, error: error?.message || "Internal server error." },
       { status: 500 }
     );
   }
