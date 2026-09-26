@@ -39,7 +39,7 @@ function extractAtomicAchievements(rawLines: string[]): string[] {
   const achievements: string[] = [];
   let currentBuffer = "";
 
-  const actionVerbStart = /^(Direct|Directed|Design|Designed|Build|Built|Deploy|Deployed|Partner|Partnered|Found|Founded|Rebuild|Rebuilt|Establish|Established|Engineer|Engineered|Conduct|Conducted|Scale|Scaled|Lead|Led|Restructure|Restructured|Architect|Architected|Manage|Managed|Create|Created|Drive|Drove|Deliver|Delivered)\b/i;
+  const actionVerbStart = /^(Direct|Directed|Design|Designed|Build|Built|Deploy|Deployed|Partner|Partnered|Found|Founded|Rebuild|Rebuilt|Establish|Established|Engineer|Engineered|Conduct|Conducted|Scale|Scaled|Lead|Led|Restructure|Restructured|Architect|Architected|Manage|Managed|Create|Created|Drive|Drove|Deliver|Delivered|Authored|Author)\b/i;
 
   for (let i = 0; i < contentLines.length; i++) {
     const raw = contentLines[i];
@@ -238,82 +238,7 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
     summaryStatement,
     skills,
     education,
-    milestones: milestones.length > 0 ? milestones : getFallbackDataset().milestones
-  };
-}
-
-function getFallbackDataset(): ParsedDossierPayload {
-  return {
-    fullName: "Graham Harris",
-    headline: "Head of Product Management • AI Platforms",
-    summaryStatement:
-      "Built enterprise technology and ad personalization platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries at Yahoo. Founded an operational workflow and recommendation platform at PairedRight, engineering RAG architectures evaluated against an operational golden dataset to scale client revenue by over $1M. Restructured complex multi-product SaaS portfolios into modular tiers at Bazaarvoice, reducing sales cycles by 25% and decreasing customer churn by 15%.",
-    skills: [
-      "AI Workspace Platforms",
-      "Agentic Workflows",
-      "Context-Grounded RAG",
-      "Ad Personalization Systems",
-      "High-Throughput Distributed Microservices",
-      "Product Strategy & P&L",
-      "Edge Infrastructure & Latency SLAs",
-      "Interactive Prototyping (React/Cursor)"
-    ],
-    education: [
-      {
-        id: "edu-1",
-        institution: "University of California",
-        degree: "Bachelor of Science"
-      }
-    ],
-    milestones: [
-      {
-        id: "m-gh-geon-01",
-        company: "Ge-on",
-        role: "Head of Product Management",
-        period: "May 2025 to Present",
-        claims: [
-          "Direct end-to-end product strategy, feature prioritization, and delivery roadmaps for an AI workspace platform, driving a 25% lift in weekly active users during initial rollout.",
-          "Designed and deployed autonomous agent workflows and proactive push notifications that feed a persistent memory layer, allowing the platform to learn creator preferences and maintain context across interactions.",
-          "Build functional interactive prototypes in React, Cursor, and modern UI tools to test user workflows, edge cases, and interface ergonomics directly with users prior to engineering sprints.",
-          "Designed and deployed self-serve onboarding journeys and workspace configuration flows, lifting new user activation and account setup completion by 20%.",
-          "Partner daily with engineering, data science, and design in Agile cadences to manage backlogs, set acceptance criteria, and ensure system stability."
-        ],
-        calibratedClaim:
-          "Direct end-to-end product strategy, feature prioritization, and delivery roadmaps for an AI workspace platform, driving a 25% lift in weekly active users during initial rollout. Designed and deployed autonomous agent workflows and proactive push notifications feeding a persistent memory layer.",
-        isCorroborated: false
-      },
-      {
-        id: "m-gh-scd-02",
-        company: "SCD Enterprises / PairedRight",
-        role: "Founder and Head of Product",
-        period: "2018 to March 2026",
-        claims: [
-          "Founded an operational workflow and recommendation platform for hospitality operators, scaling client revenue by over $1M through automated upselling and real-time guidance.",
-          "Rebuilt the core recommendation engine using a context-grounded RAG framework, ensuring automated pairing suggestions remained strictly constrained to curated merchant parameters.",
-          "Established an operational golden dataset to benchmark, verify, and regression-test algorithmic changes, ensuring recommendation accuracy before deploying updates to frontline staff devices.",
-          "Designed operator dashboards and administrative consoles, providing business owners visibility and control over recommendation rules, inventory availability, and pricing thresholds.",
-          "Engineered API integration layers connecting customer-facing mobile interfaces directly with legacy point-of-sale and back-office systems of record to maintain data synchronization.",
-          "Designed and deployed automated quote-to-cash workflows, multi-party fee reconciliation, and transactional audit trails, eliminating manual reporting and reducing operational overhead by 10%.",
-          "Conducted hundreds of hours of on-site customer discovery shadowing managers and frontline operators during live shifts, converting ground-level friction into structured product specifications."
-        ],
-        calibratedClaim:
-          "Founded an operational workflow and recommendation platform for hospitality operators, scaling client revenue by over $1M through automated upselling and real-time guidance. Rebuilt the core recommendation engine using a context-grounded RAG framework.",
-        isCorroborated: false
-      },
-      {
-        id: "m-gh-yahoo-03",
-        company: "Yahoo",
-        role: "Head of Product Management",
-        period: "2010 - 2024",
-        claims: [
-          "Built ad personalization and enterprise platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries.",
-          "Maintained sub-50ms query latency budgets across global edge infrastructure."
-        ],
-        calibratedClaim:
-          "Built ad personalization and enterprise platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries. Maintained sub-50ms query latency budgets across global edge infrastructure.",
-        isCorroborated: true
-      }
-    ]
+    milestones
   };
 }
 
@@ -431,6 +356,7 @@ Extract the complete candidate career profile into structured JSON:
           }
         }
 
+        // Clean printable ASCII characters for local extraction
         textContent = rawString.replace(/[^\x20-\x7E\n\t]/g, " ");
       } else {
         textContent = rawString;

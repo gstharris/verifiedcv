@@ -237,7 +237,7 @@ export default function VerifiedCVLandingPage() {
             Prove your track record upfront. Replace unverified resumes with forensic proof signals, peer corroboration, and registry links that bypass automated screening filters.
           </p>
 
-          {/* Conversational Ingress Window */}
+          {/* Conversational Ingress Window with Multi-line Safe Textarea */}
           <div className="max-w-xl mx-auto pt-6 text-left">
             <div className="bg-white border border-[#E2E8F0] rounded-2xl shadow-sm p-5 space-y-4">
               <div className="flex items-start gap-3">
@@ -248,7 +248,7 @@ export default function VerifiedCVLandingPage() {
                   <span className="font-bold text-[#0F172A] block mb-0.5">
                     CV Ally Career Copilot
                   </span>
-                  Drop your resume file or paste your career accomplishments. I will extract your milestones, summary, and skills cleanly into Candidate Studio.
+                  Paste your resume text or upload your document. I will extract your milestones, summary, and skills cleanly into Candidate Studio.
                 </div>
               </div>
 
@@ -283,19 +283,26 @@ export default function VerifiedCVLandingPage() {
                 </button>
               </div>
 
-              {/* Chat Input */}
-              <form onSubmit={handleSendMessage} className="relative flex items-center">
-                <input
-                  type="text"
+              {/* Multi-line Paste Safe Area */}
+              <form onSubmit={handleSendMessage} className="relative">
+                <textarea
+                  rows={3}
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Paste career accomplishments or describe your recent leadership..."
-                  className="w-full text-xs pl-4 pr-11 py-3 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] focus:ring-1 focus:ring-[#059669] font-sans bg-slate-50/50"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                  placeholder="Paste complete career text or describe recent achievements (Press Enter to parse)..."
+                  className="w-full text-xs pl-3.5 pr-12 py-3 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] focus:ring-1 focus:ring-[#059669] font-sans bg-slate-50/50 resize-y"
                 />
                 <button
                   type="submit"
-                  disabled={isProcessing}
-                  className="absolute right-2 p-1.5 rounded-lg bg-[#0F172A] hover:bg-slate-800 text-white transition-all cursor-pointer disabled:opacity-50"
+                  disabled={isProcessing || !chatInput.trim()}
+                  className="absolute right-2.5 bottom-3.5 p-2 rounded-lg bg-[#0F172A] hover:bg-slate-800 text-white transition-all cursor-pointer disabled:opacity-40"
+                  title="Parse and Open Studio"
                 >
                   {isProcessing ? (
                     <Clock className="w-3.5 h-3.5 animate-spin" />
