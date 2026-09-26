@@ -63,7 +63,7 @@ export default function StudioPage() {
   const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
     {
       sender: "ally",
-      text: "Welcome to Candidate Studio. Paste your career history or drop a resume file to parse your achievements into verifiable milestones."
+      text: "Welcome to Candidate Studio. Paste your career history or drop a resume file to parse your achievements into atomic milestones."
     }
   ]);
   const [chatInput, setChatInput] = useState("");
@@ -100,7 +100,7 @@ export default function StudioPage() {
     setIsProcessing(true);
     setChatMessages((prev) => [
       ...prev,
-      { sender: "ally", text: "Ingesting career history through parsing engine..." }
+      { sender: "ally", text: "Ingesting career track record through parsing engine..." }
     ]);
 
     try {
@@ -122,11 +122,11 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Extracted ${data.milestones.length} career milestones losslessly. Review each chapter below and calibrate your claims.`
+            text: `Extracted ${data.milestones.length} career milestones (${data.engine || "parsed"}). Review each chapter on the canvas and calibrate your claims.`
           }
         ]);
       } else {
-        alert(data.error || "Failed to parse career history.");
+        alert(data.error || "Failed to extract career milestones.");
       }
     } catch {
       alert("Network error communicating with parsing engine.");
@@ -148,7 +148,7 @@ export default function StudioPage() {
 
     setChatMessages((prev) => [
       ...prev,
-      { sender: "ally", text: `Analyzing ${file.name} through multimodal parsing pipeline...` }
+      { sender: "ally", text: `Analyzing ${file.name} through document parser...` }
     ]);
 
     try {
@@ -196,7 +196,7 @@ export default function StudioPage() {
         ...prev,
         {
           sender: "ally",
-          text: `Calibrated metric boundaries. Once you save to your Vault, this milestone will be ready for role-masked peer corroboration.`
+          text: `Calibrated metric boundaries. Once you commit your Vault, this milestone will be ready for role-masked peer corroboration.`
         }
       ]);
     }, 600);
@@ -230,7 +230,7 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Vault permanently initialized. Your dossier is now live at verifiedcv.app/${handle.toLowerCase().trim()}.`
+            text: `Vault permanently saved! Your dossier is now live at verifiedcv.app/${handle.toLowerCase().trim()}.`
           }
         ]);
       } else {
@@ -280,7 +280,7 @@ export default function StudioPage() {
                 setActiveTab("canvas");
                 setChatMessages((prev) => [
                   ...prev,
-                  { sender: "ally", text: "Studio canvas reset. Ready for a new upload or paste." }
+                  { sender: "ally", text: "Studio canvas cleared. Ready for a new upload or paste." }
                 ]);
               }}
               className="text-xs font-semibold text-slate-400 hover:text-red-500 transition-colors px-3 py-1.5 cursor-pointer flex items-center gap-1"
@@ -314,10 +314,10 @@ export default function StudioPage() {
         </div>
       </header>
 
-      {/* Main Studio Body */}
+      {/* Main Studio Body: Fixed 320px Sidebar + Full-Width Canvas */}
       <div className="flex-1 flex overflow-hidden">
         
-        {/* CV Ally Copilot: Fixed 320px Width */}
+        {/* CV ALLY COPILOT: FIXED 320px WIDTH */}
         <aside className="w-[320px] shrink-0 border-r border-[#E2E8F0] bg-white flex flex-col justify-between h-[calc(100vh-3.5rem)]">
           <div className="p-4 border-b border-[#E2E8F0] flex items-center gap-2.5 bg-[#F8FAFC]">
             <div className="w-7 h-7 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700">
@@ -329,6 +329,7 @@ export default function StudioPage() {
             </div>
           </div>
 
+          {/* Chat Stream */}
           <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
             {chatMessages.map((msg, idx) => (
               <div
@@ -350,6 +351,7 @@ export default function StudioPage() {
             )}
           </div>
 
+          {/* Copilot Input */}
           <form onSubmit={handleSendMessage} className="p-3 border-t border-[#E2E8F0] bg-white">
             <div className="relative flex items-center">
               <input
@@ -369,7 +371,7 @@ export default function StudioPage() {
           </form>
         </aside>
 
-        {/* Live Canvas */}
+        {/* LIVE CANVAS */}
         <main className="flex-1 overflow-y-auto p-8 max-w-5xl mx-auto space-y-8 antialiased">
           
           {/* ZERO STATE OR PASTE MODE ACTIVE */}
@@ -380,7 +382,7 @@ export default function StudioPage() {
               </div>
 
               <div className="space-y-2">
-                <h2 className="text-xl font-black text-[#0F172A]">Ingest Your Career Track Record</h2>
+                <h2 className="text-xl font-black text-[#0F172A]">Ingest Your Career History</h2>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
                   Upload your resume file directly (PDF, DOCX, TXT) or paste your career experience below to map your history into atomic, testable milestones.
                 </p>
