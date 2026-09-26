@@ -21,258 +21,121 @@ import {
   FileCheck,
   Trash2,
   KeyRound,
-  AlertCircle
+  RotateCcw,
+  Upload
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 import { CandidateDossier, AtomicMilestone } from "@/types/vault";
 
-// Multi-chapter resume parsing logic that splits experiences without truncation
-function parseRawResumeToMilestones(rawText: string): AtomicMilestone[] {
-  if (!rawText || rawText.trim().length === 0) return [];
-
-  // Split lines
-  const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  const detectedMilestones: AtomicMilestone[] = [];
-
-  let currentCompany = "";
-  let currentRole = "";
-  let currentPeriod = "";
-  let currentBullets: string[] = [];
-
-  const yearRangeRegex = /(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:(?:19|20)\d{2}|present|current)/i;
-  const singleYearRegex = /\b(19|20)\d{2}\b/;
-
-  const flushMilestone = () => {
-    if (currentCompany || currentBullets.length > 0) {
-      const claim = currentBullets.join(" ").trim() || "Executed technical and operational roadmap milestones.";
-      detectedMilestones.push({
-        id: `m-parsed-${Date.now()}-${detectedMilestones.length}`,
-        company: currentCompany || "Career Chapter",
-        role: currentRole || "Lead Contributor",
-        period: currentPeriod || "Confirmed Tenure",
-        rawText: claim,
-        calibratedClaim: claim,
-        metrics: [{ label: "Extraction", value: "Lossless Ingest" }],
-        tier: "tier_1_identity",
-        isCorroborated: false
-      });
-      currentCompany = "";
-      currentRole = "";
-      currentPeriod = "";
-      currentBullets = [];
-    }
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    // Check if line indicates a role/tenure header
-    const hasDates = yearRangeRegex.test(line) || singleYearRegex.test(line);
-
-    if (hasDates && (line.includes("|") || line.includes("—") || line.includes(" - ") || line.length < 90)) {
-      flushMilestone();
-
-      // Extract date match
-      const dateMatch = line.match(yearRangeRegex) || line.match(singleYearRegex);
-      currentPeriod = dateMatch ? dateMatch[0] : "Verified Tenure";
-
-      // Extract Company and Role parts
-      const cleanHeader = line.replace(currentPeriod, "").replace(/[|•–—,-]/g, " ").trim();
-      const parts = cleanHeader.split(/\s{2,}|\t/).filter(Boolean);
-
-      if (parts.length >= 2) {
-        currentCompany = parts[0].trim();
-        currentRole = parts[1].trim();
-      } else {
-        currentCompany = cleanHeader || "Career Chapter";
-        currentRole = "Leader / Builder";
-      }
-    } else if (line.startsWith("•") || line.startsWith("-") || line.startsWith("*")) {
-      currentBullets.push(line.replace(/^[•\-\*]\s*/, "").trim());
-    } else {
-      if (currentBullets.length === 0 && line.length < 60 && !line.includes(".")) {
-        // Likely a company or section title
-        if (!currentCompany) currentCompany = line;
-        else if (!currentRole) currentRole = line;
-      } else {
-        currentBullets.push(line);
+const DEFAULT_DOSSIER: CandidateDossier = {
+  handle: "gharris",
+  fullName: "Graham Harris",
+  headline: "Product Leader • Personalization & High-Scale AI Platforms",
+  location: "Agoura Hills, CA",
+  verifiedEmailDomain: "yahoo-inc.com",
+  identityConfirmed: true,
+  vaultAuditHash: "0x7a4e9b21f8c0541d",
+  totalYearsExperience: 20,
+  updatedAt: new Date().toISOString(),
+  milestones: [
+    {
+      id: "m-yahoo-01",
+      company: "Yahoo",
+      role: "Head of Product Management",
+      period: "2010 — 2024",
+      rawText: "Led product management for a 400 million dollar personalization platform serving global audiences.",
+      calibratedClaim:
+        "Scaled multi-tenant personalization platform serving 400M+ global monthly active users under sub-50ms latency SLAs. Supervised 35+ engineers and data scientists across multi-region edge caching infrastructure.",
+      metrics: [
+        { label: "Monthly Active Users", value: "400M+", tradeoffSummary: "Maintained <50ms p99 at edge" },
+        { label: "Platform Budget", value: "$400M ARR", tradeoffSummary: "Consolidated redundant regional clusters" }
+      ],
+      tier: "tier_2_peer",
+      isCorroborated: true,
+      corroboration: {
+        receiptId: "rcpt-yh-9821",
+        verifierRole: "Senior Director of Core Engineering",
+        organization: "Yahoo",
+        tenureOverlapYears: 8,
+        attestationTimestamp: "2024-03-12T14:22:00Z",
+        cryptographicHash: "0x8f2d61aa72e43a91",
+        channel: "corporate_oauth"
       }
     }
-  }
-
-  flushMilestone();
-
-  // If regex partitioning failed due to unstructured text, fall back to paragraph chunking
-  if (detectedMilestones.length === 0) {
-    const paragraphs = rawText.split(/\n\s*\n/).filter((p) => p.trim().length > 20);
-    return paragraphs.map((p, idx) => ({
-      id: `m-chunk-${Date.now()}-${idx}`,
-      company: `Career Milestone ${idx + 1}`,
-      role: "Key Contributor",
-      period: "Historical Record",
-      rawText: p.trim(),
-      calibratedClaim: p.trim(),
-      metrics: [{ label: "Status", value: "Awaiting Calibration" }],
-      tier: "tier_1_identity",
-      isCorroborated: false
-    }));
-  }
-
-  return detectedMilestones;
-}
+  ]
+};
 
 export default function StudioPage() {
-  const [dossier, setDossier] = useState<CandidateDossier>({
-    handle: "gharris",
-    fullName: "Graham Harris",
-    headline: "Product Leader • Personalization & High-Scale AI Platforms",
-    location: "Agoura Hills, CA",
-    verifiedEmailDomain: "yahoo-inc.com",
-    identityConfirmed: true,
-    vaultAuditHash: "0x7a4e9b21f8c0541d",
-    totalYearsExperience: 20,
-    updatedAt: new Date().toISOString(),
-    milestones: [
-      {
-        id: "m-yahoo-01",
-        company: "Yahoo",
-        role: "Head of Product Management",
-        period: "2010 — 2024",
-        rawText: "Led product management for a 400 million dollar personalization platform serving global audiences.",
-        calibratedClaim:
-          "Scaled multi-tenant personalization platform serving 400M+ global monthly active users under sub-50ms latency SLAs. Supervised 35+ engineers and data scientists across multi-region edge caching infrastructure.",
-        metrics: [
-          { label: "Monthly Active Users", value: "400M+", tradeoffSummary: "Maintained <50ms p99 at edge" },
-          { label: "Platform Budget", value: "$400M ARR", tradeoffSummary: "Consolidated redundant regional clusters" }
-        ],
-        tier: "tier_2_peer",
-        isCorroborated: true,
-        corroboration: {
-          receiptId: "rcpt-yh-9821",
-          verifierRole: "Senior Director of Core Engineering",
-          organization: "Yahoo",
-          tenureOverlapYears: 8,
-          attestationTimestamp: "2024-03-12T14:22:00Z",
-          cryptographicHash: "0x8f2d61aa72e43a91",
-          channel: "corporate_oauth"
-        },
-        artifacts: [
-          {
-            id: "art-yh-arch",
-            title: "Multi-Tenant Edge Personalization Architecture Brief",
-            type: "architecture_brief",
-            hash: "0xd9118ca210fe04bb",
-            isPasswordGated: false
-          }
-        ]
-      },
-      {
-        id: "m-uspto-02",
-        company: "USPTO Registry",
-        role: "Lead Inventor",
-        period: "2021",
-        rawText: "Patented a caching partition algorithm for distributed microservices.",
-        calibratedClaim:
-          "Authored and awarded Patent US-98214-B2: Distributed Cache Partitioning Algorithm across high-throughput distributed microservices.",
-        metrics: [
-          { label: "Patent Status", value: "Granted & Active", tradeoffSummary: "Zero write-stall lock contention" }
-        ],
-        tier: "tier_3_registry",
-        isCorroborated: true,
-        corroboration: {
-          receiptId: "rcpt-uspto-412",
-          verifierRole: "USPTO Patent Examination Office",
-          organization: "United States Patent and Trademark Office",
-          tenureOverlapYears: 0,
-          attestationTimestamp: "2021-09-18T00:00:00Z",
-          cryptographicHash: "0x3c7e091129b412ff",
-          channel: "uspto_registry"
-        }
-      },
-      {
-        id: "m-geon-03",
-        company: "Ge-On",
-        role: "Head of Product Management",
-        period: "2024 — 2025",
-        rawText: "Served as first Head of Product for seed-stage creator platform.",
-        calibratedClaim:
-          "Led foundational product architecture and developer roadmaps for seed-stage social creator platform, aligning tokenomics and creator retention mechanisms.",
-        metrics: [
-          { label: "Team Buildout", value: "0 to 1 Build", tradeoffSummary: "Iterated MVP inside 90 days" }
-        ],
-        tier: "tier_1_identity",
-        isCorroborated: false
-      }
-    ]
-  });
-
+  const [dossier, setDossier] = useState<CandidateDossier>(DEFAULT_DOSSIER);
   const [saveStatus, setSaveStatus] = useState<"synced" | "saving">("synced");
-  const [activeMilestoneId, setActiveMilestoneId] = useState<string>("m-yahoo-01");
+  const [activeMilestoneId, setActiveMilestoneId] = useState<string>("");
   const [copiedLinkMilestoneId, setCopiedLinkMilestoneId] = useState<string | null>(null);
 
   const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
     {
       sender: "ally",
-      text: "Ingestion Engine active. I've parsed your career milestones into atomic claims. Click any milestone to calibrate metrics or generate peer vouchers."
+      text: "Ingestion Engine online. Review your extracted career milestones below, or ask me to calibrate metrics and draft peer vouchers."
     }
   ]);
   const [chatInput, setChatInput] = useState("");
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Ingestion Extraction & Multi-Experience Parsing
+  // Cache Recovery & Fresh Ingestion Handler
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const stored = sessionStorage.getItem("vcv_ingest_payload");
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored);
+    if (typeof window === "undefined") return;
 
-          if (parsed.milestones && Array.isArray(parsed.milestones) && parsed.milestones.length > 0) {
-            // Pre-parsed server milestones
-            setDossier((prev) => ({
-              ...prev,
-              milestones: [...parsed.milestones, ...prev.milestones]
-            }));
-            setActiveMilestoneId(parsed.milestones[0].id);
-            setChatMessages((prev) => [
-              ...prev,
-              {
-                sender: "ally",
-                text: `Ingested ${parsed.milestones.length} milestones from ${parsed.fileName || "your file"}. All experiences preserved losslessly.`
-              }
-            ]);
-          } else if (parsed.text && parsed.text.trim().length > 0) {
-            // Intelligent client-side partitioning
-            const extracted = parseRawResumeToMilestones(parsed.text);
-            if (extracted.length > 0) {
-              setDossier((prev) => ({
-                ...prev,
-                milestones: [...extracted, ...prev.milestones]
-              }));
-              setActiveMilestoneId(extracted[0].id);
-              setChatMessages((prev) => [
-                ...prev,
-                {
-                  sender: "ally",
-                  text: `Extracted ${extracted.length} distinct career chapters from ${parsed.source || "your upload"}. Let's calibrate claims and metrics.`
-                }
-              ]);
+    // Check if there is an incoming fresh ingestion payload
+    const incomingPayload = sessionStorage.getItem("vcv_ingest_payload");
+
+    if (incomingPayload) {
+      try {
+        const parsed = JSON.parse(incomingPayload);
+        sessionStorage.removeItem("vcv_ingest_payload"); // Consume immediately to prevent duplicate runs
+
+        if (parsed.milestones && Array.isArray(parsed.milestones) && parsed.milestones.length > 0) {
+          // Fresh server-extracted milestones completely replace stale cache
+          const freshDossier: CandidateDossier = {
+            ...DEFAULT_DOSSIER,
+            milestones: parsed.milestones,
+            updatedAt: new Date().toISOString()
+          };
+
+          setDossier(freshDossier);
+          localStorage.setItem(`vcv_dossier_${freshDossier.handle}`, JSON.stringify(freshDossier));
+          setActiveMilestoneId(parsed.milestones[0].id);
+
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              sender: "ally",
+              text: `Ingested ${parsed.milestones.length} career milestones from "${parsed.fileName || "uploaded resume"}". Old cache purged.`
             }
-          } else if (parsed.source === "linkedin_import") {
-            setChatMessages((prev) => [
-              ...prev,
-              {
-                sender: "ally",
-                text: "LinkedIn profile connected: Yahoo, Ge-On, PairedRight, and Decker Kitchen chapters synchronized into draft milestones."
-              }
-            ]);
-          }
-          sessionStorage.removeItem("vcv_ingest_payload");
-        } catch {
-          // ignore parsing error
+          ]);
+          return;
         }
+      } catch (err) {
+        console.error("Payload ingestion error:", err);
       }
     }
+
+    // If no fresh payload, load existing localStorage state
+    const cached = localStorage.getItem(`vcv_dossier_${DEFAULT_DOSSIER.handle}`);
+    if (cached) {
+      try {
+        const parsedCached = JSON.parse(cached);
+        setDossier(parsedCached);
+        if (parsedCached.milestones?.length > 0) {
+          setActiveMilestoneId(parsedCached.milestones[0].id);
+        }
+        return;
+      } catch {
+        // ignore JSON parse error
+      }
+    }
+
+    // Default seed
+    setActiveMilestoneId(DEFAULT_DOSSIER.milestones[0].id);
   }, []);
 
   // Auto-scroll chat
@@ -288,9 +151,64 @@ export default function StudioPage() {
     if (typeof window !== "undefined") {
       localStorage.setItem(`vcv_dossier_${updated.handle}`, JSON.stringify(updated));
     }
-    setTimeout(() => {
+    setTimeout(() => setSaveStatus("synced"), 300);
+  };
+
+  const handleResetCache = () => {
+    if (confirm("Reset career vault to clean default state and clear local cache?")) {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem(`vcv_dossier_${dossier.handle}`);
+        sessionStorage.removeItem("vcv_ingest_payload");
+      }
+      setDossier(DEFAULT_DOSSIER);
+      setActiveMilestoneId(DEFAULT_DOSSIER.milestones[0].id);
+      setChatMessages((prev) => [
+        ...prev,
+        { sender: "ally", text: "Vault cache reset. Ready for clean resume upload." }
+      ]);
+    }
+  };
+
+  const handleDirectStudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    setSaveStatus("saving");
+    try {
+      const res = await fetch("/api/parse", {
+        method: "POST",
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.milestones && data.milestones.length > 0) {
+          const updatedDossier: CandidateDossier = {
+            ...dossier,
+            milestones: data.milestones,
+            updatedAt: new Date().toISOString()
+          };
+          triggerAutoSave(updatedDossier);
+          setActiveMilestoneId(data.milestones[0].id);
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              sender: "ally",
+              text: `Directly parsed ${data.milestones.length} milestones from "${file.name}". All experiences loaded losslessly.`
+            }
+          ]);
+          return;
+        }
+      }
+      alert("Could not extract milestones from file. Ensure it is a valid PDF or DOCX.");
+    } catch {
+      alert("Upload failed. Please check network connection.");
+    } finally {
       setSaveStatus("synced");
-    }, 450);
+    }
   };
 
   const handleUpdateClaim = (id: string, updatedClaim: string) => {
@@ -313,10 +231,10 @@ export default function StudioPage() {
         ...prev,
         {
           sender: "ally",
-          text: `Calibrated: Grounded metric context for active milestone. Ready to generate a role-masked voucher link.`
+          text: `Calibrated: Clarified boundary conditions for active milestone. Ready to generate a role-masked voucher link.`
         }
       ]);
-    }, 700);
+    }, 600);
   };
 
   const copyPeerVoucherLink = (milestoneId: string) => {
@@ -366,20 +284,47 @@ export default function StudioPage() {
           <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Candidate Studio</span>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-500">
+        <div className="flex items-center gap-3">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.docx,.txt,.md"
+            className="hidden"
+            onChange={handleDirectStudioUpload}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
+            title="Upload a new resume file"
+          >
+            <Upload className="w-3.5 h-3.5 text-slate-600" />
+            <span>Upload New Resume</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleResetCache}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-slate-700 p-1.5 rounded-md transition-colors"
+            title="Clear stored browser cache"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Reset Cache</span>
+          </button>
+
+          <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-500 ml-1">
             <span
               className={`w-2 h-2 rounded-full ${
                 saveStatus === "synced" ? "bg-[#059669]" : "bg-amber-400 animate-pulse"
               }`}
             />
-            <span>{saveStatus === "synced" ? "Vault Synced" : "Saving to Vault API..."}</span>
+            <span>{saveStatus === "synced" ? "Vault Synced" : "Saving..."}</span>
           </div>
 
           <Link
             href={`/${dossier.handle}`}
             target="_blank"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#059669] text-xs font-bold transition-all shadow-2xs cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#059669] text-xs font-bold transition-all shadow-2xs cursor-pointer ml-1"
           >
             <span>Preview Dossier</span>
             <ExternalLink className="w-3.5 h-3.5" />
