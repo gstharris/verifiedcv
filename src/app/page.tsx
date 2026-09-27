@@ -45,6 +45,8 @@ export default function VerifiedCVLandingPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [viewPerspective, setViewPerspective] = useState<"candidate" | "recruiter">("candidate");
 
+  const [isLinkedInModalOpen, setIsLinkedInModalOpen] = useState(false);
+
   const forwardPayloadToStudio = (data: any) => {
     if (typeof window !== "undefined") {
       sessionStorage.setItem(
@@ -128,14 +130,7 @@ export default function VerifiedCVLandingPage() {
   };
 
   const handleLinkedInImport = () => {
-    setIsProcessing(true);
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem(
-        "vcv_pending_payload",
-        JSON.stringify({ action: "load_canonical" })
-      );
-    }
-    router.push("/studio");
+    setIsLinkedInModalOpen(true);
   };
 
   const verifiedFacts = [
@@ -606,6 +601,58 @@ export default function VerifiedCVLandingPage() {
           </div>
         </div>
       </section>
+
+      {/* LinkedIn PDF Import Modal */}
+      {isLinkedInModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-lg space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+              <div className="flex items-center gap-2">
+                <LinkedInIcon className="w-5 h-5 text-[#0A66C2]" />
+                <h3 className="font-black text-sm text-[#0F172A]">Import LinkedIn Profile</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsLinkedInModalOpen(false)}
+                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <p className="text-slate-600 leading-relaxed">
+                LinkedIn restricts direct access to your work history. To import your profile, simply download it as a PDF and upload it here.
+              </p>
+
+              <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-4 space-y-3">
+                <h4 className="font-bold text-[#0F172A]">How to get your LinkedIn PDF:</h4>
+                <ol className="list-decimal list-inside text-slate-600 space-y-2 ml-1">
+                  <li>Go to your <a href="https://www.linkedin.com/in/me/" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-semibold">LinkedIn Profile</a></li>
+                  <li>Click the <strong>More</strong> button (next to Add profile section)</li>
+                  <li>Select <strong>Save to PDF</strong></li>
+                  <li>Upload the downloaded file below</li>
+                </ol>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  disabled={isProcessing}
+                  onClick={() => {
+                    setIsLinkedInModalOpen(false);
+                    fileInputRef.current?.click();
+                  }}
+                  className="w-full py-3 rounded-xl bg-[#0A66C2] hover:bg-[#004182] text-white font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+                >
+                  <UploadCloud className="w-4 h-4" />
+                  <span>Upload LinkedIn PDF</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <footer className="border-t border-[#E2E8F0] bg-white py-8 text-xs text-slate-500">
