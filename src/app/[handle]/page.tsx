@@ -18,11 +18,24 @@ import {
   Share2,
   Mail,
   Phone,
-  Linkedin,
   MapPin,
-  Users
+  Users,
+  Check
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
+
+function LinkedInIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z" />
+    </svg>
+  );
+}
 
 interface Milestone {
   id: string;
@@ -91,7 +104,6 @@ export default function CandidateDossierPage() {
         console.warn("Vault API query fallback:", err);
       }
 
-      // Local session hydration fallback
       if (typeof window !== "undefined") {
         const savedVault = sessionStorage.getItem("vcv_saved_vault");
         if (savedVault) {
@@ -184,7 +196,6 @@ export default function CandidateDossierPage() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans antialiased selection:bg-emerald-100 flex flex-col justify-between">
-      {/* Dossier Header */}
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2 group">
           <VerifiedCVLogo className="w-6 h-6 group-hover:scale-105 transition-transform" />
@@ -211,9 +222,7 @@ export default function CandidateDossierPage() {
         </div>
       </header>
 
-      {/* Main Dossier Content */}
       <main className="max-w-4xl mx-auto w-full px-6 py-10 space-y-8 flex-1">
-        
         {/* COMPACT TRUST SPECTRUM BAR */}
         <div className="bg-white border border-[#E2E8F0] rounded-2xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -232,7 +241,7 @@ export default function CandidateDossierPage() {
             )}
             {dossier.contact?.linkedinVerified && (
               <span className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 flex items-center gap-1">
-                <Linkedin className="w-3 h-3" /> LinkedIn Certified
+                <LinkedInIcon className="w-3 h-3 text-blue-700" /> LinkedIn Certified
               </span>
             )}
             <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-[#059669] flex items-center gap-1">
@@ -268,7 +277,6 @@ export default function CandidateDossierPage() {
             </div>
           </div>
 
-          {/* Contact Channels Grid */}
           {dossier.contact && (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 text-xs pt-2 border-t border-slate-100">
               {dossier.contact.email && (
@@ -285,7 +293,7 @@ export default function CandidateDossierPage() {
               )}
               {dossier.contact.linkedin && (
                 <div className="flex items-center gap-2 text-blue-600">
-                  <Linkedin className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                  <LinkedInIcon className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                   <span className="font-medium truncate">{dossier.contact.linkedin}</span>
                 </div>
               )}
@@ -307,7 +315,7 @@ export default function CandidateDossierPage() {
           )}
         </div>
 
-        {/* Milestones Card Stream */}
+        {/* Milestones */}
         <div className="space-y-4">
           <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
             <h2 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">
@@ -369,7 +377,7 @@ export default function CandidateDossierPage() {
           </div>
         </div>
 
-        {/* Skills & Proficiencies */}
+        {/* Skills */}
         {dossier.skills && dossier.skills.length > 0 && (
           <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
             <h3 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">
@@ -388,7 +396,7 @@ export default function CandidateDossierPage() {
           </div>
         )}
 
-        {/* Academic Credentials */}
+        {/* Education */}
         {dossier.education && dossier.education.length > 0 && (
           <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
             <div className="flex items-center gap-2 pb-1">
@@ -419,7 +427,6 @@ export default function CandidateDossierPage() {
         )}
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-[#E2E8F0] bg-white py-6 text-xs text-slate-400">
         <div className="max-w-4xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">

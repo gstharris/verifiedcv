@@ -34,12 +34,24 @@ import {
   Mail,
   Phone,
   MapPin,
-  Linkedin,
   ShieldAlert,
   Share2,
   Zap
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
+
+function LinkedInIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z" />
+    </svg>
+  );
+}
 
 interface Milestone {
   id: string;
@@ -200,7 +212,6 @@ export default function StudioPage() {
   const [emailError, setEmailError] = useState("");
   const [nameError, setNameError] = useState("");
 
-  // Action suggestions for CV Ally
   const actionPrompts = [
     { label: "⚡ Validate Achievements", action: "validate_recent" },
     { label: "✉️ Request Peer Corroboration", action: "request_peer" },
@@ -208,7 +219,7 @@ export default function StudioPage() {
     { label: "🛡️ Lock Vault Record", action: "open_claim" }
   ];
 
-  const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string; actionChip?: string }>>([
+  const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
     {
       sender: "ally",
       text: "Candidate Studio ready. All credentials, contact channels, and achievements are loaded for audit. What would you like to verify first?"
@@ -266,7 +277,7 @@ export default function StudioPage() {
         executeIngest(parsed.rawText);
       }
     } catch {
-      // ignore parse error
+      // ignore
     }
   }, []);
 
@@ -425,7 +436,6 @@ export default function StudioPage() {
     }
   };
 
-  // Chat Action Trigger Dispatcher
   const handleActionPrompt = (actionType: string) => {
     if (actionType === "validate_recent") {
       if (milestones.length > 0) {
@@ -645,7 +655,6 @@ export default function StudioPage() {
     );
   };
 
-  // Count verified metrics
   const corroboratedCount = milestones.filter((m) => m.isCorroborated).length;
   const verifiedSignalsCount =
     (contact.emailVerified ? 1 : 0) +
@@ -655,8 +664,6 @@ export default function StudioPage() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col antialiased selection:bg-emerald-100">
-      
-      {/* Studio Top Navigation */}
       <header className="sticky top-0 z-50 bg-white border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link href="/" className="flex items-center gap-2 group">
@@ -711,10 +718,8 @@ export default function StudioPage() {
         </div>
       </header>
 
-      {/* Main Studio Split Layout */}
       <div className="flex-1 flex overflow-hidden">
-        
-        {/* CV ALLY COPILOT: FIXED 320px WIDTH WITH PROMPT SUGGESTIONS */}
+        {/* CV ALLY COPILOT */}
         <aside className="w-[320px] shrink-0 border-r border-[#E2E8F0] bg-white flex flex-col justify-between h-[calc(100vh-3.5rem)]">
           <div className="p-4 border-b border-[#E2E8F0] flex items-center gap-2.5 bg-[#F8FAFC]">
             <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#059669]">
@@ -726,7 +731,6 @@ export default function StudioPage() {
             </div>
           </div>
 
-          {/* Chat Stream */}
           <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
             {chatMessages.map((msg, idx) => (
               <div
@@ -748,7 +752,6 @@ export default function StudioPage() {
             )}
           </div>
 
-          {/* Dynamic Action Suggestions */}
           <div className="p-2.5 border-t border-[#E2E8F0] bg-[#F8FAFC] space-y-1.5">
             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block px-1">
               Recommended Next Actions
@@ -767,7 +770,6 @@ export default function StudioPage() {
             </div>
           </div>
 
-          {/* Copilot Input */}
           <form onSubmit={handleSendMessage} className="p-3 border-t border-[#E2E8F0] bg-white">
             <div className="relative flex items-center">
               <input
@@ -787,10 +789,8 @@ export default function StudioPage() {
           </form>
         </aside>
 
-        {/* LIVE CANVAS: MASSIVE RIGHT-SIDE WORKSPACE */}
+        {/* LIVE CANVAS */}
         <main className="flex-1 overflow-y-auto p-8 max-w-5xl mx-auto space-y-8 antialiased">
-          
-          {/* COMPACT TRUST SCORECARD HEADER */}
           {milestones.length > 0 && (
             <div className="bg-white border border-[#E2E8F0] rounded-2xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -801,7 +801,6 @@ export default function StudioPage() {
                 </span>
               </div>
 
-              {/* Compact Badges Strip */}
               <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
                 <span
                   onClick={() => setContact((c) => ({ ...c, emailVerified: !c.emailVerified }))}
@@ -825,7 +824,7 @@ export default function StudioPage() {
                   }`}
                   title="Click to toggle LinkedIn profile certification"
                 >
-                  <Linkedin className="w-3 h-3" />
+                  <LinkedInIcon className="w-3 h-3" />
                   <span>{contact.linkedinVerified ? "LinkedIn Certified" : "Link Profile"}</span>
                 </span>
 
@@ -921,9 +920,7 @@ export default function StudioPage() {
               )}
             </div>
           ) : (
-            /* POPULATED CANVAS */
             <div className="space-y-8">
-              
               {/* Candidate Identity & Contact Verification Strip */}
               <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 shadow-xs space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-100">
@@ -952,7 +949,6 @@ export default function StudioPage() {
                   </span>
                 </div>
 
-                {/* Contact Channels Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                   <div className="p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center gap-2">
                     <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -977,7 +973,7 @@ export default function StudioPage() {
                   </div>
 
                   <div className="p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center gap-2">
-                    <Linkedin className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    <LinkedInIcon className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                     <input
                       type="text"
                       value={contact.linkedin}
@@ -1000,7 +996,7 @@ export default function StudioPage() {
                 </div>
               </div>
 
-              {/* 1. Professional Executive Summary */}
+              {/* Summary */}
               {summaryStatement && (
                 <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
@@ -1026,7 +1022,7 @@ export default function StudioPage() {
                 </div>
               )}
 
-              {/* 2. Milestones Card Stream with Full Un-Truncated Company & Role */}
+              {/* Milestones Card Stream */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
                   <h3 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">
@@ -1053,7 +1049,6 @@ export default function StudioPage() {
                           : "border-[#E2E8F0] hover:border-slate-300"
                       }`}
                     >
-                      {/* Responsive Header Row - Zero clipping */}
                       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3.5 border-b border-[#E2E8F0]/70">
                         <div className="flex-1 space-y-1">
                           <input
@@ -1132,7 +1127,6 @@ export default function StudioPage() {
                         </div>
                       </div>
 
-                      {/* Line-Item Atomic Achievements Stream */}
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
@@ -1193,7 +1187,7 @@ export default function StudioPage() {
                 </div>
               </div>
 
-              {/* 3. Core Proficiencies & Technologies */}
+              {/* Skills */}
               {skills.length > 0 && (
                 <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
@@ -1221,7 +1215,7 @@ export default function StudioPage() {
                 </div>
               )}
 
-              {/* 4. Education & Academic Degrees */}
+              {/* Education */}
               {education.length > 0 && (
                 <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
@@ -1257,7 +1251,7 @@ export default function StudioPage() {
         </main>
       </div>
 
-      {/* PEER CORROBORATION INVITATION MODAL */}
+      {/* PEER CORROBORATION MODAL */}
       {isInviteModalOpen && targetMilestone && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-lg space-y-5">
