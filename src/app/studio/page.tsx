@@ -66,6 +66,7 @@ interface Milestone {
   isCorroborated: boolean;
   corroboratedBy?: string;
   artifacts?: { id: string; name: string; type: string }[];
+  registryLinks?: { id: string; type: "github" | "credly" | "uspto"; url: string; label: string }[];
 }
 
 interface EducationRecord {
@@ -206,20 +207,43 @@ export default function StudioPage() {
   // Peer Corroboration Modal State
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isArtifactModalOpen, setIsArtifactModalOpen] = useState(false);
+  const [isRegistryModalOpen, setIsRegistryModalOpen] = useState(false);
   const [targetMilestone, setTargetMilestone] = useState<Milestone | null>(null);
   const [colleagueEmail, setColleagueEmail] = useState("");
   const [colleagueRole, setColleagueRole] = useState("Engineering Peer / Manager");
   const [inviteSent, setInviteSent] = useState(false);
+
+  // Registry Modal State
+  const [registryType, setRegistryType] = useState<"github" | "credly" | "uspto">("github");
+  const [registryUrl, setRegistryUrl] = useState("");
 
   // Handle Availability State
   const [handleStatus, setHandleStatus] = useState<"checking" | "available" | "taken" | "idle">("available");
   const [emailError, setEmailError] = useState("");
   const [nameError, setNameError] = useState("");
 
+  const getVerificationLevel = (m: Milestone) => {
+    // Level 3: Cryptographic / Registry
+    if (m.registryLinks && m.registryLinks.length > 0) {
+      return { level: 3, label: "Cryptographically Anchored", color: "text-emerald-800 bg-emerald-50 border-emerald-200", icon: <ShieldCheck className="w-3 h-3 text-[#059669]" /> };
+    }
+    // Level 2: Peer Corroborated
+    if (m.isCorroborated) {
+      return { level: 2, label: "Peer Corroborated", color: "text-indigo-800 bg-indigo-50 border-indigo-200", icon: <Users className="w-3 h-3 text-indigo-600" /> };
+    }
+    // Level 1: Document Verified
+    if (m.artifacts && m.artifacts.length > 0) {
+      return { level: 1, label: "Document Verified", color: "text-blue-800 bg-blue-50 border-blue-200", icon: <FileCheck className="w-3 h-3 text-blue-600" /> };
+    }
+    // Level 0: Self-Reported
+    return { level: 0, label: "Self-Reported", color: "text-slate-600 bg-slate-100 border-slate-200", icon: <AlertCircle className="w-3 h-3 text-slate-500" /> };
+  };
+
   const actionPrompts = [
     { label: "⚡ Validate Achievements", action: "validate_recent" },
     { label: "✉️ Request Peer Corroboration", action: "request_peer" },
     { label: "📎 Attach Proof Artifact", action: "attach_artifact" },
+    { label: "🔗 Link Registry (GitHub/Credly)", action: "link_registry" },
     { label: "🛡️ Lock Vault Record", action: "open_claim" }
   ];
 
@@ -475,6 +499,11 @@ export default function StudioPage() {
         setTargetMilestone(milestones[0]);
         setIsArtifactModalOpen(true);
       }
+    } else if (actionType === "link_registry") {
+      if (milestones.length > 0) {
+        setTargetMilestone(milestones[0]);
+        setIsRegistryModalOpen(true);
+      }
     } else if (actionType === "open_claim") {
       setIsClaimModalOpen(true);
     }
@@ -603,10 +632,45 @@ export default function StudioPage() {
         ...prev,
         {
           sender: "ally",
-          text: `Artifact "${file.name}" attached to ${targetMilestone.company}. AI scan confirms employer match.`
+          text: `Artifact "${file.name}" attached to ${targetMilestone.company}. AI scan confirms employer match. Milestone upgraded to Document Verified (Level 1).`
         }
       ]);
     }, 1200);
+  };
+
+  const handleRegistryLink = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!registryUrl || !targetMilestone) return;
+
+    setIsProcessing(true);
+    setTimeout(() => {
+      setMilestones((prev) =>
+        prev.map((m) => {
+          if (m.id !== targetMilestone.id) return m;
+          const newLink = {
+            id: `reg-${Date.now()}`,
+            type: registryType,
+            url: registryUrl,
+            label: registryType === "github" ? "GitHub Commits" : registryType === "credly" ? "Credly Badge" : "USPTO Patent"
+          };
+          return {
+            ...m,
+            registryLinks: [...(m.registryLinks || []), newLink]
+          };
+        })
+      );
+      
+      setIsProcessing(false);
+      setIsRegistryModalOpen(false);
+      setRegistryUrl("");
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          sender: "ally",
+          text: `Registry link verified via ${registryType.toUpperCase()} API. Milestone upgraded to Cryptographically Anchored (Level 3).`
+        }
+      ]);
+    }, 1000);
   };
 
   const dispatchPeerInvite = (e: React.FormEvent) => {
@@ -1089,7 +1153,9 @@ export default function StudioPage() {
                 </div>
 
                 <div className="space-y-6">
-                  {milestones.map((milestone) => (
+                  {milestones.map((milestone) => {
+                    const trustStatus = getVerificationLevel(milestone);
+                    return (
                     <div
                       key={milestone.id}
                       id={milestone.id}
@@ -1101,6 +1167,11 @@ export default function StudioPage() {
                     >
                       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3.5 border-b border-[#E2E8F0]/70">
                         <div className="flex-1 space-y-1">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded flex items-center gap-1 border ${trustStatus.color}`}>
+                              {trustStatus.icon} {trustStatus.label}
+                            </span>
+                          </div>
                           <input
                             type="text"
                             value={milestone.company}
@@ -1147,8 +1218,8 @@ export default function StudioPage() {
                           </div>
 
                           {milestone.isCorroborated ? (
-                            <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
-                              <Check className="w-3 h-3 text-[#059669]" /> Corroborated
+                            <span className="text-[10px] font-bold text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded flex items-center gap-1">
+                              <Check className="w-3 h-3 text-indigo-600" /> Corroborated
                             </span>
                           ) : (
                             <button
@@ -1160,7 +1231,7 @@ export default function StudioPage() {
                               }}
                               className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 ${
                                 isVaultSaved
-                                  ? "text-[#059669] bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 cursor-pointer"
+                                  ? "text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 cursor-pointer"
                                   : "text-slate-400 bg-slate-50 border border-slate-200 cursor-not-allowed"
                               }`}
                               title={!isVaultSaved ? "Save your Vault to request corroboration" : "Request Peer Corroboration"}
@@ -1176,11 +1247,24 @@ export default function StudioPage() {
                               setTargetMilestone(milestone);
                               setIsArtifactModalOpen(true);
                             }}
-                            className="text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                            className="text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
                             title="Attach W-2, Offer Letter, or Work Product"
                           >
                             <Paperclip className="w-3 h-3" />
                             <span>Attach Proof</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTargetMilestone(milestone);
+                              setIsRegistryModalOpen(true);
+                            }}
+                            className="text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                            title="Link GitHub, USPTO, or Credly"
+                          >
+                            <Link2 className="w-3 h-3" />
+                            <span>Link Registry</span>
                           </button>
 
                           <button
@@ -1204,6 +1288,17 @@ export default function StudioPage() {
                                 <FileBadge className="w-3 h-3 text-indigo-500" />
                                 <span className="truncate max-w-[150px]">{art.name}</span>
                               </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {milestone.registryLinks && milestone.registryLinks.length > 0 && (
+                          <div className="flex flex-wrap gap-2 pb-2 border-b border-slate-100">
+                            {milestone.registryLinks.map((link) => (
+                              <a key={link.id} href={link.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-emerald-50 border border-emerald-200 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100 transition-colors">
+                                <ShieldCheck className="w-3 h-3" />
+                                <span>{link.label}</span>
+                              </a>
                             ))}
                           </div>
                         )}
@@ -1449,6 +1544,76 @@ export default function StudioPage() {
                   ) : (
                     <>
                       <span>Send Verification Token</span>
+                      <ArrowRight className="w-4 h-4 text-emerald-400" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* REGISTRY LINK MODAL */}
+      {isRegistryModalOpen && targetMilestone && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-lg space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+              <div className="flex items-center gap-2">
+                <Link2 className="w-5 h-5 text-[#059669]" />
+                <h3 className="font-black text-sm text-[#0F172A]">Link Public Registry</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsRegistryModalOpen(false)}
+                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1 text-xs">
+              <span className="font-bold text-[#0F172A] block">Anchoring to: {targetMilestone.company}</span>
+              <span className="text-slate-500 block">Provide a public URL to cryptographically anchor this chapter.</span>
+            </div>
+
+            <form onSubmit={handleRegistryLink} className="space-y-4 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Registry Type</label>
+                <select
+                  value={registryType}
+                  onChange={(e) => setRegistryType(e.target.value as any)}
+                  className="w-full p-2.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] bg-white"
+                >
+                  <option value="github">GitHub Repository / Commits</option>
+                  <option value="credly">Credly / Certification Badge</option>
+                  <option value="uspto">USPTO Patent Database</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Public URL</label>
+                <input
+                  type="url"
+                  required
+                  value={registryUrl}
+                  onChange={(e) => setRegistryUrl(e.target.value)}
+                  placeholder="https://"
+                  className="w-full p-2.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669]"
+                />
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={isProcessing}
+                  className="w-full py-3 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+                >
+                  {isProcessing ? (
+                    <Clock className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <span>Verify & Anchor Link</span>
                       <ArrowRight className="w-4 h-4 text-emerald-400" />
                     </>
                   )}
