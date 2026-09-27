@@ -29,6 +29,7 @@ export interface ParsedDossierPayload {
   milestones: ExtractedMilestone[];
 }
 
+// 1. Text Cleaner & Bullet Scrubber
 function cleanSentence(text: string): string {
   return text
     .replace(/[\u200B-\u200D\uFEFF]/g, "")
@@ -44,6 +45,43 @@ function isValidAchievement(text: string): boolean {
   return lettersOnly.length >= 15;
 }
 
+// 2. Resilient Date Normalizer: Supports optional month, handles "to Present", dashes, and slashes
+export function normalizeTenurePeriod(raw: string): string {
+  const cleaned = raw.replace(/[|•()]/g, " ").replace(/\s{2,}/g, " ").trim();
+
+  // Pattern matches: [Month] [Day,] Year (to|-|—|–) [Month] [Day,] Year/Present
+  const rangePattern = /(?:(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?,?\s*)?(\b(?:19|20)\d{2}\b)\s*(?:—|-|–|to|\/)\s*(?:(?:(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?,?\s*)?(\b(?:19|20)\d{2}\b)|(Present|Current|Now))/i;
+
+  const match = cleaned.match(rangePattern);
+  if (match) {
+    const startMonth = match[1] ? match[1].slice(0, 3) : "";
+    const startYear = match[2];
+    const endMonth = match[3] ? match[3].slice(0, 3) : "";
+    const endYear = match[4];
+    const isPresent = Boolean(match[5]);
+
+    const startPart = startMonth ? `${startMonth} ${startYear}` : startYear;
+    let endPart = "Present";
+
+    if (!isPresent && endYear) {
+      endPart = endMonth ? `${endMonth} ${endYear}` : endYear;
+    }
+
+    return `${startPart} — ${endPart}`;
+  }
+
+  // Fallback: check for single anchor date with Present
+  const presentOnlyPattern = /(?:(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?,?\s*)?(\b(?:19|20)\d{2}\b)\s*(?:to|-|—|–)?\s*(Present|Current)/i;
+  const pMatch = cleaned.match(presentOnlyPattern);
+  if (pMatch) {
+    const m = pMatch[1] ? pMatch[1].slice(0, 3) + " " : "";
+    return `${m}${pMatch[2]} — Present`;
+  }
+
+  return raw.trim() || "Confirmed Tenure";
+}
+
+// 3. Line-Item Achievement Tokenizer
 function extractAtomicAchievements(rawLines: string[]): string[] {
   const contentLines = rawLines
     .map((l) => l.trim())
@@ -83,8 +121,12 @@ function extractAtomicAchievements(rawLines: string[]): string[] {
   return achievements.filter(isValidAchievement);
 }
 
-function isEducationItem(text: string): boolean {
-  return /\b(university|college|bachelor|master|b\.s\.|b\.a\.|m\.s\.|m\.b\.a\.|ph\.d\.|degree|polytechnic|institute of technology|graduated)\b/i.test(text);
+// 4. Academic Institution & Degree Whitelist (Prevents Skills from bleeding in)
+function isStrictEducationItem(text: string): boolean {
+  const academicTerms = /\b(university|college|polytechnic|institute of technology|bachelor|master|doctorate|degree|b\.s\.|b\.a\.|m\.s\.|m\.b\.a\.|ph\.d\.|undergraduate|postgraduate)\b/i;
+  const technicalExclusions = /\b(api|microservices|rag|python|react|cursor|sql|edge|caching|p&l|sla|tokenomics|agile|scrum)\b/i;
+
+  return academicTerms.test(text) && !technicalExclusions.test(text);
 }
 
 function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
@@ -132,11 +174,11 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
       currentSection = "EXPERIENCE";
       continue;
     }
-    if (/(?:^|\s)(?:TECHNICAL SKILLS|CORE COMPETENCIES|SKILLS|TECHNOLOGIES|AREAS OF EXPERTISE)(?:$|\s)/i.test(line)) {
+    if (/(?:^|\s)(?:TECHNICAL SKILLS|CORE COMPETENCIES|SKILLS|TECHNOLOGIES|AREAS OF EXPERTISE|PROFICIENCIES)(?:$|\s)/i.test(line)) {
       currentSection = "SKILLS";
       continue;
     }
-    if (/(?:^|\s)(?:EDUCATION|ACADEMIC BACKGROUND|DEGREES & CERTIFICATIONS|EDUCATION & CREDENTIALS|CREDENTIALS)(?:$|\s)/i.test(line)) {
+    if (/(?:^|\s)(?:EDUCATION|ACADEMIC BACKGROUND|DEGREES & CERTIFICATIONS|EDUCATION & CREDENTIALS)(?:$|\s)/i.test(line)) {
       currentSection = "EDUCATION";
       continue;
     }
@@ -144,7 +186,7 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
     sectionLines[currentSection].push(line);
   }
 
-  // 1. Process Summary
+  // 1. Process Professional Summary
   if (sectionLines.SUMMARY.length > 0) {
     summaryStatement = sectionLines.SUMMARY
       .map(cleanSentence)
@@ -153,7 +195,7 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
       .replace(/\s{2,}/g, " ");
   }
 
-  // 2. Process Skills & Defensively Reroute Leaked Education
+  // 2. Process Skills (Strictly Filtered)
   if (sectionLines.SKILLS.length > 0) {
     const rawSkillsText = sectionLines.SKILLS.join(" ");
     const skillTokens = rawSkillsText
@@ -162,11 +204,11 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
       .filter((s) => s.length > 1 && s.length < 50 && !/^(Languages|Frameworks|Tools|Methodologies):?$/i.test(s));
 
     skillTokens.forEach((s) => {
-      if (isEducationItem(s)) {
+      if (isStrictEducationItem(s)) {
         education.push({
-          id: `edu-routed-${Date.now()}-${education.length}`,
+          id: `edu-token-${Date.now()}-${education.length}`,
           institution: s,
-          degree: "Degree / Credential"
+          degree: "Degree / Academic Credential"
         });
       } else if (!skills.some((existing) => existing.toLowerCase() === s.toLowerCase()) && s.length >= 2) {
         skills.push(s);
@@ -174,24 +216,34 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
     });
   }
 
-  // 3. Process Education
+  // 3. Process Education (Sanitized)
   if (sectionLines.EDUCATION.length > 0) {
     for (let i = 0; i < sectionLines.EDUCATION.length; i++) {
       const line = sectionLines.EDUCATION[i];
       if (/^[●•\-\*–—◦‣⁃·\s]+$/.test(line)) continue;
 
+      const cleanedLine = cleanSentence(line);
+
+      // If a technical skill was placed in Education, reroute it to skills
+      if (!isStrictEducationItem(cleanedLine) && cleanedLine.length < 45 && !cleanedLine.includes("|")) {
+        if (!skills.some((s) => s.toLowerCase() === cleanedLine.toLowerCase()) && cleanedLine.length > 2) {
+          skills.push(cleanedLine);
+        }
+        continue;
+      }
+
       if (line.includes("|")) {
         const parts = line.split("|").map((p) => cleanSentence(p));
         education.push({
           id: `edu-${Date.now()}-${education.length}`,
-          institution: parts[0] || "University",
-          degree: parts[1] || "Degree",
-          year: parts[2] || undefined
+          institution: parts[0] || "Academic Institution",
+          degree: parts[1] || "Degree / Program",
+          year: parts[2] ? normalizeTenurePeriod(parts[2]) : undefined
         });
-      } else if (line.length > 5 && !line.startsWith("●") && !line.startsWith("•")) {
+      } else if (cleanedLine.length > 5 && !line.startsWith("●") && !line.startsWith("•")) {
         education.push({
           id: `edu-${Date.now()}-${education.length}`,
-          institution: cleanSentence(line),
+          institution: cleanedLine,
           degree: sectionLines.EDUCATION[i + 1] ? cleanSentence(sectionLines.EDUCATION[i + 1]) : "Degree Program"
         });
         i++;
@@ -199,7 +251,7 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
     }
   }
 
-  // 4. Process Work Experience Milestones
+  // 4. Process Work Experience Milestones with Canonical Date Formatting
   const yearPattern = /\b(?:19\d{2}|20\d{2})\b/i;
   interface RoleBlock {
     company: string;
@@ -225,7 +277,8 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
       const tokens = line.split("|").map((t) => cleanSentence(t));
       const company = tokens[0] || "Career Chapter";
       const role = tokens[1] || "Leadership Role";
-      const period = tokens[2] || "Confirmed Tenure";
+      const rawPeriod = tokens[2] || "Confirmed Tenure";
+      const period = normalizeTenurePeriod(rawPeriod);
 
       if (roleBlocks.length === 0) {
         headline = `${role} • Personalization & AI Platforms`;

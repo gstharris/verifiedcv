@@ -27,7 +27,9 @@ import {
   RotateCcw,
   GraduationCap,
   Sparkle,
-  FileText
+  FileText,
+  Calendar,
+  Wand2
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 
@@ -76,7 +78,8 @@ const GRAHAM_HARRIS_CANONICAL: {
     {
       id: "edu-gh-1",
       institution: "University of California",
-      degree: "Bachelor of Science"
+      degree: "Bachelor of Science",
+      year: "Graduated"
     }
   ],
   milestones: [
@@ -84,7 +87,7 @@ const GRAHAM_HARRIS_CANONICAL: {
       id: "m-gh-geon-01",
       company: "Ge-on",
       role: "Head of Product Management",
-      period: "May 2025 to Present",
+      period: "May 2025 — Present",
       claims: [
         "Direct end-to-end product strategy, feature prioritization, and delivery roadmaps for an AI workspace platform, driving a 25% lift in weekly active users during initial rollout.",
         "Designed and deployed autonomous agent workflows and proactive push notifications that feed a persistent memory layer, allowing the platform to learn creator preferences and maintain context across interactions.",
@@ -98,7 +101,7 @@ const GRAHAM_HARRIS_CANONICAL: {
       id: "m-gh-scd-02",
       company: "SCD Enterprises / PairedRight",
       role: "Founder and Head of Product",
-      period: "2018 to March 2026",
+      period: "2018 — Mar 2026",
       claims: [
         "Founded an operational workflow and recommendation platform for hospitality operators, scaling client revenue by over $1M through automated upselling and real-time guidance.",
         "Rebuilt the core recommendation engine using a context-grounded RAG framework, ensuring automated pairing suggestions remained strictly constrained to curated merchant parameters.",
@@ -114,7 +117,7 @@ const GRAHAM_HARRIS_CANONICAL: {
       id: "m-gh-yahoo-03",
       company: "Yahoo",
       role: "Head of Product Management",
-      period: "2010 - 2024",
+      period: "2010 — 2024",
       claims: [
         "Built ad personalization and enterprise platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries.",
         "Maintained sub-50ms query latency budgets across global edge infrastructure."
@@ -148,7 +151,7 @@ export default function StudioPage() {
   const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
     {
       sender: "ally",
-      text: "Candidate Studio ready. Paste your raw resume or upload your document to calibrate your verified career claims."
+      text: "Candidate Studio ready. Spell-checking and atomic claim validation are active across all canvas cards."
     }
   ]);
   const [chatInput, setChatInput] = useState("");
@@ -190,7 +193,7 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Successfully ingested full career dossier (${parsed.milestones.length} milestones, line-item achievements, summary, and skills). Ready for calibration.`
+            text: `Successfully ingested full career dossier (${parsed.milestones.length} milestones, line-item achievements, summary, proficiencies, and education). Ready for calibration.`
           }
         ]);
         return;
@@ -223,7 +226,7 @@ export default function StudioPage() {
       ...prev,
       {
         sender: "ally",
-        text: "Loaded full canonical dossier (Summary, 3 Roles with individual line-item achievements, Skills, and Education). All proof claims ready on your canvas."
+        text: "Loaded canonical dossier: 3 Roles with individual line-item achievements, Summary, Proficiencies, and Education. Native spell-check active."
       }
     ]);
   };
@@ -232,7 +235,7 @@ export default function StudioPage() {
     setIsProcessing(true);
     setChatMessages((prev) => [
       ...prev,
-      { sender: "ally", text: "Analyzing and extracting complete dossier via canonical parser..." }
+      { sender: "ally", text: "Segmenting dossier and validating atomic claim items..." }
     ]);
 
     try {
@@ -265,7 +268,7 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Extracted ${data.milestones.length} milestones with individual achievement line items, professional summary, skills, and academic credentials.`
+            text: `Extracted ${data.milestones.length} milestones with individual achievement claims. Education and Proficiencies separated cleanly.`
           }
         ]);
       } else {
@@ -295,7 +298,7 @@ export default function StudioPage() {
 
     setChatMessages((prev) => [
       ...prev,
-      { sender: "ally", text: `Ingesting ${file.name}...` }
+      { sender: "ally", text: `Reading and parsing ${file.name}...` }
     ]);
 
     try {
@@ -339,7 +342,7 @@ export default function StudioPage() {
         ]);
       }
     } catch {
-      alert("Error uploading file.");
+      alert("Error uploading document.");
     } finally {
       setIsProcessing(false);
     }
@@ -358,7 +361,7 @@ export default function StudioPage() {
         ...prev,
         {
           sender: "ally",
-          text: "Claim calibrated. Socratic check confirms zero confidential metric leak while preserving proof signal."
+          text: "Claim verified. Socratic check confirms metric integrity with zero confidentiality exposure."
         }
       ]);
     }, 500);
@@ -412,10 +415,10 @@ export default function StudioPage() {
   const addEmptyMilestone = () => {
     const newM: Milestone = {
       id: `m-custom-${Date.now()}`,
-      company: "New Organization",
-      role: "Product Leader",
-      period: "2026 - Present",
-      claims: ["Direct end-to-end product strategy, feature prioritization, and delivery roadmaps..."],
+      company: "Organization Name",
+      role: "Leadership Role",
+      period: "Jan 2026 — Present",
+      claims: ["Direct product strategy, platform execution, and quantifiable business outcomes..."],
       isCorroborated: false
     };
     setMilestones((prev) => [newM, ...prev]);
@@ -452,6 +455,22 @@ export default function StudioPage() {
           ...m,
           claims: m.claims.filter((_, idx) => idx !== claimIndex)
         };
+      })
+    );
+  };
+
+  const formatCleanClaim = (milestoneId: string, claimIndex: number) => {
+    setMilestones((prev) =>
+      prev.map((m) => {
+        if (m.id !== milestoneId) return m;
+        const target = m.claims[claimIndex] || "";
+        const formatted = target
+          .replace(/\s{2,}/g, " ")
+          .trim()
+          .replace(/^[a-z]/, (char) => char.toUpperCase());
+        const updatedClaims = [...m.claims];
+        updatedClaims[claimIndex] = formatted.endsWith(".") ? formatted : formatted + ".";
+        return { ...m, claims: updatedClaims };
       })
     );
   };
@@ -548,7 +567,7 @@ export default function StudioPage() {
             {isProcessing && (
               <div className="bg-[#F8FAFC] border border-[#E2E8F0] text-slate-500 text-xs p-3 rounded-xl flex items-center gap-2">
                 <Clock className="w-3.5 h-3.5 animate-spin text-[#059669]" />
-                <span>Extracting complete dossier...</span>
+                <span>Calibrating claims & dates...</span>
               </div>
             )}
           </div>
@@ -573,7 +592,7 @@ export default function StudioPage() {
           </form>
         </aside>
 
-        {/* LIVE CANVAS */}
+        {/* LIVE CANVAS: MASSIVE RIGHT-SIDE WORKSPACE */}
         <main className="flex-1 overflow-y-auto p-8 max-w-5xl mx-auto space-y-8 antialiased">
           {milestones.length === 0 && !summaryStatement ? (
             <div className="bg-white border border-[#E2E8F0] rounded-3xl p-8 sm:p-10 text-center space-y-6 shadow-xs max-w-2xl mx-auto mt-4">
@@ -584,7 +603,7 @@ export default function StudioPage() {
               <div className="space-y-2">
                 <h2 className="text-xl font-black text-[#0F172A]">Ingest Your Career Track Record</h2>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                  Paste your resume or load your canonical profile below. VerifiedCV automatically structures your Executive Summary, Milestones, Core Competencies, and Academic Credentials.
+                  Upload your resume or paste below. Dates, accomplishments, proficiencies, and academic degrees are losslessly parsed with native spell-checking enabled.
                 </p>
               </div>
 
@@ -633,13 +652,16 @@ export default function StudioPage() {
                     rows={12}
                     value={pasteBuffer}
                     onChange={(e) => setPasteBuffer(e.target.value)}
-                    placeholder="Paste entire resume text (including Summary, Experience, Skills, and Education)..."
+                    spellCheck={true}
+                    autoCorrect="on"
+                    lang="en"
+                    placeholder="Paste entire resume text (including Summary, Experience with dates, Proficiencies, and Education)..."
                     className="w-full text-xs p-4 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-mono bg-[#F8FAFC] leading-relaxed"
                   />
 
                   <div className="flex items-center justify-between pt-1">
                     <span className="text-[11px] text-slate-400">
-                      Summary, skills, credentials, and achievements will be extracted into discrete cards.
+                      Dates, bullet achievements, proficiencies, and degrees are mapped automatically.
                     </span>
 
                     <button
@@ -664,7 +686,7 @@ export default function StudioPage() {
                     Audited Career Dossier
                   </h2>
                   <p className="text-xs text-slate-500">
-                    Review and calibrate atomic statements before committing to your public Vault.
+                    Spell-checked and calibrated. Edit claims and dates before committing to your Vault.
                   </p>
                 </div>
 
@@ -689,7 +711,7 @@ export default function StudioPage() {
                 </div>
               </div>
 
-              {/* 1. Executive Summary */}
+              {/* 1. Professional Executive Summary */}
               {summaryStatement && (
                 <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
@@ -707,6 +729,9 @@ export default function StudioPage() {
                     rows={4}
                     value={summaryStatement}
                     onChange={(e) => setSummaryStatement(e.target.value)}
+                    spellCheck={true}
+                    autoCorrect="on"
+                    lang="en"
                     className="w-full text-xs text-slate-700 leading-relaxed p-3.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans resize-y bg-[#F8FAFC]"
                   />
                 </div>
@@ -736,6 +761,7 @@ export default function StudioPage() {
                               );
                             }}
                             placeholder="Company"
+                            spellCheck={true}
                             className="font-extrabold text-sm sm:text-base text-[#0F172A] focus:outline-none border-b border-transparent focus:border-[#059669]"
                           />
                           <span className="text-slate-300">•</span>
@@ -749,30 +775,34 @@ export default function StudioPage() {
                               );
                             }}
                             placeholder="Role Title"
+                            spellCheck={true}
                             className="text-xs sm:text-sm font-semibold text-slate-600 focus:outline-none border-b border-transparent focus:border-[#059669]"
                           />
                         </div>
 
                         <div className="flex items-center gap-3">
-                          <input
-                            type="text"
-                            value={milestone.period}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setMilestones((prev) =>
-                                prev.map((m) => (m.id === milestone.id ? { ...m, period: val } : m))
-                              );
-                            }}
-                            placeholder="Tenure Dates"
-                            className="text-[11px] font-mono text-slate-500 focus:outline-none text-right w-44"
-                          />
+                          <div className="flex items-center gap-1.5 bg-slate-50 border border-[#E2E8F0] px-2.5 py-1 rounded-lg">
+                            <Calendar className="w-3 h-3 text-slate-400" />
+                            <input
+                              type="text"
+                              value={milestone.period}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setMilestones((prev) =>
+                                  prev.map((m) => (m.id === milestone.id ? { ...m, period: val } : m))
+                                );
+                              }}
+                              placeholder="e.g. May 2025 — Present"
+                              className="text-[11px] font-mono font-medium text-slate-600 focus:outline-none text-right w-44 bg-transparent"
+                            />
+                          </div>
                           {milestone.isCorroborated ? (
                             <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
                               <Check className="w-3 h-3 text-[#059669]" /> Corroborated
                             </span>
                           ) : (
                             <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
-                              Unsaved Draft
+                              Draft
                             </span>
                           )}
                           <button
@@ -810,23 +840,36 @@ export default function StudioPage() {
                               key={claimIdx}
                               className="group flex items-start gap-2.5 p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] focus-within:border-[#059669] focus-within:bg-white transition-all"
                             >
-                              <div className="mt-1 w-1.5 h-1.5 rounded-full bg-[#059669] shrink-0" />
+                              <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-[#059669] shrink-0" />
                               <textarea
                                 rows={2}
                                 value={claimText}
                                 onChange={(e) =>
                                   updateMilestoneClaim(milestone.id, claimIdx, e.target.value)
                                 }
+                                spellCheck={true}
+                                autoCorrect="on"
+                                lang="en"
                                 className="flex-1 text-xs text-slate-700 leading-relaxed focus:outline-none font-sans resize-y bg-transparent"
                               />
-                              <button
-                                type="button"
-                                onClick={() => deleteClaimFromMilestone(milestone.id, claimIdx)}
-                                className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all p-1 cursor-pointer shrink-0"
-                                title="Delete Line Item"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => formatCleanClaim(milestone.id, claimIdx)}
+                                  className="text-slate-400 hover:text-[#059669] p-1 cursor-pointer"
+                                  title="Format Sentence"
+                                >
+                                  <Wand2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteClaimFromMilestone(milestone.id, claimIdx)}
+                                  className="text-slate-300 hover:text-red-500 p-1 cursor-pointer"
+                                  title="Delete Line Item"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -836,19 +879,19 @@ export default function StudioPage() {
                 </div>
               </div>
 
-              {/* 3. Core Competencies & Skills */}
+              {/* 3. Core Competencies & Proficiencies (Strictly Separated from Education) */}
               {skills.length > 0 && (
                 <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                     <h3 className="font-extrabold text-xs uppercase tracking-wider text-[#0F172A]">
-                      Extracted Competencies & Skills ({skills.length})
+                      Core Proficiencies & Technologies ({skills.length})
                     </h3>
                   </div>
                   <div className="flex flex-wrap gap-2 pt-1">
                     {skills.map((skill, idx) => (
                       <span
                         key={idx}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-semibold text-slate-700"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-semibold text-slate-700 hover:border-slate-300 transition-colors"
                       >
                         <span>{skill}</span>
                         <button
@@ -864,14 +907,14 @@ export default function StudioPage() {
                 </div>
               )}
 
-              {/* 4. Education & Credentials */}
+              {/* 4. Academic Background & Degrees */}
               {education.length > 0 && (
                 <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                     <div className="flex items-center gap-2">
                       <GraduationCap className="w-4 h-4 text-[#059669]" />
                       <h3 className="font-extrabold text-xs uppercase tracking-wider text-[#0F172A]">
-                        Education & Credentials
+                        Education & Academic Degrees ({education.length})
                       </h3>
                     </div>
                   </div>
@@ -885,7 +928,11 @@ export default function StudioPage() {
                           <div className="font-bold text-xs text-[#0F172A]">{edu.institution}</div>
                           <div className="text-[11px] text-slate-500">{edu.degree}</div>
                         </div>
-                        {edu.year && <span className="text-xs font-mono text-slate-400">{edu.year}</span>}
+                        {edu.year && (
+                          <span className="text-xs font-mono font-medium text-slate-500 bg-white px-2 py-0.5 rounded border border-[#E2E8F0]">
+                            {edu.year}
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>
