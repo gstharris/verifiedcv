@@ -64,10 +64,9 @@ interface Milestone {
   location?: string;
   claims: string[];
   calibratedClaim?: string;
-  isCorroborated: boolean;
-  corroboratedBy?: string;
   artifacts?: { id: string; name: string; type: string }[];
   registryLinks?: { id: string; type: "github" | "credly" | "uspto"; url: string; label: string }[];
+  verifications?: { id: string; name: string; role: string; email: string; verifiedAt: string }[];
 }
 
 interface EducationRecord {
@@ -140,8 +139,7 @@ const GRAHAM_HARRIS_CANONICAL: {
         "Build functional interactive prototypes in React, Cursor, and modern UI tools to test user workflows, edge cases, and interface ergonomics directly with users prior to engineering sprints.",
         "Designed and deployed self-serve onboarding journeys and workspace configuration flows, lifting new user activation and account setup completion by 20%.",
         "Partner daily with engineering, data science, and design in Agile cadences to manage backlogs, set acceptance criteria, and ensure system stability."
-      ],
-      isCorroborated: false
+      ]
     },
     {
       id: "m-gh-scd-02",
@@ -157,8 +155,7 @@ const GRAHAM_HARRIS_CANONICAL: {
         "Engineered API integration layers connecting customer-facing mobile interfaces directly with legacy point-of-sale and back-office systems of record to maintain data synchronization.",
         "Designed and deployed automated quote-to-cash workflows, multi-party fee reconciliation, and transactional audit trails, eliminating manual reporting and reducing operational overhead by 10%.",
         "Conducted hundreds of hours of on-site customer discovery shadowing managers and frontline operators during live shifts, converting ground-level friction into structured product specifications."
-      ],
-      isCorroborated: false
+      ]
     },
     {
       id: "m-gh-yahoo-03",
@@ -170,8 +167,15 @@ const GRAHAM_HARRIS_CANONICAL: {
         "Built enterprise technology and ad personalization platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries.",
         "Maintained sub-50ms query latency budgets across global edge infrastructure."
       ],
-      isCorroborated: true,
-      corroboratedBy: "Senior Director of Core Engineering"
+      verifications: [
+        {
+          id: "ver-123",
+          name: "Colleague",
+          role: "Senior Director of Core Engineering",
+          email: "colleague@yahoo.com",
+          verifiedAt: new Date().toISOString()
+        }
+      ]
     }
   ]
 };
@@ -229,8 +233,14 @@ export default function StudioPage() {
       return { level: 3, label: "Cryptographically Anchored", color: "text-emerald-800 bg-emerald-50 border-emerald-200", icon: <ShieldCheck className="w-3 h-3 text-[#059669]" /> };
     }
     // Level 2: Peer Corroborated
-    if (m.isCorroborated) {
-      return { level: 2, label: "Peer Verified", color: "text-indigo-800 bg-indigo-50 border-indigo-200", icon: <Users className="w-3 h-3 text-indigo-600" /> };
+    if (m.verifications && m.verifications.length > 0) {
+      const isHighlyVerified = m.verifications.length >= 3;
+      return { 
+        level: 2, 
+        label: isHighlyVerified ? "Highly Verified ⭐" : "Peer Verified", 
+        color: isHighlyVerified ? "text-amber-800 bg-amber-50 border-amber-200" : "text-indigo-800 bg-indigo-50 border-indigo-200", 
+        icon: isHighlyVerified ? <Award className="w-3 h-3 text-amber-600" /> : <Users className="w-3 h-3 text-indigo-600" /> 
+      };
     }
     // Level 1: Document Verified
     if (m.artifacts && m.artifacts.length > 0) {
@@ -713,6 +723,28 @@ export default function StudioPage() {
     
     // Generate a mock token link for testing
     const mockToken = `mock-token-${Date.now()}`;
+    
+    // Seed the mock token with the actual milestone data
+    try {
+      await fetch('/api/verify/attest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: mockToken,
+          candidateHandle: handle,
+          candidateName: fullName,
+          experienceId: targetMilestone.id,
+          companyName: targetMilestone.company,
+          roleTitle: targetMilestone.role,
+          tenureDates: targetMilestone.period,
+          claims: targetMilestone.claims.map((c, i) => ({ id: `c${i}`, raw_bullet: c })),
+          attestorEmail: colleagueEmail
+        })
+      });
+    } catch (err) {
+      console.warn("Failed to seed mock token", err);
+    }
+
     const mockUrl = `${window.location.origin}/attest/${mockToken}`;
 
     setChatMessages((prev) => [
@@ -729,9 +761,17 @@ export default function StudioPage() {
 
     // Simulate peer clicking link and approving (after 3 seconds)
     setTimeout(async () => {
+      const newVerification = {
+        id: `ver-${Date.now()}`,
+        name: "Colleague",
+        role: colleagueRole,
+        email: colleagueEmail,
+        verifiedAt: new Date().toISOString()
+      };
+
       const updatedMilestones = milestones.map((m) =>
         m.id === targetMilestone.id
-          ? { ...m, isCorroborated: true, corroboratedBy: `${colleagueRole} (${colleagueEmail})` }
+          ? { ...m, verifications: [...(m.verifications || []), newVerification] }
           : m
       );
       
@@ -756,7 +796,6 @@ export default function StudioPage() {
       period: "Jan 2026 — Present",
       location: "Remote",
       claims: ["Direct product strategy, platform execution, and quantifiable business outcomes..."],
-      isCorroborated: false
     };
     setMilestones((prev) => [newM, ...prev]);
   };
@@ -812,7 +851,7 @@ export default function StudioPage() {
     );
   };
 
-  const corroboratedCount = milestones.filter((m) => m.isCorroborated).length;
+  const corroboratedCount = milestones.reduce((acc, m) => acc + (m.verifications?.length || 0), 0);
   const verifiedSignalsCount =
     (contact.emailVerified ? 1 : 0) +
     (contact.linkedinVerified ? 1 : 0) +
@@ -828,8 +867,8 @@ export default function StudioPage() {
   const portfolioScore = milestones.length > 0 ? Math.round((totalVerified / milestones.length) * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col antialiased selection:bg-emerald-100">
-      <header className="sticky top-0 z-50 bg-white border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
+    <div className="h-screen overflow-hidden bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col antialiased selection:bg-emerald-100">
+      <header className="shrink-0 sticky top-0 z-50 bg-white border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link href="/" className="flex items-center gap-2 group">
             <VerifiedCVLogo className="w-6 h-6 group-hover:scale-105 transition-transform" />
@@ -888,9 +927,9 @@ export default function StudioPage() {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0">
         {/* CV ALLY COPILOT */}
-        <aside className="w-[320px] shrink-0 border-r border-[#E2E8F0] bg-white flex flex-col justify-between h-[calc(100vh-3.5rem)]">
+        <aside className="w-[320px] shrink-0 border-r border-[#E2E8F0] bg-white flex flex-col justify-between h-full">
           <div className="p-4 border-b border-[#E2E8F0] flex items-center gap-2.5 bg-[#F8FAFC]">
             <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#059669]">
               <Bot className="w-4 h-4" />
@@ -960,8 +999,9 @@ export default function StudioPage() {
         </aside>
 
         {/* LIVE CANVAS */}
-        <main className="flex-1 overflow-y-auto p-8 max-w-5xl mx-auto space-y-8 antialiased">
-          {milestones.length > 0 && (
+        <main className="flex-1 overflow-y-auto w-full">
+          <div className="p-8 max-w-5xl mx-auto space-y-8 antialiased">
+            {milestones.length > 0 && (
             <div className="bg-white border border-[#E2E8F0] rounded-3xl p-5 shadow-xs space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-2">
@@ -1289,9 +1329,9 @@ export default function StudioPage() {
                             />
                           </div>
 
-                          {milestone.isCorroborated ? (
+                          {milestone.verifications && milestone.verifications.length > 0 ? (
                             <span className="text-[10px] font-bold text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded flex items-center gap-1">
-                              <Check className="w-3 h-3 text-indigo-600" /> Peer Verified
+                              <Check className="w-3 h-3 text-indigo-600" /> {milestone.verifications.length} Peer Verified
                             </span>
                           ) : (
                             <button
@@ -1371,6 +1411,17 @@ export default function StudioPage() {
                                 <ShieldCheck className="w-3 h-3" />
                                 <span>{link.label}</span>
                               </a>
+                            ))}
+                          </div>
+                        )}
+
+                        {milestone.verifications && milestone.verifications.length > 0 && (
+                          <div className="pt-2 pb-2 border-b border-slate-100 space-y-1.5">
+                            {milestone.verifications.map((v) => (
+                              <div key={v.id} className="text-[10px] text-emerald-800 font-semibold flex items-center gap-1.5">
+                                <CheckCircle2 className="w-3 h-3 text-[#059669]" />
+                                <span>Verified by {v.name} ({v.role})</span>
+                              </div>
                             ))}
                           </div>
                         )}
@@ -1496,6 +1547,7 @@ export default function StudioPage() {
               )}
             </div>
           )}
+          </div>
         </main>
       </div>
 

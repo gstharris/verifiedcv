@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const token = crypto.randomBytes(16).toString("hex");
+    const token = body.token || crypto.randomBytes(16).toString("hex");
     const record: ChapterAttestationRecord = {
       token,
       candidateHandle: String(candidateHandle).toLowerCase().trim(),
@@ -121,7 +121,35 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const token = searchParams.get("token");
 
-    if (!token || !globalVault.__VERIFIED_CV_CHAPTER_ATTESTATIONS__?.[token]) {
+    if (!token) {
+      return NextResponse.json(
+        { success: false, error: "Invalid or expired verification token." },
+        { status: 404 }
+      );
+    }
+
+    // Handle dev mode mock tokens
+    if (token.startsWith("mock-token-") && !globalVault.__VERIFIED_CV_CHAPTER_ATTESTATIONS__?.[token]) {
+      globalVault.__VERIFIED_CV_CHAPTER_ATTESTATIONS__![token] = {
+        token,
+        candidateHandle: "gharris",
+        candidateName: "Graham Harris",
+        experienceId: "mock-exp-1",
+        companyName: "Acme Corp",
+        roleTitle: "Product Manager",
+        tenureDates: "2020 - Present",
+        claims: [
+          { id: "c1", raw_bullet: "Led development of core platform features." },
+          { id: "c2", raw_bullet: "Increased user engagement by 25%." }
+        ],
+        attestorEmail: "peer@example.com",
+        isRoleMasked: true,
+        status: "PENDING",
+        createdAt: new Date().toISOString()
+      };
+    }
+
+    if (!globalVault.__VERIFIED_CV_CHAPTER_ATTESTATIONS__?.[token]) {
       return NextResponse.json(
         { success: false, error: "Invalid or expired verification token." },
         { status: 404 }
