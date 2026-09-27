@@ -196,11 +196,12 @@ export default function CandidateDossierPage() {
   }
 
   const corroboratedCount = dossier.milestones.reduce((acc, m) => acc + (m.verifications?.length || 0), 0);
-  const verifiedSignalsCount =
-    (dossier.contact?.emailVerified ? 1 : 0) +
-    (dossier.contact?.linkedinVerified ? 1 : 0) +
-    (dossier.contact?.phoneVerified ? 1 : 0) +
-    corroboratedCount;
+  
+  // Portfolio Verification Stats
+  const level1Count = dossier.milestones.filter(m => getVerificationLevel(m) === 1).length;
+  const level2Count = dossier.milestones.filter(m => getVerificationLevel(m) === 2).length;
+  const level3Count = dossier.milestones.filter(m => getVerificationLevel(m) === 3).length;
+  const totalVerified = level1Count + level2Count + level3Count;
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans antialiased selection:bg-emerald-100 flex flex-col justify-between">
@@ -231,6 +232,36 @@ export default function CandidateDossierPage() {
       </header>
 
       <main className="max-w-4xl mx-auto w-full px-6 py-10 space-y-8 flex-1">
+        {/* PROGRESS BAR SUMMARY */}
+        {(level1Count > 0 || level2Count > 0 || level3Count > 0) && (
+          <div className="bg-white border border-[#E2E8F0] rounded-3xl p-5 shadow-xs space-y-3">
+            <div className="flex items-center justify-between text-xs font-bold">
+              <span className="text-slate-700 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                Career Verification Progress
+              </span>
+              <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                {totalVerified} of {dossier.milestones.length} Chapters Verified
+              </span>
+            </div>
+            
+            <div className="relative h-2.5 w-full bg-slate-100 rounded-full overflow-hidden flex group cursor-help">
+              {/* Tooltip on hover */}
+              <div className="absolute opacity-0 group-hover:opacity-100 bottom-full left-1/2 -translate-x-1/2 mb-2 bg-slate-900 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg whitespace-nowrap transition-opacity pointer-events-none z-10">
+                {level3Count > 0 && <span className="mr-2">🛡️ {level3Count} Anchored</span>}
+                {level2Count > 0 && <span className="mr-2">👥 {level2Count} Peer Verified</span>}
+                {level1Count > 0 && <span>📄 {level1Count} Document Verified</span>}
+                <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900"></div>
+              </div>
+
+              {/* Gradient Segments */}
+              <div className="h-full bg-emerald-500 transition-all" style={{ width: `${(level3Count / dossier.milestones.length) * 100}%` }} title="Cryptographically Anchored" />
+              <div className="h-full bg-emerald-400 transition-all" style={{ width: `${(level2Count / dossier.milestones.length) * 100}%` }} title="Peer Verified" />
+              <div className="h-full bg-blue-400 transition-all" style={{ width: `${(level1Count / dossier.milestones.length) * 100}%` }} title="Document Verified" />
+            </div>
+          </div>
+        )}
+
         {/* Candidate Identity Card */}
         <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 shadow-xs space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
