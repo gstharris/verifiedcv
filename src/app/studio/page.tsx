@@ -36,7 +36,9 @@ import {
   MapPin,
   ShieldAlert,
   Share2,
-  Zap
+  Zap,
+  Paperclip,
+  FileBadge
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 
@@ -63,6 +65,7 @@ interface Milestone {
   calibratedClaim?: string;
   isCorroborated: boolean;
   corroboratedBy?: string;
+  artifacts?: { id: string; name: string; type: string }[];
 }
 
 interface EducationRecord {
@@ -202,6 +205,7 @@ export default function StudioPage() {
 
   // Peer Corroboration Modal State
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [isArtifactModalOpen, setIsArtifactModalOpen] = useState(false);
   const [targetMilestone, setTargetMilestone] = useState<Milestone | null>(null);
   const [colleagueEmail, setColleagueEmail] = useState("");
   const [colleagueRole, setColleagueRole] = useState("Engineering Peer / Manager");
@@ -215,7 +219,7 @@ export default function StudioPage() {
   const actionPrompts = [
     { label: "⚡ Validate Achievements", action: "validate_recent" },
     { label: "✉️ Request Peer Corroboration", action: "request_peer" },
-    { label: "🔗 Confirm LinkedIn URL", action: "verify_linkedin" },
+    { label: "📎 Attach Proof Artifact", action: "attach_artifact" },
     { label: "🛡️ Lock Vault Record", action: "open_claim" }
   ];
 
@@ -466,13 +470,11 @@ export default function StudioPage() {
         setTargetMilestone(milestones[0]);
         setIsInviteModalOpen(true);
       }
-    } else if (actionType === "verify_linkedin") {
-      setContact((prev) => ({ ...prev, linkedinVerified: true }));
-      setChatMessages((prev) => [
-        ...prev,
-        { sender: "user", text: "Validate LinkedIn profile link" },
-        { sender: "ally", text: "LinkedIn link certified and locked into cryptographic trust header." }
-      ]);
+    } else if (actionType === "attach_artifact") {
+      if (milestones.length > 0) {
+        setTargetMilestone(milestones[0]);
+        setIsArtifactModalOpen(true);
+      }
     } else if (actionType === "open_claim") {
       setIsClaimModalOpen(true);
     }
@@ -571,6 +573,40 @@ export default function StudioPage() {
     } finally {
       setIsCommitting(false);
     }
+  };
+
+  const handleArtifactUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0 || !targetMilestone) return;
+    const file = e.target.files[0];
+    
+    // Mock upload delay
+    setIsProcessing(true);
+    setTimeout(() => {
+      setMilestones((prev) =>
+        prev.map((m) => {
+          if (m.id !== targetMilestone.id) return m;
+          const newArtifact = {
+            id: `art-${Date.now()}`,
+            name: file.name,
+            type: file.name.endsWith('.pdf') ? 'Document' : 'Work Product'
+          };
+          return {
+            ...m,
+            artifacts: [...(m.artifacts || []), newArtifact]
+          };
+        })
+      );
+      
+      setIsProcessing(false);
+      setIsArtifactModalOpen(false);
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          sender: "ally",
+          text: `Artifact "${file.name}" attached to ${targetMilestone.company}. AI scan confirms employer match.`
+        }
+      ]);
+    }, 1200);
   };
 
   const dispatchPeerInvite = (e: React.FormEvent) => {
@@ -1136,6 +1172,19 @@ export default function StudioPage() {
 
                           <button
                             type="button"
+                            onClick={() => {
+                              setTargetMilestone(milestone);
+                              setIsArtifactModalOpen(true);
+                            }}
+                            className="text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                            title="Attach W-2, Offer Letter, or Work Product"
+                          >
+                            <Paperclip className="w-3 h-3" />
+                            <span>Attach Proof</span>
+                          </button>
+
+                          <button
+                            type="button"
                             onClick={() =>
                               setMilestones((prev) => prev.filter((m) => m.id !== milestone.id))
                             }
@@ -1148,6 +1197,17 @@ export default function StudioPage() {
                       </div>
 
                       <div className="space-y-3">
+                        {milestone.artifacts && milestone.artifacts.length > 0 && (
+                          <div className="flex flex-wrap gap-2 pb-2">
+                            {milestone.artifacts.map((art) => (
+                              <div key={art.id} className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-100 border border-slate-200 text-[10px] font-medium text-slate-600">
+                                <FileBadge className="w-3 h-3 text-indigo-500" />
+                                <span className="truncate max-w-[150px]">{art.name}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
                         <div className="flex items-center justify-between">
                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                             Atomic Achievement Claims ({milestone.claims.length})
@@ -1270,6 +1330,63 @@ export default function StudioPage() {
           )}
         </main>
       </div>
+
+      {/* ARTIFACT UPLOAD MODAL */}
+      {isArtifactModalOpen && targetMilestone && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-lg space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+              <div className="flex items-center gap-2">
+                <Paperclip className="w-5 h-5 text-indigo-600" />
+                <h3 className="font-black text-sm text-[#0F172A]">Attach Proof Artifact</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsArtifactModalOpen(false)}
+                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1 text-xs">
+              <span className="font-bold text-[#0F172A] block">Attaching to: {targetMilestone.company}</span>
+              <span className="text-slate-500 block">Upload a W-2, Offer Letter, or Work Product.</span>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 text-indigo-800 leading-relaxed">
+                <strong>Privacy Note:</strong> Tax documents and offer letters are scanned by our AI to verify employer and dates, then <strong>instantly deleted</strong>. They are never shown to recruiters.
+              </div>
+
+              <div className="pt-2">
+                <input
+                  type="file"
+                  id="artifact-upload"
+                  className="hidden"
+                  onChange={handleArtifactUpload}
+                  accept=".pdf,.png,.jpg,.jpeg"
+                />
+                <button
+                  type="button"
+                  disabled={isProcessing}
+                  onClick={() => document.getElementById('artifact-upload')?.click()}
+                  className="w-full py-3 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+                >
+                  {isProcessing ? (
+                    <Clock className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <UploadCloud className="w-4 h-4 text-indigo-400" />
+                      <span>Select File to Scan</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* PEER CORROBORATION MODAL */}
       {isInviteModalOpen && targetMilestone && (
