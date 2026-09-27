@@ -150,12 +150,12 @@ export default function VerifiedCVLandingPage() {
     },
     {
       id: 1,
-      title: "Patent Awarded: Distributed Cache Partitioning",
-      company: "USPTO Registry",
-      role: "Lead Inventor",
-      badgeText: "Registry Anchored",
+      title: "Restructured SaaS Portfolio Into Modular Tiers",
+      company: "Bazaarvoice",
+      role: "Group Product Manager",
+      badgeText: "Document Verified",
       proofDetail:
-        "Direct cryptographic match with USPTO registry. Anchored to candidate Vault ID with public patent verification hash.",
+        "Offer letter and tenure dates scanned for employer match. Combined with one peer, this chapter reaches Company Verified.",
       hash: "0x3c7e...b412"
     },
     {
@@ -549,7 +549,7 @@ export default function VerifiedCVLandingPage() {
               Bypass 3 weeks of backchannel reference checking.
             </h2>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              When a candidate attaches their VerifiedCV link, their accomplishments have already been audited against employment overlaps, peer vouchers, and registry records.
+              When a candidate attaches their VerifiedCV link, their accomplishments have already been checked against peer corroboration and supporting documents.
             </p>
           </div>
 

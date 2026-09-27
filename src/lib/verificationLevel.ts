@@ -6,13 +6,10 @@ export type VerificationCounts = {
 
 export type VerificationStatus = {
   level: 0 | 1 | 2 | 3;
-  label: "Unverified" | "Partially Verified" | "Company Verified" | "Highly Verified" | "Cryptographically Anchored";
+  label: "Unverified" | "Partially Verified" | "Company Verified" | "Highly Verified";
 };
 
 export function getVerificationStatus(counts: VerificationCounts): VerificationStatus {
-  if (counts.registry) {
-    return { level: 3, label: "Cryptographically Anchored" };
-  }
   if (counts.peers >= 2 || (counts.peers >= 1 && counts.docs >= 1)) {
     return {
       level: 2,

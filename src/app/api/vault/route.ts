@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { getVaultStore, saveToVaultStore } from "@/lib/store";
+import { BETA_COOKIE, isBetaEnforced } from "@/lib/betaAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +92,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    if (isBetaEnforced() && req.cookies.get(BETA_COOKIE)?.value !== "ok") {
+      return NextResponse.json({ error: "Private beta. Studio access is required." }, { status: 401 });
+    }
+
     const payload = await req.json();
     const handle = (payload.handle || "").toLowerCase().trim();
 

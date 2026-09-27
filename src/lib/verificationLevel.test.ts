@@ -26,6 +26,6 @@ describe("company verification levels", () => {
     expect(previewVerificationStatus({ peers: 1, docs: 0, registry: false }, { docs: 1 }).label).toBe(
       "Company Verified"
     );
-    expect(previewVerificationStatus(current, { registry: true }).label).toBe("Cryptographically Anchored");
+    expect(previewVerificationStatus(current, { registry: true }).label).toBe("Unverified");
   });
 });

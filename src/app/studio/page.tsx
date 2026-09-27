@@ -26,10 +26,8 @@ import {
   X,
   RotateCcw,
   GraduationCap,
-  Sparkle,
   FileText,
   Calendar,
-  Wand2,
   AlertCircle,
   Mail,
   Phone,
@@ -38,8 +36,7 @@ import {
   Share2,
   Zap,
   Paperclip,
-  FileBadge,
-  Link2
+  FileBadge
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 import {
@@ -224,7 +221,6 @@ export default function StudioPage() {
   const [isVerifyHubOpen, setIsVerifyHubOpen] = useState(false);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isArtifactModalOpen, setIsArtifactModalOpen] = useState(false);
-  const [isRegistryModalOpen, setIsRegistryModalOpen] = useState(false);
   const returnToVerifyHubRef = useRef(false);
   const [targetMilestone, setTargetMilestone] = useState<Milestone | null>(null);
   const [colleagueEmail, setColleagueEmail] = useState("");
@@ -233,10 +229,22 @@ export default function StudioPage() {
   const [waitingForPeer, setWaitingForPeer] = useState(false);
   const [emailCode, setEmailCode] = useState("");
   const [emailCodeSent, setEmailCodeSent] = useState(false);
+  const [beta, setBeta] = useState<{ locked: boolean; unlocked: boolean; acceptsCode: boolean } | null>(null);
+  const [betaCode, setBetaCode] = useState("");
+  const [betaError, setBetaError] = useState("");
 
-  // Registry Modal State
-  const [registryType, setRegistryType] = useState<"github" | "credly" | "uspto">("github");
-  const [registryUrl, setRegistryUrl] = useState("");
+  useEffect(() => {
+    fetch("/api/beta/status")
+      .then((res) => res.json())
+      .then((data) =>
+        setBeta({
+          locked: Boolean(data.locked),
+          unlocked: Boolean(data.unlocked),
+          acceptsCode: Boolean(data.acceptsCode)
+        })
+      )
+      .catch(() => setBeta({ locked: false, unlocked: true, acceptsCode: false }));
+  }, []);
 
   // Handle Availability State
   const [handleStatus, setHandleStatus] = useState<"checking" | "available" | "taken" | "idle">("available");
@@ -356,12 +364,11 @@ export default function StudioPage() {
     });
   };
 
-  const openVerifyStep = (step: "peer" | "doc" | "registry") => {
+  const openVerifyStep = (step: "peer" | "doc") => {
     returnToVerifyHubRef.current = true;
     setIsVerifyHubOpen(false);
     if (step === "peer") setIsInviteModalOpen(true);
     if (step === "doc") setIsArtifactModalOpen(true);
-    if (step === "registry") setIsRegistryModalOpen(true);
   };
 
   const closeVerifyStep = (close: () => void) => {
@@ -720,8 +727,7 @@ export default function StudioPage() {
       } else if (
         actionType === "verify_company" ||
         actionType === "request_peer" ||
-        actionType === "attach_artifact" ||
-        actionType === "link_registry"
+        actionType === "attach_artifact"
       ) {
         if (milestones.length > 0) {
           setTargetMilestone(milestones[0]);
@@ -785,10 +791,7 @@ export default function StudioPage() {
       normalized.includes("verify") ||
       normalized.includes("artifact") ||
       normalized.includes("proof") ||
-      normalized.includes("attach") ||
-      normalized.includes("registry") ||
-      normalized.includes("github") ||
-      normalized.includes("credly")
+      normalized.includes("attach")
     ) {
       handleActionPrompt("verify_company");
     } else {
@@ -936,43 +939,6 @@ export default function StudioPage() {
     ]);
   };
 
-  const handleRegistryLink = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!registryUrl || !targetMilestone) return;
-
-    setIsProcessing(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    const newLink = {
-      id: `reg-${Date.now()}`,
-      type: registryType as any,
-      url: registryUrl,
-      label: registryType === "github" ? "GitHub Commits" : registryType === "credly" ? "Credly Badge" : "USPTO Patent"
-    };
-
-    const updatedMilestones = milestones.map((m) => {
-      if (m.id !== targetMilestone.id) return m;
-      return {
-        ...m,
-        registryLinks: [...(m.registryLinks || []), newLink]
-      };
-    });
-
-    setMilestones(updatedMilestones);
-    await updateVaultStore(updatedMilestones);
-      
-    setIsProcessing(false);
-    setIsRegistryModalOpen(false);
-    setRegistryUrl("");
-    setChatMessages((prev) => [
-      ...prev,
-      {
-        sender: "ally",
-        text: `Registry link saved for ${targetMilestone.company}. This chapter is now Cryptographically Anchored.`
-      }
-    ]);
-  };
-
   const dispatchPeerInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!colleagueEmail || !targetMilestone) return;
@@ -1062,22 +1028,6 @@ export default function StudioPage() {
     );
   };
 
-  const formatCleanClaim = (milestoneId: string, claimIndex: number) => {
-    setMilestones((prev) =>
-      prev.map((m) => {
-        if (m.id !== milestoneId) return m;
-        const target = m.claims[claimIndex] || "";
-        const formatted = target
-          .replace(/\s{2,}/g, " ")
-          .trim()
-          .replace(/^[a-z]/, (char) => char.toUpperCase());
-        const updatedClaims = [...m.claims];
-        updatedClaims[claimIndex] = formatted.endsWith(".") ? formatted : formatted + ".";
-        return { ...m, claims: updatedClaims };
-      })
-    );
-  };
-
   const corroboratedCount = milestones.reduce((acc, m) => acc + (m.verifications?.length || 0), 0);
   const verifiedSignalsCount =
     (contact.emailVerified ? 1 : 0) +
@@ -1092,6 +1042,74 @@ export default function StudioPage() {
   const level3Count = milestones.filter(m => getVerificationLevel(m).level === 3).length;
   const totalVerified = level1Count + level2Count + level3Count;
   const portfolioScore = milestones.length > 0 ? Math.round((totalVerified / milestones.length) * 100) : 0;
+
+  const unlockBeta = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBetaError("");
+    const res = await fetch("/api/beta/unlock", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: betaCode })
+    });
+    if (!res.ok) {
+      setBetaError("That access code is not valid.");
+      return;
+    }
+    setBeta({ locked: true, unlocked: true, acceptsCode: true });
+  };
+
+  if (!beta) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center text-xs font-bold text-slate-500">
+        Loading Studio…
+      </div>
+    );
+  }
+
+  if (beta.locked && !beta.unlocked) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans flex items-center justify-center p-6">
+        <div className="bg-white border border-[#E2E8F0] rounded-3xl p-8 max-w-md w-full shadow-sm space-y-5">
+          <div className="flex items-center gap-2">
+            <VerifiedCVLogo className="w-6 h-6" />
+            <span className="font-black text-base tracking-tight">VerifiedCV</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 border border-[#E2E8F0] rounded-full px-2 py-0.5">
+              Private beta
+            </span>
+          </div>
+          <div className="space-y-2">
+            <h1 className="font-black text-xl">Studio is invite-only for now</h1>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              The public site is live, but Candidate Studio is closed while we finish verification flows.
+            </p>
+          </div>
+          {beta.acceptsCode ? (
+            <form onSubmit={unlockBeta} className="space-y-3">
+              <input
+                type="password"
+                value={betaCode}
+                onChange={(e) => setBetaCode(e.target.value)}
+                placeholder="Access code"
+                className="w-full p-3 rounded-xl border border-[#E2E8F0] text-sm focus:outline-none focus:border-[#059669]"
+              />
+              {betaError && <p className="text-xs font-bold text-red-600">{betaError}</p>}
+              <button
+                type="submit"
+                className="w-full py-3 rounded-xl bg-[#0F172A] text-white text-xs font-black cursor-pointer"
+              >
+                Enter Studio
+              </button>
+            </form>
+          ) : (
+            <p className="text-xs text-slate-500">Check back soon, or ask Graham for access.</p>
+          )}
+          <Link href="/" className="block text-xs font-bold text-[#059669]">
+            Back to homepage
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen overflow-hidden bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col antialiased selection:bg-emerald-100">
@@ -1730,14 +1748,6 @@ export default function StudioPage() {
                               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
                                 <button
                                   type="button"
-                                  onClick={() => formatCleanClaim(milestone.id, claimIdx)}
-                                  className="text-slate-400 hover:text-[#059669] p-1 cursor-pointer"
-                                  title="Format Sentence"
-                                >
-                                  <Wand2 className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
                                   onClick={() => deleteClaimFromMilestone(milestone.id, claimIdx)}
                                   className="text-slate-300 hover:text-red-500 p-1 cursor-pointer"
                                   title="Delete Line Item"
@@ -1843,7 +1853,6 @@ export default function StudioPage() {
               const currentStatus = getVerificationStatus(current);
               const peerNext = previewVerificationStatus(current, { peers: 1 });
               const docNext = previewVerificationStatus(current, { docs: 1 });
-              const registryNext = previewVerificationStatus(current, { registry: true });
 
               return (
                 <div className="space-y-3">
@@ -1898,24 +1907,6 @@ export default function StudioPage() {
                     </p>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => openVerifyStep("registry")}
-                    className="w-full text-left p-4 rounded-2xl border border-[#E2E8F0] hover:border-emerald-200 hover:bg-emerald-50/40 transition-colors cursor-pointer space-y-1.5"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <Link2 className="w-4 h-4 text-[#059669]" />
-                        <span className="text-xs font-black text-[#0F172A]">Link a public registry</span>
-                      </div>
-                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
-                        Becomes {registryNext.label}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 leading-relaxed">
-                      GitHub, Credly, or USPTO. This is the highest bar: Cryptographically Anchored.
-                    </p>
-                  </button>
                 </div>
               );
             })()}
@@ -2041,76 +2032,6 @@ export default function StudioPage() {
                   ) : (
                     <>
                       <span>Send Verification Token</span>
-                      <ArrowRight className="w-4 h-4 text-emerald-400" />
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* REGISTRY LINK MODAL */}
-      {isRegistryModalOpen && targetMilestone && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-lg space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
-              <div className="flex items-center gap-2">
-                <Link2 className="w-5 h-5 text-[#059669]" />
-                <h3 className="font-black text-sm text-[#0F172A]">Link Public Registry</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => closeVerifyStep(() => setIsRegistryModalOpen(false))}
-                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1 text-xs">
-              <span className="font-bold text-[#0F172A] block">Anchoring to: {targetMilestone.company}</span>
-              <span className="text-slate-500 block">Provide a public URL to cryptographically anchor this chapter.</span>
-            </div>
-
-            <form onSubmit={handleRegistryLink} className="space-y-4 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Registry Type</label>
-                <select
-                  value={registryType}
-                  onChange={(e) => setRegistryType(e.target.value as any)}
-                  className="w-full p-2.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] bg-white"
-                >
-                  <option value="github">GitHub Repository / Commits</option>
-                  <option value="credly">Credly / Certification Badge</option>
-                  <option value="uspto">USPTO Patent Database</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Public URL</label>
-                <input
-                  type="url"
-                  required
-                  value={registryUrl}
-                  onChange={(e) => setRegistryUrl(e.target.value)}
-                  placeholder="https://"
-                  className="w-full p-2.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669]"
-                />
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={isProcessing}
-                  className="w-full py-3 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
-                >
-                  {isProcessing ? (
-                    <Clock className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <>
-                      <span>Verify & Anchor Link</span>
                       <ArrowRight className="w-4 h-4 text-emerald-400" />
                     </>
                   )}
