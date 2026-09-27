@@ -45,12 +45,12 @@ export default function VerifiedCVLandingPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [viewPerspective, setViewPerspective] = useState<"candidate" | "recruiter">("candidate");
 
-  const DEMO_NAMES = ["janedoe", "alexchen", "sarahsmith", "mikeross", "davidkim"];
+  const DEMO_HANDLES = ["arashmobayen", "kevinrenfro", "peterkim", "priyanair", "mateoalvarez"];
   const [nameIndex, setNameIndex] = useState(0);
 
   React.useEffect(() => {
     const interval = setInterval(() => {
-      setNameIndex((prev) => (prev + 1) % DEMO_NAMES.length);
+      setNameIndex((prev) => (prev + 1) % DEMO_HANDLES.length);
     }, 2500);
     return () => clearInterval(interval);
   }, []);
@@ -219,37 +219,40 @@ export default function VerifiedCVLandingPage() {
 
       {/* Hero Section */}
       <section className="relative pt-12 pb-14 md:pt-16 md:pb-16 overflow-hidden">
-        <div className="max-w-4xl mx-auto px-6 text-center space-y-4">
+        <div className="max-w-4xl mx-auto px-6 text-center space-y-5">
+          <div className="inline-flex items-center rounded-full border border-[#E2E8F0] bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+            Beta
+          </div>
           <h1 className="text-3xl sm:text-5xl font-black text-[#0F172A] tracking-tight leading-[1.12] max-w-3xl mx-auto">
             Your Living & Verified Portfolio.
           </h1>
+          <p className="text-base sm:text-xl font-semibold text-slate-600 max-w-2xl mx-auto leading-snug">
+            70% of workers have lied on a resume.{" "}
+            <span className="text-[#059669]">Show you are the other 30%.</span>
+          </p>
 
-          {/* Conversational Ingress Window with Multi-line Safe Textarea */}
-          <div className="max-w-xl mx-auto pt-2 text-left">
-            <div className="bg-white border border-[#E2E8F0] rounded-2xl shadow-sm p-5 space-y-4">
-              {/* Action Buttons */}
-              <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,.docx,.txt,.md"
-                  className="hidden"
-                  onChange={handleFileUpload}
-                />
+          <div className="max-w-xl mx-auto pt-2 space-y-4">
+            <div className="bg-white border border-[#E2E8F0] rounded-2xl shadow-sm p-5 space-y-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.docx,.txt,.md"
+                className="hidden"
+                onChange={handleFileUpload}
+              />
+              <button
+                type="button"
+                disabled={isProcessing}
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold transition-all cursor-pointer shadow-2xs disabled:opacity-50"
+              >
+                <UploadCloud className="w-4 h-4 text-emerald-400" />
+                <span>{isProcessing ? "Processing..." : "Upload Resume (PDF / Word)"}</span>
+              </button>
 
-                <button
-                  type="button"
-                  disabled={isProcessing}
-                  onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold transition-all cursor-pointer shadow-2xs disabled:opacity-50"
-                >
-                  <UploadCloud className="w-4 h-4 text-emerald-400" />
-                  <span>{isProcessing ? "Processing..." : "Upload Resume (PDF / Word)"}</span>
-                </button>
-              </div>
+              <p className="text-[11px] font-medium text-slate-400">or paste your career history</p>
 
-              {/* Multi-line Paste Safe Area */}
-              <form onSubmit={handleSendMessage} className="relative">
+              <form onSubmit={handleSendMessage} className="relative text-left">
                 <textarea
                   rows={3}
                   value={chatInput}
@@ -260,7 +263,7 @@ export default function VerifiedCVLandingPage() {
                       handleSendMessage();
                     }
                   }}
-                  placeholder="Paste complete career text or describe recent achievements (Press Enter to parse)..."
+                  placeholder="Paste complete career text or describe recent achievements..."
                   className="w-full text-xs pl-3.5 pr-12 py-3 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] focus:ring-1 focus:ring-[#059669] font-sans bg-slate-50/50 resize-y"
                 />
                 <button
@@ -278,18 +281,12 @@ export default function VerifiedCVLandingPage() {
               </form>
             </div>
 
-            {/* Value Prop & Rotating URL */}
-            <div className="mt-6 flex flex-col items-center justify-center gap-3 text-center">
-              <p className="text-xs font-bold text-slate-600 max-w-md leading-relaxed">
-                Creating your validated profile is as easy as uploading a resume and sending an email to your peers to corroborate.
-              </p>
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-[#E2E8F0] shadow-sm text-xs font-mono text-slate-500">
-                <Globe className="w-3.5 h-3.5 text-[#059669]" />
-                <span>Own your portfolio: </span>
-                <span className="font-bold text-[#0F172A] min-w-[140px] text-left">
-                  verifiedcv.app/<span className="text-[#059669] transition-all duration-300">{DEMO_NAMES[nameIndex]}</span>
-                </span>
-              </div>
+            <div className="inline-flex items-center gap-2 text-sm text-slate-500">
+              <Globe className="w-4 h-4 text-[#059669]" />
+              <span>Own your portfolio:</span>
+              <span className="font-semibold text-[#0F172A]">
+                verifiedcv.app/<span className="text-[#059669] transition-all duration-300">{DEMO_HANDLES[nameIndex]}</span>
+              </span>
             </div>
           </div>
         </div>
@@ -403,10 +400,7 @@ export default function VerifiedCVLandingPage() {
                   <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#059669]">
                     <Bot className="w-4 h-4" />
                   </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-[#0F172A]">CV Ally Copilot</h4>
-                    <span className="text-[9px] text-slate-400 block">Socratic Claim Calibrator</span>
-                  </div>
+                  <h4 className="text-xs font-bold text-[#0F172A]">CV Ally</h4>
                 </div>
 
                 <div className="p-3 rounded-lg bg-white border border-emerald-100 text-xs space-y-2.5 shadow-2xs">

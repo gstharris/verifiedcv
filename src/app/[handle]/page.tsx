@@ -23,6 +23,7 @@ import {
   Check
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
+import { getVerificationStatus } from "@/lib/verificationLevel";
 
 function LinkedInIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
   return (
@@ -79,10 +80,11 @@ interface DossierData {
 }
 
 function getVerificationLevel(milestone: Milestone): number {
-  if (milestone.registryLinks && milestone.registryLinks.length > 0) return 3;
-  if (milestone.verifications && milestone.verifications.length > 0) return 2;
-  if (milestone.artifacts && milestone.artifacts.length > 0) return 1;
-  return 0;
+  return getVerificationStatus({
+    peers: milestone.verifications?.length || 0,
+    docs: milestone.artifacts?.length || 0,
+    registry: Boolean(milestone.registryLinks && milestone.registryLinks.length > 0)
+  }).level;
 }
 
 export default function CandidateDossierPage() {
@@ -257,7 +259,7 @@ export default function CandidateDossierPage() {
               ) : (dossier.milestones.length > 0 && (
                 <div className="flex flex-col items-end gap-1.5 group cursor-help relative">
                   <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                    {totalVerified} / {dossier.milestones.length} Verified
+                    Company Verification
                   </div>
                   <div className="h-2 w-24 bg-slate-100 rounded-full overflow-hidden flex shadow-inner">
                     <div className="h-full bg-emerald-500 transition-all" style={{ width: `${(level3Count / dossier.milestones.length) * 100}%` }} />
@@ -267,9 +269,11 @@ export default function CandidateDossierPage() {
                   
                   {/* Tooltip */}
                   <div className="absolute opacity-0 group-hover:opacity-100 top-full right-0 mt-2 bg-slate-900 text-white text-[10px] font-bold px-3 py-2 rounded-lg whitespace-nowrap transition-opacity pointer-events-none z-10 space-y-1 text-right shadow-xl">
+                    <div className="text-slate-400 border-b border-slate-700 pb-1 mb-1 text-center uppercase tracking-wider text-[9px]">Company Verification</div>
+                    <div className="text-[9px] text-slate-300 font-normal mb-1">Requires 2+ peers OR 1 peer + 1 document</div>
                     {level3Count > 0 && <div>🛡️ {level3Count} Anchored</div>}
-                    {level2Count > 0 && <div>👥 {level2Count} Peer Verified</div>}
-                    {level1Count > 0 && <div>📄 {level1Count} Document Verified</div>}
+                    {level2Count > 0 && <div>👥 {level2Count} Fully Verified</div>}
+                    {level1Count > 0 && <div>📄 {level1Count} Partially Verified</div>}
                     {dossier.milestones.length - totalVerified > 0 && <div className="text-slate-400">⏳ {dossier.milestones.length - totalVerified} Pending</div>}
                   </div>
                 </div>
@@ -361,12 +365,12 @@ export default function CandidateDossierPage() {
                     )}
                     {level === 2 && (
                       <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3 text-[#059669]" /> Peer Verified
+                        <CheckCircle2 className="w-3 h-3 text-[#059669]" /> Company Verified
                       </span>
                     )}
                     {level === 1 && (
                       <span className="text-[10px] font-bold text-blue-800 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded flex items-center gap-1">
-                        <BadgeCheck className="w-3 h-3 text-blue-600" /> Document Verified
+                        <BadgeCheck className="w-3 h-3 text-blue-600" /> Partially Verified
                       </span>
                     )}
                   </div>

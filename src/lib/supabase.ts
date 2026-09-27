@@ -42,3 +42,5 @@ export function getSupabaseAdmin(): SupabaseClient | null {
     return null;
   }
 }
+
+export const supabase = getSupabase()!;

@@ -62,7 +62,14 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
 
   // LinkedIn Verification State
   const [isAuthenticatingLinkedIn, setIsAuthenticatingLinkedIn] = useState(false);
-  const [linkedInProfile, setLinkedInProfile] = useState<{ name: string; title: string; accountAgeYears: number; url: string } | null>(null);
+  const [linkedInProfile, setLinkedInProfile] = useState<{
+    sub: string;
+    name: string;
+    email?: string;
+    picture?: string;
+    title?: string;
+    url?: string;
+  } | null>(null);
   const [linkedInError, setLinkedInError] = useState("");
 
   // Success State
@@ -99,6 +106,42 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
     fetchAttestation();
   }, [token]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const linkedInAuth = urlParams.get("linkedin_auth");
+
+    async function applyLinkedInSession() {
+      try {
+        const res = await fetch("/api/auth/linkedin/session");
+        const json = await res.json();
+        if (json?.authenticated && json.profile) {
+          setLinkedInProfile({
+            sub: json.profile.sub,
+            name: json.profile.name,
+            email: json.profile.email,
+            picture: json.profile.picture
+          });
+          setAttestorName((prev) => prev || json.profile.name || "");
+          if (linkedInAuth) {
+            window.history.replaceState({}, document.title, `/attest/${token}`);
+          }
+          return;
+        }
+      } catch {
+        // Session lookup is optional; the Sign in button still works.
+      }
+
+      if (linkedInAuth === "error") {
+        setLinkedInError("LinkedIn sign-in did not complete. Please try again.");
+        window.history.replaceState({}, document.title, `/attest/${token}`);
+      }
+    }
+
+    applyLinkedInSession();
+  }, [token]);
+
   const toggleClaimEndorsement = (claimId: string) => {
     setEndorsedClaimIds((prev) =>
       prev.includes(claimId) ? prev.filter((id) => id !== claimId) : [...prev, claimId]
@@ -108,20 +151,7 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
   const handleLinkedInAuth = () => {
     setIsAuthenticatingLinkedIn(true);
     setLinkedInError("");
-    
-    // Simulate LinkedIn OAuth flow
-    setTimeout(() => {
-      const mockProfile = {
-        name: attestorName || "David Chen",
-        title: attestorTitle || "Director of Engineering",
-        accountAgeYears: 6,
-        url: "https://linkedin.com/in/davidchen-mock"
-      };
-      setLinkedInProfile(mockProfile);
-      setAttestorName(mockProfile.name);
-      setAttestorTitle(mockProfile.title);
-      setIsAuthenticatingLinkedIn(false);
-    }, 1500);
+    window.location.href = `/api/auth/linkedin?next=${encodeURIComponent(`/attest/${token}`)}`;
   };
 
   const handleConfirm = async () => {
@@ -459,7 +489,7 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
                     <div>
                       <h4 className="text-xs font-bold text-blue-900">Identity Verification Required</h4>
                       <p className="text-[11px] text-blue-700 mt-0.5 leading-relaxed">
-                        To prevent fraudulent corroborations, VerifiedCV requires peers to authenticate via LinkedIn. We check profile age and network depth. We will not post to your profile.
+                        To prevent fraudulent corroborations, VerifiedCV requires peers to sign in with LinkedIn. We confirm a real LinkedIn identity and verified email. We will not post to your profile.
                       </p>
                     </div>
                   </div>
@@ -482,7 +512,10 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
                     </div>
                     <div>
                       <div className="text-xs font-bold text-emerald-900">Identity Verified</div>
-                      <div className="text-[10px] text-emerald-700">Profile Age: {linkedInProfile.accountAgeYears} Years • Established Network</div>
+                      <div className="text-[10px] text-emerald-700">
+                        {linkedInProfile.name}
+                        {linkedInProfile.email ? ` • ${linkedInProfile.email}` : " • Authenticated via LinkedIn"}
+                      </div>
                     </div>
                   </div>
                   <CheckCircle2 className="w-5 h-5 text-emerald-600" />

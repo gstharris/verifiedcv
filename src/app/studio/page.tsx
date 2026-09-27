@@ -42,6 +42,15 @@ import {
   Link2
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
+import {
+  STUDIO_DRAFT_KEY,
+  STUDIO_SAVED_KEY,
+  clearStudioPortfolioStorage,
+  hasPortfolioContent,
+  readStudioRecord,
+  writeStudioRecord
+} from "@/lib/studioPortfolio";
+import { getVerificationStatus, previewVerificationStatus } from "@/lib/verificationLevel";
 
 function LinkedInIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
   return (
@@ -207,16 +216,23 @@ export default function StudioPage() {
   const [handle, setHandle] = useState("gharris");
   const [headline, setHeadline] = useState("Head of Product Management • AI Platforms");
   const [isCommitting, setIsCommitting] = useState(false);
-  const [isVaultSaved, setIsVaultSaved] = useState(false);
+  const [isPortfolioSaved, setIsPortfolioSaved] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const skipNextAutosaveRef = useRef(true);
 
   // Peer Corroboration Modal State
+  const [isVerifyHubOpen, setIsVerifyHubOpen] = useState(false);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isArtifactModalOpen, setIsArtifactModalOpen] = useState(false);
   const [isRegistryModalOpen, setIsRegistryModalOpen] = useState(false);
+  const returnToVerifyHubRef = useRef(false);
   const [targetMilestone, setTargetMilestone] = useState<Milestone | null>(null);
   const [colleagueEmail, setColleagueEmail] = useState("");
   const [colleagueRole, setColleagueRole] = useState("Engineering Peer / Manager");
   const [inviteSent, setInviteSent] = useState(false);
+  const [waitingForPeer, setWaitingForPeer] = useState(false);
+  const [emailCode, setEmailCode] = useState("");
+  const [emailCodeSent, setEmailCodeSent] = useState(false);
 
   // Registry Modal State
   const [registryType, setRegistryType] = useState<"github" | "credly" | "uspto">("github");
@@ -227,106 +243,231 @@ export default function StudioPage() {
   const [emailError, setEmailError] = useState("");
   const [nameError, setNameError] = useState("");
 
+  const milestoneCounts = (m: Milestone) => ({
+    peers: m.verifications?.length || 0,
+    docs: m.artifacts?.length || 0,
+    registry: Boolean(m.registryLinks && m.registryLinks.length > 0)
+  });
+
   const getVerificationLevel = (m: Milestone) => {
-    // Level 3: Cryptographic / Registry
-    if (m.registryLinks && m.registryLinks.length > 0) {
-      return { level: 3, label: "Cryptographically Anchored", color: "text-emerald-800 bg-emerald-50 border-emerald-200", icon: <ShieldCheck className="w-3 h-3 text-[#059669]" /> };
+    const status = getVerificationStatus(milestoneCounts(m));
+    if (status.level === 3) {
+      return { ...status, color: "text-emerald-800 bg-emerald-50 border-emerald-200", icon: <ShieldCheck className="w-3 h-3 text-[#059669]" /> };
     }
-    // Level 2: Peer Corroborated
-    if (m.verifications && m.verifications.length > 0) {
-      const isHighlyVerified = m.verifications.length >= 3;
-      return { 
-        level: 2, 
-        label: isHighlyVerified ? "Highly Verified ⭐" : "Peer Verified", 
-        color: isHighlyVerified ? "text-amber-800 bg-amber-50 border-amber-200" : "text-indigo-800 bg-indigo-50 border-indigo-200", 
-        icon: isHighlyVerified ? <Award className="w-3 h-3 text-amber-600" /> : <Users className="w-3 h-3 text-indigo-600" /> 
+    if (status.level === 2) {
+      const isHighlyVerified = status.label === "Highly Verified";
+      return {
+        ...status,
+        label: isHighlyVerified ? "Highly Verified ⭐" : status.label,
+        color: isHighlyVerified ? "text-amber-800 bg-amber-50 border-amber-200" : "text-indigo-800 bg-indigo-50 border-indigo-200",
+        icon: isHighlyVerified ? <Award className="w-3 h-3 text-amber-600" /> : <Users className="w-3 h-3 text-indigo-600" />
       };
     }
-    // Level 1: Document Verified
-    if (m.artifacts && m.artifacts.length > 0) {
-      return { level: 1, label: "Document Verified", color: "text-blue-800 bg-blue-50 border-blue-200", icon: <FileCheck className="w-3 h-3 text-blue-600" /> };
+    if (status.level === 1) {
+      return { ...status, color: "text-blue-800 bg-blue-50 border-blue-200", icon: <FileCheck className="w-3 h-3 text-blue-600" /> };
     }
-    // Level 0: Unverified
-    return { level: 0, label: "Unverified", color: "text-slate-600 bg-slate-100 border-slate-200", icon: <AlertCircle className="w-3 h-3 text-slate-500" /> };
+    return { ...status, color: "text-slate-600 bg-slate-100 border-slate-200", icon: <AlertCircle className="w-3 h-3 text-slate-500" /> };
   };
 
   const actionPrompts = [
-    { label: "⚡ Validate Achievements", action: "validate_recent" },
-    { label: "✉️ Request Peer Corroboration", action: "request_peer" },
-    { label: "📎 Attach Proof Artifact", action: "attach_artifact" },
-    { label: "🔗 Link Registry (GitHub/Credly)", action: "link_registry" },
-    { label: "🛡️ Lock Vault Record", action: "open_claim" }
+    { label: "Verify a company", action: "verify_company" },
+    { label: "Validate achievements", action: "validate_recent" }
   ];
 
   const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
     {
       sender: "ally",
-      text: "Candidate Studio ready. All credentials, contact channels, and achievements are loaded for audit. Save your Vault to enable peer corroboration."
+      text: "Candidate Studio ready. Ingest your resume, then save the portfolio before verification or corroboration. Saving keeps your work if you leave to authenticate."
     }
   ]);
   const [chatInput, setChatInput] = useState("");
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const buildPortfolioPayload = () => ({
+    handle: handle.toLowerCase().trim(),
+    email: contact.email,
+    fullName,
+    headline,
+    summaryStatement,
+    contact,
+    skills,
+    education,
+    milestones
+  });
+
+  const persistPortfolioLocally = (saved: boolean, payload = buildPortfolioPayload()) => {
+    writeStudioRecord(STUDIO_DRAFT_KEY, payload);
+    if (saved) {
+      writeStudioRecord(STUDIO_SAVED_KEY, payload);
+    }
+  };
+
+  const applyPortfolioRecord = (parsed: any) => {
+    if (!parsed) return;
+    if (Array.isArray(parsed.milestones)) {
+      setMilestones(
+        parsed.milestones.map((m: any) => ({
+          ...m,
+          claims: (Array.isArray(m.claims) ? m.claims : m.calibratedClaim ? [m.calibratedClaim] : []).filter(
+            (c: string) => c.replace(/[^a-zA-Z]/g, "").length >= 12
+          )
+        }))
+      );
+    }
+    if (parsed.fullName) setFullName(parsed.fullName);
+    if (parsed.headline) setHeadline(parsed.headline);
+    if (parsed.summaryStatement) setSummaryStatement(parsed.summaryStatement);
+    if (parsed.skills) setSkills(parsed.skills);
+    if (parsed.education) setEducation(parsed.education);
+    if (parsed.contact) setContact((prev) => ({ ...prev, ...parsed.contact }));
+    if (parsed.handle) setHandle(String(parsed.handle).toLowerCase().trim());
+    setActiveTab("canvas");
+  };
+
+  const requirePortfolioSaved = (onReady: () => void) => {
+    if (!isPortfolioSaved) {
+      setIsClaimModalOpen(true);
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          sender: "ally",
+          text: "Save your portfolio first. Editing, verification, and corroboration start after this profile is saved."
+        }
+      ]);
+      return;
+    }
+    persistPortfolioLocally(true);
+    onReady();
+  };
+
+  const lockIfUnsaved = (e: React.SyntheticEvent) => {
+    if (isPortfolioSaved) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.target instanceof HTMLElement) e.target.blur();
+    setIsClaimModalOpen(true);
+  };
+
+  const openVerifyHub = (milestone: Milestone) => {
+    requirePortfolioSaved(() => {
+      setTargetMilestone(milestone);
+      setIsVerifyHubOpen(true);
+    });
+  };
+
+  const openVerifyStep = (step: "peer" | "doc" | "registry") => {
+    returnToVerifyHubRef.current = true;
+    setIsVerifyHubOpen(false);
+    if (step === "peer") setIsInviteModalOpen(true);
+    if (step === "doc") setIsArtifactModalOpen(true);
+    if (step === "registry") setIsRegistryModalOpen(true);
+  };
+
+  const closeVerifyStep = (close: () => void) => {
+    close();
+    if (returnToVerifyHubRef.current) {
+      returnToVerifyHubRef.current = false;
+      setIsVerifyHubOpen(true);
+    }
+  };
+
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // Check for LinkedIn OAuth callback
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get("linkedin_import") === "success") {
-      loadCanonicalRecord();
-      // Clean up the URL
-      window.history.replaceState({}, document.title, "/studio");
-      return;
+    const linkedInAuth = urlParams.get("linkedin_auth");
+    const saved = readStudioRecord<any>(STUDIO_SAVED_KEY);
+    const draft = readStudioRecord<any>(STUDIO_DRAFT_KEY);
+    const pendingRaw = sessionStorage.getItem("vcv_pending_payload");
+
+    if (saved && hasPortfolioContent(saved)) {
+      skipNextAutosaveRef.current = true;
+      applyPortfolioRecord(saved);
+      setIsPortfolioSaved(true);
+      setSaveStatus("saved");
+    } else if (draft && hasPortfolioContent(draft)) {
+      applyPortfolioRecord(draft);
+    } else if (pendingRaw) {
+      try {
+        const parsed = JSON.parse(pendingRaw);
+        sessionStorage.removeItem("vcv_pending_payload");
+
+        if (parsed.action === "load_canonical") {
+          loadCanonicalRecord();
+        } else if (parsed.milestones && Array.isArray(parsed.milestones) && parsed.milestones.length > 0) {
+          applyPortfolioRecord(parsed);
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              sender: "ally",
+              text: `Ingested ${parsed.milestones.length} career chapters. Save your portfolio to unlock verification.`
+            }
+          ]);
+        } else if (parsed.rawText && parsed.rawText.trim().length > 0) {
+          executeIngest(parsed.rawText);
+        }
+      } catch {
+        // ignore
+      }
     }
 
-    const stored = sessionStorage.getItem("vcv_pending_payload");
-    if (!stored) return;
-
-    try {
-      const parsed = JSON.parse(stored);
-      sessionStorage.removeItem("vcv_pending_payload");
-
-      if (parsed.action === "load_canonical") {
-        loadCanonicalRecord();
-        return;
+    async function applyLinkedInSession() {
+      try {
+        const res = await fetch("/api/auth/linkedin/session");
+        const data = await res.json();
+        if (data?.authenticated && data.profile) {
+          setContact((prev) => {
+            const nextContact = {
+              ...prev,
+              email: prev.email || data.profile.email || prev.email,
+              linkedinVerified: true
+            };
+            const base = saved && hasPortfolioContent(saved) ? saved : draft;
+            if (base && hasPortfolioContent(base)) {
+              const synced = { ...base, contact: { ...base.contact, ...nextContact }, email: nextContact.email };
+              writeStudioRecord(STUDIO_DRAFT_KEY, synced);
+              if (saved) {
+                skipNextAutosaveRef.current = true;
+                writeStudioRecord(STUDIO_SAVED_KEY, synced);
+                fetch("/api/vault", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(synced)
+                }).catch(() => {});
+              }
+            }
+            return nextContact;
+          });
+          if (linkedInAuth === "success") {
+            setChatMessages((prev) => [
+              ...prev,
+              {
+                sender: "ally",
+                text: `✅ LinkedIn identity verified${data.profile.name ? ` for ${data.profile.name}` : ""}. We will not post to your profile.`
+              }
+            ]);
+            window.history.replaceState({}, document.title, "/studio");
+          }
+          return;
+        }
+      } catch {
+        // Session lookup is optional; the Verify button still works.
       }
 
-      if (parsed.milestones && Array.isArray(parsed.milestones) && parsed.milestones.length > 0) {
-        setMilestones(
-          parsed.milestones.map((m: any) => ({
-            ...m,
-            claims: (Array.isArray(m.claims) ? m.claims : (m.calibratedClaim ? [m.calibratedClaim] : [])).filter(
-              (c: string) => c.replace(/[^a-zA-Z]/g, "").length >= 12
-            )
-          }))
-        );
-        if (parsed.fullName) setFullName(parsed.fullName);
-        if (parsed.headline) setHeadline(parsed.headline);
-        if (parsed.summaryStatement) setSummaryStatement(parsed.summaryStatement);
-        if (parsed.skills) setSkills(parsed.skills);
-        if (parsed.education) setEducation(parsed.education);
-        if (parsed.contact) {
-          setContact((prev) => ({ ...prev, ...parsed.contact }));
-        }
-
-        setActiveTab("canvas");
+      if (linkedInAuth === "error") {
         setChatMessages((prev) => [
           ...prev,
           {
             sender: "ally",
-            text: `Ingested ${parsed.milestones.length} career chapters with full contact records. Ready to corroborate key achievements.`
+            text: "LinkedIn sign-in did not complete. You can try again from the contact strip."
           }
         ]);
-        return;
+        window.history.replaceState({}, document.title, "/studio");
       }
-
-      if (parsed.rawText && parsed.rawText.trim().length > 0) {
-        executeIngest(parsed.rawText);
-      }
-    } catch {
-      // ignore
     }
+
+    applyLinkedInSession();
   }, []);
 
   useEffect(() => {
@@ -336,8 +477,52 @@ export default function StudioPage() {
   }, [chatMessages]);
 
   useEffect(() => {
+    const payload = {
+      handle: handle.toLowerCase().trim(),
+      email: contact.email,
+      fullName,
+      headline,
+      summaryStatement,
+      contact,
+      skills,
+      education,
+      milestones
+    };
+    if (!hasPortfolioContent(payload)) return;
+    persistPortfolioLocally(isPortfolioSaved, payload);
+
+    if (!isPortfolioSaved) return;
+    if (skipNextAutosaveRef.current) {
+      skipNextAutosaveRef.current = false;
+      setSaveStatus("saved");
+      return;
+    }
+
+    setSaveStatus("saving");
+    const timeout = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/vault", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        setSaveStatus(res.ok ? "saved" : "error");
+      } catch {
+        setSaveStatus("error");
+      }
+    }, 800);
+
+    return () => clearTimeout(timeout);
+  }, [contact, education, fullName, handle, headline, isPortfolioSaved, milestones, skills, summaryStatement]);
+
+  useEffect(() => {
     if (!handle || handle.length < 2) {
       setHandleStatus("idle");
+      return;
+    }
+
+    if (isPortfolioSaved) {
+      setHandleStatus("available");
       return;
     }
 
@@ -357,7 +542,38 @@ export default function StudioPage() {
     }, 400);
 
     return () => clearTimeout(timeout);
-  }, [handle]);
+  }, [handle, isPortfolioSaved]);
+
+  useEffect(() => {
+    if (!isPortfolioSaved || !waitingForPeer || !handle) return;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/vault?handle=${encodeURIComponent(handle)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!Array.isArray(data.milestones)) return;
+        const nextCount = data.milestones.reduce(
+          (acc: number, m: Milestone) => acc + (m.verifications?.length || 0),
+          0
+        );
+        const currentCount = milestones.reduce((acc, m) => acc + (m.verifications?.length || 0), 0);
+        if (nextCount > currentCount) {
+          setMilestones(data.milestones);
+          setWaitingForPeer(false);
+          setChatMessages((prev) => [
+            ...prev,
+            { sender: "ally", text: "A peer confirmed a company chapter. The dossier is updated." }
+          ]);
+        }
+      } catch {
+        // keep polling
+      }
+    };
+
+    const interval = setInterval(poll, 8000);
+    return () => clearInterval(interval);
+  }, [handle, isPortfolioSaved, milestones, waitingForPeer]);
 
   const loadCanonicalRecord = () => {
     setFullName(GRAHAM_HARRIS_CANONICAL.fullName);
@@ -373,7 +589,7 @@ export default function StudioPage() {
       ...prev,
       {
         sender: "ally",
-        text: "Loaded Graham Harris canonical record. Contact identity, 3 verified milestones, and academic background are active."
+        text: "Loaded Graham Harris canonical record. Save this portfolio before verifying identity or requesting corroboration."
       }
     ]);
   };
@@ -416,7 +632,7 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Extracted ${data.milestones.length} milestones with contact signals. Contact block & dates confirmed.`
+            text: `Extracted ${data.milestones.length} milestones. Save your portfolio next so verification work is not lost.`
           }
         ]);
       } else {
@@ -471,7 +687,7 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Parsed ${data.milestones.length} career chapters from ${file.name}.`
+            text: `Parsed ${data.milestones.length} career chapters from ${file.name}. Save your portfolio to unlock verification.`
           }
         ]);
       } else {
@@ -485,39 +701,34 @@ export default function StudioPage() {
   };
 
   const handleActionPrompt = (actionType: string) => {
-    if (actionType === "validate_recent") {
-      if (milestones.length > 0) {
-        const topM = milestones[0];
-        setHighlightedMilestoneId(topM.id);
-        setChatMessages((prev) => [
-          ...prev,
-          { sender: "user", text: `Validate recent achievements at ${topM.company}` },
-          {
-            sender: "ally",
-            text: `Focusing on ${topM.company} (${topM.role}). Each line item represents an atomic deliverable. Click 'Corroborate' to send an attestation link to your manager.`
-          }
-        ]);
-        const el = document.getElementById(topM.id);
-        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    requirePortfolioSaved(() => {
+      if (actionType === "validate_recent") {
+        if (milestones.length > 0) {
+          const topM = milestones[0];
+          setHighlightedMilestoneId(topM.id);
+          setChatMessages((prev) => [
+            ...prev,
+            { sender: "user", text: `Validate recent achievements at ${topM.company}` },
+            {
+              sender: "ally",
+              text: `Focusing on ${topM.company} (${topM.role}). Each line item represents an atomic deliverable. Click 'Verify' to send an attestation link to your manager.`
+            }
+          ]);
+          const el = document.getElementById(topM.id);
+          el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      } else if (
+        actionType === "verify_company" ||
+        actionType === "request_peer" ||
+        actionType === "attach_artifact" ||
+        actionType === "link_registry"
+      ) {
+        if (milestones.length > 0) {
+          setTargetMilestone(milestones[0]);
+          setIsVerifyHubOpen(true);
+        }
       }
-    } else if (actionType === "request_peer") {
-      if (milestones.length > 0) {
-        setTargetMilestone(milestones[0]);
-        setIsInviteModalOpen(true);
-      }
-    } else if (actionType === "attach_artifact") {
-      if (milestones.length > 0) {
-        setTargetMilestone(milestones[0]);
-        setIsArtifactModalOpen(true);
-      }
-    } else if (actionType === "link_registry") {
-      if (milestones.length > 0) {
-        setTargetMilestone(milestones[0]);
-        setIsRegistryModalOpen(true);
-      }
-    } else if (actionType === "open_claim") {
-      setIsClaimModalOpen(true);
-    }
+    });
   };
 
   const handleSendMessage = (e: React.FormEvent) => {
@@ -525,20 +736,70 @@ export default function StudioPage() {
     if (!chatInput.trim()) return;
 
     const query = chatInput.trim();
+    const normalized = query.toLowerCase();
     setChatMessages((prev) => [...prev, { sender: "user", text: query }]);
     setChatInput("");
 
-    if (query.toLowerCase().includes("validate") || query.toLowerCase().includes("achievement")) {
+    if (
+      normalized.includes("save") ||
+      normalized.includes("portfolio") ||
+      normalized.includes("handle") ||
+      normalized.includes("claim")
+    ) {
+      if (isPortfolioSaved) {
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            sender: "ally",
+            text: "Your portfolio is already saved. Edits update automatically."
+          }
+        ]);
+        return;
+      }
+      if (!hasPortfolioContent({ milestones, summaryStatement })) {
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            sender: "ally",
+            text: "Upload or paste a resume first, then I can save your portfolio."
+          }
+        ]);
+        return;
+      }
+      setIsClaimModalOpen(true);
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          sender: "ally",
+          text: "Opening save now. After this, you can edit fields and start verification."
+        }
+      ]);
+      return;
+    }
+
+    if (normalized.includes("validate") || normalized.includes("achievement")) {
       handleActionPrompt("validate_recent");
-    } else if (query.toLowerCase().includes("peer") || query.toLowerCase().includes("corroborat")) {
-      handleActionPrompt("request_peer");
+    } else if (
+      normalized.includes("peer") ||
+      normalized.includes("corroborat") ||
+      normalized.includes("verify") ||
+      normalized.includes("artifact") ||
+      normalized.includes("proof") ||
+      normalized.includes("attach") ||
+      normalized.includes("registry") ||
+      normalized.includes("github") ||
+      normalized.includes("credly")
+    ) {
+      handleActionPrompt("verify_company");
     } else {
       setTimeout(() => {
         setChatMessages((prev) => [
           ...prev,
           {
             sender: "ally",
-            text: "Metric bounds calibrated. Choose an action suggestion below to verify this chapter."
+            text: isPortfolioSaved
+              ? "I can help verify a chapter, request a peer, or attach proof. What should we do next?"
+              : "Save your portfolio first, then we can verify chapters and request corroboration."
           }
         ]);
       }, 400);
@@ -564,7 +825,7 @@ export default function StudioPage() {
       setEmailError("");
     }
 
-    if (handleStatus === "taken") {
+    if (handleStatus === "taken" && !isPortfolioSaved) {
       alert("This handle is already taken. Please choose another one.");
       isValid = false;
     }
@@ -592,31 +853,31 @@ export default function StudioPage() {
       });
 
       if (res.ok) {
-        if (typeof window !== "undefined") {
-          sessionStorage.setItem("vcv_saved_vault", JSON.stringify(dossierPayload));
-        }
-        setIsVaultSaved(true);
+        skipNextAutosaveRef.current = true;
+        persistPortfolioLocally(true, dossierPayload);
+        setIsPortfolioSaved(true);
+        setSaveStatus("saved");
         setIsClaimModalOpen(false);
         setChatMessages((prev) => [
           ...prev,
           {
             sender: "ally",
-            text: `Vault saved! Live candidate dossier active at verifiedcv.app/${handle.toLowerCase().trim()}`
+            text: `Portfolio saved. Live dossier is active at verifiedcv.app/${handle.toLowerCase().trim()}. You can now verify identity and request corroboration.`
           }
         ]);
       } else {
         const data = await res.json();
-        alert(data.error || "Failed to commit record.");
+        alert(data.error || "Failed to save portfolio.");
       }
     } catch {
-      alert("Network error committing to Vault API.");
+      alert("Network error saving portfolio.");
     } finally {
       setIsCommitting(false);
     }
   };
 
   const updateVaultStore = async (updatedMilestones: Milestone[]) => {
-    if (!isVaultSaved || !handle) return;
+    if (!isPortfolioSaved || !handle) return;
     const dossierPayload = {
       handle: handle.toLowerCase().trim(),
       email: contact.email,
@@ -629,6 +890,7 @@ export default function StudioPage() {
       milestones: updatedMilestones
     };
     try {
+      persistPortfolioLocally(true, dossierPayload);
       await fetch("/api/vault", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -706,7 +968,7 @@ export default function StudioPage() {
       ...prev,
       {
         sender: "ally",
-        text: `Registry link verified via ${registryType.toUpperCase()} API. Milestone upgraded to Cryptographically Anchored (Level 3).`
+        text: `Registry link saved for ${targetMilestone.company}. This chapter is now Cryptographically Anchored.`
       }
     ]);
   };
@@ -716,21 +978,11 @@ export default function StudioPage() {
     if (!colleagueEmail || !targetMilestone) return;
 
     setInviteSent(true);
-    await new Promise(resolve => setTimeout(resolve, 800));
-
-    setIsInviteModalOpen(false);
-    setInviteSent(false);
-    
-    // Generate a mock token link for testing
-    const mockToken = `mock-token-${Date.now()}`;
-    
-    // Seed the mock token with the actual milestone data
     try {
-      await fetch('/api/verify/attest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/verify/attest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          token: mockToken,
           candidateHandle: handle,
           candidateName: fullName,
           experienceId: targetMilestone.id,
@@ -741,52 +993,26 @@ export default function StudioPage() {
           attestorEmail: colleagueEmail
         })
       });
-    } catch (err) {
-      console.warn("Failed to seed mock token", err);
-    }
-
-    const mockUrl = `${window.location.origin}/attest/${mockToken}`;
-
-    setChatMessages((prev) => [
-      ...prev,
-      {
-        sender: "ally",
-        text: `Corroboration invitation dispatched to ${colleagueEmail}. Awaiting peer response...`
-      },
-      {
-        sender: "ally",
-        text: `(Dev Mode) To see the corroborator's experience, open this link in a new tab: ${mockUrl}`
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.error || "Could not send the verification request.");
+        return;
       }
-    ]);
 
-    // Simulate peer clicking link and approving (after 3 seconds)
-    setTimeout(async () => {
-      const newVerification = {
-        id: `ver-${Date.now()}`,
-        name: "Colleague",
-        role: colleagueRole,
-        email: colleagueEmail,
-        verifiedAt: new Date().toISOString(),
-        linkedInUrl: "https://linkedin.com/in/mock-peer"
-      };
-
-      const updatedMilestones = milestones.map((m) =>
-        m.id === targetMilestone.id
-          ? { ...m, verifications: [...(m.verifications || []), newVerification] }
-          : m
-      );
-      
-      setMilestones(updatedMilestones);
-      await updateVaultStore(updatedMilestones);
-
+      setIsInviteModalOpen(false);
+      setWaitingForPeer(true);
       setChatMessages((prev) => [
         ...prev,
         {
           sender: "ally",
-          text: `✅ Peer Corroboration Received! ${colleagueEmail} has attested to your claims at ${targetMilestone.company}. Milestone upgraded to Level 2.`
+          text: `Invitation sent to ${colleagueEmail}. This chapter updates when they confirm with LinkedIn.`
         }
       ]);
-    }, 15000); // Give the user 15 seconds to click the link before auto-approving
+    } catch {
+      alert("Network error sending the verification request.");
+    } finally {
+      setInviteSent(false);
+    }
   };
 
   const addEmptyMilestone = () => {
@@ -887,7 +1113,7 @@ export default function StudioPage() {
             <span>Upgrade to Pro</span>
           </button>
           
-          {(milestones.length > 0 || summaryStatement) && !isVaultSaved && (
+          {(milestones.length > 0 || summaryStatement) && !isPortfolioSaved && (
             <button
               type="button"
               onClick={() => {
@@ -895,6 +1121,9 @@ export default function StudioPage() {
                 setSummaryStatement("");
                 setSkills([]);
                 setEducation([]);
+                setIsPortfolioSaved(false);
+                setSaveStatus("idle");
+                clearStudioPortfolioStorage();
                 setActiveTab("canvas");
               }}
               className="text-xs font-semibold text-slate-400 hover:text-red-500 transition-colors px-3 py-1.5 cursor-pointer flex items-center gap-1"
@@ -904,15 +1133,20 @@ export default function StudioPage() {
             </button>
           )}
 
-          {isVaultSaved ? (
-            <Link
-              href={`/${handle.toLowerCase().trim()}`}
-              target="_blank"
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#059669] text-xs font-bold transition-all shadow-2xs cursor-pointer"
-            >
-              <span>View Live Dossier</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </Link>
+          {isPortfolioSaved ? (
+            <>
+              <span className="text-[11px] font-semibold text-slate-400">
+                {saveStatus === "saving" ? "Saving..." : saveStatus === "error" ? "Save failed" : "All changes saved"}
+              </span>
+              <Link
+                href={`/${handle.toLowerCase().trim()}`}
+                target="_blank"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#059669] text-xs font-bold transition-all shadow-2xs cursor-pointer"
+              >
+                <span>View Live Dossier</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </Link>
+            </>
           ) : (
             (milestones.length > 0 || summaryStatement) && (
               <button
@@ -921,7 +1155,7 @@ export default function StudioPage() {
                 className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-[#059669] hover:bg-emerald-600 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
               >
                 <UserCheck className="w-3.5 h-3.5" />
-                <span>Save Vault & Claim Handle</span>
+                <span>Save Portfolio</span>
               </button>
             )
           )}
@@ -929,16 +1163,13 @@ export default function StudioPage() {
       </header>
 
       <div className="flex-1 flex overflow-hidden min-h-0">
-        {/* CV ALLY COPILOT */}
+        {/* CV ALLY */}
         <aside className="w-[320px] shrink-0 border-r border-[#E2E8F0] bg-white flex flex-col justify-between h-full">
           <div className="p-4 border-b border-[#E2E8F0] flex items-center gap-2.5 bg-[#F8FAFC]">
             <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#059669]">
               <Bot className="w-4 h-4" />
             </div>
-            <div>
-              <h3 className="text-xs font-black text-[#0F172A]">CV Ally Copilot</h3>
-              <span className="text-[10px] text-slate-500 font-medium">Socratic Verification Pilot</span>
-            </div>
+            <h3 className="text-xs font-black text-[#0F172A]">CV Ally</h3>
           </div>
 
           <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -986,7 +1217,7 @@ export default function StudioPage() {
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Ask Ally to corroborate or audit..."
+                placeholder="Ask Ally to save, verify, or audit..."
                 className="w-full text-xs pl-3 pr-8 py-2 rounded-lg border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans bg-slate-50/50"
               />
               <button
@@ -1002,7 +1233,7 @@ export default function StudioPage() {
         {/* LIVE CANVAS */}
         <main className="flex-1 overflow-y-auto w-full">
           <div className="p-8 max-w-5xl mx-auto space-y-8 antialiased">
-            {milestones.length > 0 && level0Count > 0 && (
+            {milestones.length > 0 && isPortfolioSaved && level0Count > 0 && (
             <div className="bg-white border border-[#E2E8F0] rounded-3xl p-5 shadow-xs space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -1012,7 +1243,7 @@ export default function StudioPage() {
                 <button onClick={() => {
                   const firstUnverified = milestones.find(m => getVerificationLevel(m).level === 0);
                   if (firstUnverified) {
-                    document.getElementById(`milestone-${firstUnverified.id}`)?.scrollIntoView({ behavior: 'smooth' });
+                    document.getElementById(firstUnverified.id)?.scrollIntoView({ behavior: 'smooth' });
                   }
                 }} className="font-bold text-[#059669] hover:text-emerald-700 transition-colors cursor-pointer text-xs flex items-center gap-1">
                   Level Up Now <ArrowRight className="w-3.5 h-3.5" />
@@ -1105,7 +1336,16 @@ export default function StudioPage() {
               )}
             </div>
           ) : (
-            <div className="space-y-8">
+            <div
+              className="space-y-8"
+              onFocusCapture={lockIfUnsaved}
+              onClickCapture={(e) => {
+                const target = e.target as HTMLElement;
+                if (!isPortfolioSaved && target.closest("button, input, textarea, select")) {
+                  lockIfUnsaved(e);
+                }
+              }}
+            >
               {/* Candidate Identity & Contact Verification Strip */}
               <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 shadow-xs space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-100">
@@ -1113,24 +1353,30 @@ export default function StudioPage() {
                     <input
                       type="text"
                       value={fullName}
+                      readOnly={!isPortfolioSaved}
                       onChange={(e) => setFullName(e.target.value)}
                       placeholder="Candidate Legal Name"
                       spellCheck={true}
-                      className="text-xl sm:text-2xl font-black text-[#0F172A] focus:outline-none border-b border-transparent focus:border-[#059669]"
+                      className={`text-xl sm:text-2xl font-black text-[#0F172A] focus:outline-none border-b border-transparent ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
                     />
                     <input
                       type="text"
                       value={headline}
+                      readOnly={!isPortfolioSaved}
                       onChange={(e) => setHeadline(e.target.value)}
                       placeholder="Professional Headline"
                       spellCheck={true}
-                      className="w-full text-xs sm:text-sm font-semibold text-slate-600 focus:outline-none border-b border-transparent focus:border-[#059669]"
+                      className={`w-full text-xs sm:text-sm font-semibold text-slate-600 focus:outline-none border-b border-transparent ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
                     />
                   </div>
 
-                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[#059669] text-xs font-bold self-start sm:self-auto">
+                  <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold self-start sm:self-auto border ${
+                    isPortfolioSaved
+                      ? "bg-emerald-50 border-emerald-200 text-[#059669]"
+                      : "bg-amber-50 border-amber-200 text-amber-800"
+                  }`}>
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Vault Ground Truth</span>
+                    <span>{isPortfolioSaved ? "Portfolio Saved" : "Save to edit"}</span>
                   </span>
                 </div>
 
@@ -1141,23 +1387,74 @@ export default function StudioPage() {
                       <input
                         type="email"
                         value={contact.email}
+                        readOnly={!isPortfolioSaved}
                         onChange={(e) => setContact({ ...contact, email: e.target.value })}
                         placeholder="Work Email"
-                        className="w-full text-xs bg-transparent focus:outline-none font-medium"
+                        className={`w-full text-xs bg-transparent focus:outline-none font-medium ${isPortfolioSaved ? "" : "cursor-pointer"}`}
                       />
                     </div>
                     {contact.emailVerified ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    ) : emailCodeSent ? (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={6}
+                          value={emailCode}
+                          onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                          placeholder="Code"
+                          className="w-14 text-[10px] px-1 py-0.5 rounded border border-[#E2E8F0] focus:outline-none focus:border-[#059669]"
+                        />
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const res = await fetch("/api/verify/email", {
+                              method: "PUT",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ email: contact.email, code: emailCode })
+                            });
+                            const data = await res.json();
+                            if (res.ok && data.success) {
+                              setContact((c) => ({ ...c, emailVerified: true }));
+                              setEmailCodeSent(false);
+                              setEmailCode("");
+                              setChatMessages((prev) => [...prev, { sender: "ally", text: "Email confirmed." }]);
+                            } else {
+                              alert(data.error || "That code did not match.");
+                            }
+                          }}
+                          className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100 cursor-pointer"
+                        >
+                          Confirm
+                        </button>
+                      </div>
                     ) : (
-                      <button onClick={() => {
-                        setIsProcessing(true);
-                        setChatMessages(prev => [...prev, { sender: "ally", text: `Sending verification code to ${contact.email}...` }]);
-                        setTimeout(() => {
-                          setContact(c => ({ ...c, emailVerified: true }));
-                          setIsProcessing(false);
-                          setChatMessages(prev => [...prev, { sender: "ally", text: `✅ Email verified successfully.` }]);
-                        }, 1500);
-                      }} className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer shrink-0">Verify</button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          requirePortfolioSaved(async () => {
+                            const res = await fetch("/api/verify/email", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ email: contact.email })
+                            });
+                            const data = await res.json();
+                            if (res.ok && data.success) {
+                              setEmailCodeSent(true);
+                              setChatMessages((prev) => [
+                                ...prev,
+                                { sender: "ally", text: `A confirmation code was sent to ${contact.email}.` }
+                              ]);
+                            } else {
+                              alert(data.error || "Could not send the email code.");
+                            }
+                          });
+                        }}
+                        className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer shrink-0"
+                      >
+                        Verify
+                      </button>
                     )}
                   </div>
 
@@ -1167,23 +1464,16 @@ export default function StudioPage() {
                       <input
                         type="text"
                         value={contact.phone}
+                        readOnly={!isPortfolioSaved}
                         onChange={(e) => setContact({ ...contact, phone: e.target.value })}
                         placeholder="Phone"
-                        className="w-full text-xs bg-transparent focus:outline-none font-medium"
+                        className={`w-full text-xs bg-transparent focus:outline-none font-medium ${isPortfolioSaved ? "" : "cursor-pointer"}`}
                       />
                     </div>
                     {contact.phoneVerified ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
                     ) : (
-                      <button onClick={() => {
-                        setIsProcessing(true);
-                        setChatMessages(prev => [...prev, { sender: "ally", text: `Sending SMS code to ${contact.phone}...` }]);
-                        setTimeout(() => {
-                          setContact(c => ({ ...c, phoneVerified: true }));
-                          setIsProcessing(false);
-                          setChatMessages(prev => [...prev, { sender: "ally", text: `✅ Phone verified successfully.` }]);
-                        }, 1500);
-                      }} className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer shrink-0">Verify</button>
+                      <span className="text-[10px] font-semibold text-slate-400 shrink-0">SMS later</span>
                     )}
                   </div>
 
@@ -1193,22 +1483,20 @@ export default function StudioPage() {
                       <input
                         type="text"
                         value={contact.linkedin}
+                        readOnly={!isPortfolioSaved}
                         onChange={(e) => setContact({ ...contact, linkedin: e.target.value })}
                         placeholder="LinkedIn URL"
-                        className="w-full text-xs bg-transparent focus:outline-none font-medium text-blue-700"
+                        className={`w-full text-xs bg-transparent focus:outline-none font-medium text-blue-700 ${isPortfolioSaved ? "" : "cursor-pointer"}`}
                       />
                     </div>
                     {contact.linkedinVerified ? (
                       <CheckCircle2 className="w-4 h-4 text-blue-500 shrink-0" />
                     ) : (
                       <button onClick={() => {
-                        setIsProcessing(true);
-                        setChatMessages(prev => [...prev, { sender: "ally", text: `Authenticating LinkedIn profile...` }]);
-                        setTimeout(() => {
-                          setContact(c => ({ ...c, linkedinVerified: true }));
-                          setIsProcessing(false);
-                          setChatMessages(prev => [...prev, { sender: "ally", text: `✅ LinkedIn identity verified.` }]);
-                        }, 1500);
+                        requirePortfolioSaved(() => {
+                          persistPortfolioLocally(true);
+                          window.location.href = "/api/auth/linkedin?next=/studio";
+                        });
                       }} className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer shrink-0">Verify</button>
                     )}
                   </div>
@@ -1218,9 +1506,10 @@ export default function StudioPage() {
                     <input
                       type="text"
                       value={contact.location}
+                      readOnly={!isPortfolioSaved}
                       onChange={(e) => setContact({ ...contact, location: e.target.value })}
                       placeholder="Location / Remote"
-                      className="w-full text-xs bg-transparent focus:outline-none font-medium"
+                      className={`w-full text-xs bg-transparent focus:outline-none font-medium ${isPortfolioSaved ? "" : "cursor-pointer"}`}
                     />
                   </div>
                 </div>
@@ -1243,11 +1532,12 @@ export default function StudioPage() {
                   <textarea
                     rows={4}
                     value={summaryStatement}
+                    readOnly={!isPortfolioSaved}
                     onChange={(e) => setSummaryStatement(e.target.value)}
                     spellCheck={true}
                     autoCorrect="on"
                     lang="en"
-                    className="w-full text-xs text-slate-700 leading-relaxed p-3.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans resize-y bg-[#F8FAFC]"
+                    className={`w-full text-xs text-slate-700 leading-relaxed p-3.5 rounded-xl border border-[#E2E8F0] focus:outline-none font-sans resize-y bg-[#F8FAFC] ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
                   />
                 </div>
               )}
@@ -1293,6 +1583,7 @@ export default function StudioPage() {
                           <input
                             type="text"
                             value={milestone.company}
+                            readOnly={!isPortfolioSaved}
                             onChange={(e) => {
                               const val = e.target.value;
                               setMilestones((prev) =>
@@ -1301,11 +1592,12 @@ export default function StudioPage() {
                             }}
                             placeholder="Company Name (e.g. SCD Enterprises / PairedRight)"
                             spellCheck={true}
-                            className="w-full font-black text-base text-[#0F172A] focus:outline-none border-b border-transparent focus:border-[#059669]"
+                            className={`w-full font-black text-base text-[#0F172A] focus:outline-none border-b border-transparent ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
                           />
                           <input
                             type="text"
                             value={milestone.role}
+                            readOnly={!isPortfolioSaved}
                             onChange={(e) => {
                               const val = e.target.value;
                               setMilestones((prev) =>
@@ -1314,7 +1606,7 @@ export default function StudioPage() {
                             }}
                             placeholder="Role Title (e.g. Founder and Head of Product)"
                             spellCheck={true}
-                            className="w-full text-xs font-semibold text-slate-600 focus:outline-none border-b border-transparent focus:border-[#059669]"
+                            className={`w-full text-xs font-semibold text-slate-600 focus:outline-none border-b border-transparent ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
                           />
                         </div>
 
@@ -1324,6 +1616,7 @@ export default function StudioPage() {
                             <input
                               type="text"
                               value={milestone.period}
+                              readOnly={!isPortfolioSaved}
                               onChange={(e) => {
                                 const val = e.target.value;
                                 setMilestones((prev) =>
@@ -1335,54 +1628,18 @@ export default function StudioPage() {
                             />
                           </div>
 
-                          {milestone.verifications && milestone.verifications.length > 0 ? (
-                            <span className="text-[10px] font-bold text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded flex items-center gap-1">
-                              <Check className="w-3 h-3 text-indigo-600" /> {milestone.verifications.length} Peer Verified
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              disabled={!isVaultSaved}
-                              onClick={() => {
-                                setTargetMilestone(milestone);
-                                setIsInviteModalOpen(true);
-                              }}
-                              className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 ${
-                                isVaultSaved
-                                  ? "text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 cursor-pointer"
-                                  : "text-slate-400 bg-slate-50 border border-slate-200 cursor-not-allowed"
-                              }`}
-                              title={!isVaultSaved ? "Save your Vault to request verification" : "Request Peer Verification"}
-                            >
-                              <Users className="w-3 h-3" />
-                              <span>Verify</span>
-                            </button>
-                          )}
-
                           <button
                             type="button"
-                            onClick={() => {
-                              setTargetMilestone(milestone);
-                              setIsArtifactModalOpen(true);
-                            }}
-                            className="text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
-                            title="Attach W-2, Offer Letter, or Work Product"
+                            onClick={() => openVerifyHub(milestone)}
+                            className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1 ${
+                              isPortfolioSaved
+                                ? "text-[#059669] bg-emerald-50 hover:bg-emerald-100 border border-emerald-200"
+                                : "text-slate-400 bg-slate-50 border border-slate-200"
+                            }`}
+                            title={!isPortfolioSaved ? "Save your portfolio to verify this company" : "Verify this company"}
                           >
-                            <Paperclip className="w-3 h-3" />
-                            <span>Attach Proof</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setTargetMilestone(milestone);
-                              setIsRegistryModalOpen(true);
-                            }}
-                            className="text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
-                            title="Link GitHub, USPTO, or Credly"
-                          >
-                            <Link2 className="w-3 h-3" />
-                            <span>Link Registry</span>
+                            <ShieldCheck className="w-3 h-3" />
+                            <span>{trustStatus.level > 0 ? "Add proof" : "Verify company"}</span>
                           </button>
 
                           <button
@@ -1461,6 +1718,7 @@ export default function StudioPage() {
                               <textarea
                                 rows={2}
                                 value={claimText}
+                                readOnly={!isPortfolioSaved}
                                 onChange={(e) =>
                                   updateMilestoneClaim(milestone.id, claimIdx, e.target.value)
                                 }
@@ -1562,6 +1820,109 @@ export default function StudioPage() {
         </main>
       </div>
 
+      {isVerifyHubOpen && targetMilestone && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-lg space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+              <div>
+                <h3 className="font-black text-sm text-[#0F172A]">Verify {targetMilestone.company}</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">{targetMilestone.role}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsVerifyHubOpen(false)}
+                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {(() => {
+              const live = milestones.find((m) => m.id === targetMilestone.id) || targetMilestone;
+              const current = milestoneCounts(live);
+              const currentStatus = getVerificationStatus(current);
+              const peerNext = previewVerificationStatus(current, { peers: 1 });
+              const docNext = previewVerificationStatus(current, { docs: 1 });
+              const registryNext = previewVerificationStatus(current, { registry: true });
+
+              return (
+                <div className="space-y-3">
+                  <div className="px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs">
+                    <span className="text-slate-500">Current status: </span>
+                    <span className="font-bold text-[#0F172A]">{currentStatus.label}</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => openVerifyStep("peer")}
+                    className="w-full text-left p-4 rounded-2xl border border-[#E2E8F0] hover:border-indigo-200 hover:bg-indigo-50/40 transition-colors cursor-pointer space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-indigo-600" />
+                        <span className="text-xs font-black text-[#0F172A]">Ask a colleague</span>
+                      </div>
+                      <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
+                        {current.peers >= 1 ? "Adds another peer" : "Becomes " + peerNext.label}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      One LinkedIn-authenticated peer confirms your time there.
+                      {current.peers === 0 && current.docs === 0
+                        ? " One peer gets you to Partially Verified. A second peer, or a document plus this peer, reaches Company Verified."
+                        : current.peers === 0
+                          ? " Combined with your document, this reaches Company Verified."
+                          : " Two or more peers reach Company Verified."}
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => openVerifyStep("doc")}
+                    className="w-full text-left p-4 rounded-2xl border border-[#E2E8F0] hover:border-blue-200 hover:bg-blue-50/40 transition-colors cursor-pointer space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <Paperclip className="w-4 h-4 text-blue-600" />
+                        <span className="text-xs font-black text-[#0F172A]">Attach a document</span>
+                      </div>
+                      <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
+                        {current.docs >= 1 ? "Adds more proof" : "Becomes " + docNext.label}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      Offer letter, contract, or W-2. Scanned for employer and dates, then deleted.
+                      {current.peers >= 1 && current.docs === 0
+                        ? " With your existing peer, this reaches Company Verified."
+                        : " Alone this is Partial. Pair it with one peer for Company Verified."}
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => openVerifyStep("registry")}
+                    className="w-full text-left p-4 rounded-2xl border border-[#E2E8F0] hover:border-emerald-200 hover:bg-emerald-50/40 transition-colors cursor-pointer space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <Link2 className="w-4 h-4 text-[#059669]" />
+                        <span className="text-xs font-black text-[#0F172A]">Link a public registry</span>
+                      </div>
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                        Becomes {registryNext.label}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      GitHub, Credly, or USPTO. This is the highest bar: Cryptographically Anchored.
+                    </p>
+                  </button>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
       {/* ARTIFACT UPLOAD MODAL */}
       {isArtifactModalOpen && targetMilestone && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
@@ -1573,7 +1934,7 @@ export default function StudioPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setIsArtifactModalOpen(false)}
+                onClick={() => closeVerifyStep(() => setIsArtifactModalOpen(false))}
                 className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -1630,7 +1991,7 @@ export default function StudioPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setIsInviteModalOpen(false)}
+                onClick={() => closeVerifyStep(() => setIsInviteModalOpen(false))}
                 className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -1701,7 +2062,7 @@ export default function StudioPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setIsRegistryModalOpen(false)}
+                onClick={() => closeVerifyStep(() => setIsRegistryModalOpen(false))}
                 className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -1767,7 +2128,7 @@ export default function StudioPage() {
             <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
               <div className="flex items-center gap-2">
                 <VerifiedCVLogo className="w-6 h-6" />
-                <h3 className="font-black text-sm text-[#0F172A]">Claim Your Dossier Handle</h3>
+                <h3 className="font-black text-sm text-[#0F172A]">Save Portfolio to Start Editing</h3>
               </div>
               <button
                 type="button"
@@ -1779,6 +2140,9 @@ export default function StudioPage() {
             </div>
 
             <form onSubmit={handleClaimVaultCommit} className="space-y-4 text-xs antialiased">
+              <p className="text-slate-500 leading-relaxed">
+                After you save, you can edit any field. Later changes are saved automatically.
+              </p>
               <div>
                 <label className="font-bold text-slate-700 block mb-1">Full Legal Name</label>
                 <input
@@ -1841,14 +2205,14 @@ export default function StudioPage() {
               <div className="pt-2">
                 <button
                   type="submit"
-                  disabled={isCommitting || handleStatus === "taken"}
+                  disabled={isCommitting || (handleStatus === "taken" && !isPortfolioSaved)}
                   className="w-full py-3 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50 antialiased"
                 >
                   {isCommitting ? (
                     <Clock className="w-4 h-4 animate-spin" />
                   ) : (
                     <>
-                      <span>Commit to Vault & Launch Dossier</span>
+                      <span>Save Portfolio</span>
                       <ArrowRight className="w-4 h-4 text-emerald-400" />
                     </>
                   )}

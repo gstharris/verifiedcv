@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "VerifiedCV • The Living Portfolio for Verified Careers",
@@ -25,7 +26,9 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased bg-[#F8FAFC] text-[#0F172A] selection:bg-emerald-100">
-        {children}
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   );
