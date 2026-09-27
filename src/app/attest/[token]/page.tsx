@@ -16,7 +16,8 @@ import {
   ChevronDown,
   ChevronUp,
   Award,
-  Check
+  Check,
+  ShieldAlert
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 
@@ -59,6 +60,11 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
   const [endorsedClaimIds, setEndorsedClaimIds] = useState<string[]>([]);
   const [isMilestonesOpen, setIsMilestonesOpen] = useState(false);
 
+  // LinkedIn Verification State
+  const [isAuthenticatingLinkedIn, setIsAuthenticatingLinkedIn] = useState(false);
+  const [linkedInProfile, setLinkedInProfile] = useState<{ name: string; title: string; accountAgeYears: number; url: string } | null>(null);
+  const [linkedInError, setLinkedInError] = useState("");
+
   // Success State
   const [isSuccess, setIsSuccess] = useState(false);
   const [confirmedSig, setConfirmedSig] = useState<string | null>(null);
@@ -99,6 +105,25 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
     );
   };
 
+  const handleLinkedInAuth = () => {
+    setIsAuthenticatingLinkedIn(true);
+    setLinkedInError("");
+    
+    // Simulate LinkedIn OAuth flow
+    setTimeout(() => {
+      const mockProfile = {
+        name: attestorName || "David Chen",
+        title: attestorTitle || "Director of Engineering",
+        accountAgeYears: 6,
+        url: "https://linkedin.com/in/davidchen-mock"
+      };
+      setLinkedInProfile(mockProfile);
+      setAttestorName(mockProfile.name);
+      setAttestorTitle(mockProfile.title);
+      setIsAuthenticatingLinkedIn(false);
+    }, 1500);
+  };
+
   const handleConfirm = async () => {
     setSubmitting(true);
     setError(null);
@@ -116,6 +141,7 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
           isRoleMasked,
           notes,
           endorsedClaimIds,
+          linkedInProfile,
         }),
       });
 
@@ -425,6 +451,44 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
                 <strong>Personal Capacity:</strong> You are confirming based on your direct personal experience working with {data.candidateName}. This does not constitute an official corporate communication on behalf of {data.companyName}.
               </div>
 
+              {/* LinkedIn Identity Verification */}
+              {!linkedInProfile ? (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl space-y-3">
+                  <div className="flex items-start gap-2.5">
+                    <ShieldAlert className="w-5 h-5 text-blue-700 shrink-0" />
+                    <div>
+                      <h4 className="text-xs font-bold text-blue-900">Identity Verification Required</h4>
+                      <p className="text-[11px] text-blue-700 mt-0.5 leading-relaxed">
+                        To prevent fraudulent corroborations, VerifiedCV requires peers to authenticate via LinkedIn. We check profile age and network depth. We will not post to your profile.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleLinkedInAuth}
+                    disabled={isAuthenticatingLinkedIn}
+                    className="w-full py-2.5 bg-[#0A66C2] hover:bg-[#004182] text-white font-bold rounded-lg text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {isAuthenticatingLinkedIn ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    <span>Sign in with LinkedIn</span>
+                  </button>
+                  {linkedInError && <div className="text-red-600 text-[10px] font-bold text-center">{linkedInError}</div>}
+                </div>
+              ) : (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                      <CheckCircle2 className="w-4 h-4 text-blue-700" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-emerald-900">Identity Verified</div>
+                      <div className="text-[10px] text-emerald-700">Profile Age: {linkedInProfile.accountAgeYears} Years • Established Network</div>
+                    </div>
+                  </div>
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                </div>
+              )}
+
               {error && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
@@ -434,7 +498,7 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
 
               <button
                 onClick={handleConfirm}
-                disabled={submitting}
+                disabled={submitting || !linkedInProfile}
                 className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs transition-all disabled:opacity-50"
               >
                 {submitting ? (

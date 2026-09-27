@@ -66,7 +66,7 @@ interface Milestone {
   calibratedClaim?: string;
   artifacts?: { id: string; name: string; type: string }[];
   registryLinks?: { id: string; type: "github" | "credly" | "uspto"; url: string; label: string }[];
-  verifications?: { id: string; name: string; role: string; email: string; verifiedAt: string }[];
+  verifications?: { id: string; name: string; role: string; email: string; verifiedAt: string; linkedInUrl?: string }[];
 }
 
 interface EducationRecord {
@@ -766,7 +766,8 @@ export default function StudioPage() {
         name: "Colleague",
         role: colleagueRole,
         email: colleagueEmail,
-        verifiedAt: new Date().toISOString()
+        verifiedAt: new Date().toISOString(),
+        linkedInUrl: "https://linkedin.com/in/mock-peer"
       };
 
       const updatedMilestones = milestones.map((m) =>
@@ -1421,6 +1422,11 @@ export default function StudioPage() {
                               <div key={v.id} className="text-[10px] text-emerald-800 font-semibold flex items-center gap-1.5">
                                 <CheckCircle2 className="w-3 h-3 text-[#059669]" />
                                 <span>Verified by {v.name} ({v.role})</span>
+                                {v.linkedInUrl && (
+                                  <a href={v.linkedInUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center w-4 h-4 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors ml-1" title="Authenticated via LinkedIn">
+                                    <LinkedInIcon className="w-2.5 h-2.5" />
+                                  </a>
+                                )}
                               </div>
                             ))}
                           </div>

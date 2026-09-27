@@ -180,7 +180,16 @@ export async function PUT(req: NextRequest) {
       careerYears = 15,
       isRoleMasked = true,
       endorsedClaimIds = [],
+      linkedInProfile,
     } = body;
+
+    if (!linkedInProfile) {
+      return NextResponse.json({ success: false, error: "LinkedIn authentication is required to verify." }, { status: 400 });
+    }
+
+    if (linkedInProfile.accountAgeYears < 1) {
+      return NextResponse.json({ success: false, error: "LinkedIn profile is too new to provide a valid verification. Minimum account age is 1 year." }, { status: 403 });
+    }
 
     const record = globalVault.__VERIFIED_CV_CHAPTER_ATTESTATIONS__?.[token];
     if (!record) {
@@ -215,6 +224,7 @@ export async function PUT(req: NextRequest) {
     record.endorsedClaimIds = Array.isArray(endorsedClaimIds) ? endorsedClaimIds : [];
     record.confirmedAt = confirmedAt;
     record.cryptographicSignature = cryptographicSignature;
+    (record as any).linkedInUrl = linkedInProfile.url;
 
     if (globalVault.__VERIFIED_CV_VAULT__?.[record.candidateHandle]) {
       const candidateProfile = globalVault.__VERIFIED_CV_VAULT__[record.candidateHandle];
@@ -237,6 +247,7 @@ export async function PUT(req: NextRequest) {
                     relationship: record.relationship,
                     confirmedAt,
                     signature: cryptographicSignature,
+                    linkedInUrl: linkedInProfile.url,
                   },
                 };
               }
@@ -261,6 +272,7 @@ export async function PUT(req: NextRequest) {
                 confirmedAt,
                 notes: record.notes,
                 signature: cryptographicSignature,
+                linkedInUrl: linkedInProfile.url,
                 endorsedClaimCount: record.endorsedClaimIds?.length || 0,
                 totalClaimCount: exp.claims?.length || 0,
               },

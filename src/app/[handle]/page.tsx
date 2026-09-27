@@ -45,10 +45,9 @@ interface Milestone {
   location?: string;
   claims: string[];
   calibratedClaim?: string;
-  isCorroborated: boolean;
-  corroboratedBy?: string;
   artifacts?: { id: string; name: string; type: string }[];
   registryLinks?: { id: string; type: "github" | "credly" | "uspto"; url: string; label: string }[];
+  verifications?: { id: string; name: string; role: string; email: string; verifiedAt: string; linkedInUrl?: string }[];
 }
 
 interface EducationRecord {
@@ -81,7 +80,7 @@ interface DossierData {
 
 function getVerificationLevel(milestone: Milestone): number {
   if (milestone.registryLinks && milestone.registryLinks.length > 0) return 3;
-  if (milestone.isCorroborated) return 2;
+  if (milestone.verifications && milestone.verifications.length > 0) return 2;
   if (milestone.artifacts && milestone.artifacts.length > 0) return 1;
   return 0;
 }
@@ -196,7 +195,7 @@ export default function CandidateDossierPage() {
     );
   }
 
-  const corroboratedCount = dossier.milestones.filter((m) => m.isCorroborated).length;
+  const corroboratedCount = dossier.milestones.reduce((acc, m) => acc + (m.verifications?.length || 0), 0);
   const verifiedSignalsCount =
     (dossier.contact?.emailVerified ? 1 : 0) +
     (dossier.contact?.linkedinVerified ? 1 : 0) +
@@ -419,10 +418,19 @@ export default function CandidateDossierPage() {
                   )}
                 </div>
 
-                {m.corroboratedBy && (
-                  <div className="pt-2 border-t border-slate-100 text-[10px] text-emerald-800 font-semibold flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3 h-3 text-[#059669]" />
-                    <span>Verified by {m.corroboratedBy}</span>
+                {m.verifications && m.verifications.length > 0 && (
+                  <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                    {m.verifications.map((v) => (
+                      <div key={v.id} className="text-[10px] text-emerald-800 font-semibold flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3 h-3 text-[#059669]" />
+                        <span>Verified by {v.name} ({v.role})</span>
+                        {v.linkedInUrl && (
+                          <a href={v.linkedInUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center w-4 h-4 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors ml-1" title="Authenticated via LinkedIn">
+                            <LinkedInIcon className="w-2.5 h-2.5" />
+                          </a>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
