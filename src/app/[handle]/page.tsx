@@ -47,6 +47,8 @@ interface Milestone {
   calibratedClaim?: string;
   isCorroborated: boolean;
   corroboratedBy?: string;
+  artifacts?: { id: string; name: string; type: string }[];
+  registryLinks?: { id: string; type: "github" | "credly" | "uspto"; url: string; label: string }[];
 }
 
 interface EducationRecord {
@@ -75,6 +77,13 @@ interface DossierData {
   skills: string[];
   education: EducationRecord[];
   milestones: Milestone[];
+}
+
+function getVerificationLevel(milestone: Milestone): number {
+  if (milestone.registryLinks && milestone.registryLinks.length > 0) return 3;
+  if (milestone.isCorroborated) return 2;
+  if (milestone.artifacts && milestone.artifacts.length > 0) return 1;
+  return 0;
 }
 
 export default function CandidateDossierPage() {
@@ -194,6 +203,14 @@ export default function CandidateDossierPage() {
     (dossier.contact?.phoneVerified ? 1 : 0) +
     corroboratedCount;
 
+  // Portfolio Verification Stats
+  const level0Count = dossier.milestones.filter(m => getVerificationLevel(m) === 0).length;
+  const level1Count = dossier.milestones.filter(m => getVerificationLevel(m) === 1).length;
+  const level2Count = dossier.milestones.filter(m => getVerificationLevel(m) === 2).length;
+  const level3Count = dossier.milestones.filter(m => getVerificationLevel(m) === 3).length;
+  const totalVerified = level1Count + level2Count + level3Count;
+  const portfolioScore = dossier.milestones.length > 0 ? Math.round((totalVerified / dossier.milestones.length) * 100) : 0;
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans antialiased selection:bg-emerald-100 flex flex-col justify-between">
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
@@ -224,29 +241,46 @@ export default function CandidateDossierPage() {
 
       <main className="max-w-4xl mx-auto w-full px-6 py-10 space-y-8 flex-1">
         {/* COMPACT TRUST SPECTRUM BAR */}
-        <div className="bg-white border border-[#E2E8F0] rounded-2xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-xs font-black text-[#0F172A] tracking-tight">Trust Spectrum:</span>
+        <div className="bg-white border border-[#E2E8F0] rounded-3xl p-5 shadow-xs space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              <h2 className="text-sm font-black text-[#0F172A] tracking-tight">Verified Portfolio Score</h2>
+            </div>
             <span className="text-xs font-bold text-[#059669] bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
-              {verifiedSignalsCount} Cryptographic Proof Signals
+              {portfolioScore}% Validated
             </span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
-            {dossier.contact?.emailVerified && (
-              <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-[#059669] flex items-center gap-1">
-                <Check className="w-3 h-3" /> Domain Verified
-              </span>
-            )}
-            {dossier.contact?.linkedinVerified && (
-              <span className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 flex items-center gap-1">
-                <LinkedInIcon className="w-3 h-3 text-blue-700" /> LinkedIn Certified
-              </span>
-            )}
-            <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-[#059669] flex items-center gap-1">
-              <Users className="w-3 h-3" /> {corroboratedCount} Peer Corroborations
-            </span>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-col gap-1">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Level 0: Unverified</span>
+              <div className="flex items-end justify-between">
+                <span className="text-xl font-black text-slate-700">{level0Count}</span>
+                <span className="text-[10px] text-slate-400 font-medium">Claims</span>
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-blue-50/50 border border-blue-100 flex flex-col gap-1">
+              <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Level 1: Document</span>
+              <div className="flex items-end justify-between">
+                <span className="text-xl font-black text-blue-700">{level1Count}</span>
+                <span className="text-[10px] text-blue-400 font-medium">Verified</span>
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-emerald-50/50 border border-emerald-100 flex flex-col gap-1">
+              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Level 2: Peer</span>
+              <div className="flex items-end justify-between">
+                <span className="text-xl font-black text-emerald-700">{level2Count}</span>
+                <span className="text-[10px] text-emerald-400 font-medium">Corroborated</span>
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex flex-col gap-1">
+              <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1"><ShieldCheck className="w-3 h-3"/> Level 3: Anchored</span>
+              <div className="flex items-end justify-between">
+                <span className="text-xl font-black text-emerald-800">{level3Count}</span>
+                <span className="text-[10px] text-emerald-500 font-medium">Cryptographic</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -327,7 +361,9 @@ export default function CandidateDossierPage() {
           </div>
 
           <div className="space-y-5">
-            {dossier.milestones.map((m) => (
+            {dossier.milestones.map((m) => {
+              const level = getVerificationLevel(m);
+              return (
               <div
                 key={m.id}
                 className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-4 hover:border-slate-300 transition-all"
@@ -341,17 +377,39 @@ export default function CandidateDossierPage() {
                     <span className="text-xs font-mono font-medium text-slate-500 bg-slate-50 border border-[#E2E8F0] px-2.5 py-1 rounded-lg">
                       {m.period}
                     </span>
-                    {m.isCorroborated ? (
+                    {level === 3 && (
+                      <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
+                        <ShieldCheck className="w-3 h-3 text-[#059669]" /> Anchored
+                      </span>
+                    )}
+                    {level === 2 && (
                       <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
                         <CheckCircle2 className="w-3 h-3 text-[#059669]" /> Corroborated
                       </span>
-                    ) : (
+                    )}
+                    {level === 1 && (
+                      <span className="text-[10px] font-bold text-blue-800 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded flex items-center gap-1">
+                        <BadgeCheck className="w-3 h-3 text-blue-600" /> Document Verified
+                      </span>
+                    )}
+                    {level === 0 && (
                       <span className="text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded">
-                        Audited Claim
+                        Self-Reported
                       </span>
                     )}
                   </div>
                 </div>
+
+                {m.registryLinks && m.registryLinks.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pb-2 border-b border-slate-100">
+                    {m.registryLinks.map((link) => (
+                      <a key={link.id} href={link.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-emerald-50 border border-emerald-200 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100 transition-colors">
+                        <ShieldCheck className="w-3 h-3" />
+                        <span>{link.label}</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   {m.claims && m.claims.length > 0 ? (
@@ -373,7 +431,7 @@ export default function CandidateDossierPage() {
                   </div>
                 )}
               </div>
-            ))}
+            )})}
           </div>
         </div>
 

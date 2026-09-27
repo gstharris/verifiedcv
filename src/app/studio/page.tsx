@@ -38,7 +38,8 @@ import {
   Share2,
   Zap,
   Paperclip,
-  FileBadge
+  FileBadge,
+  Link2
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 
@@ -771,6 +772,14 @@ export default function StudioPage() {
     (contact.phoneVerified ? 1 : 0) +
     corroboratedCount;
 
+  // Portfolio Verification Stats
+  const level0Count = milestones.filter(m => getVerificationLevel(m).level === 0).length;
+  const level1Count = milestones.filter(m => getVerificationLevel(m).level === 1).length;
+  const level2Count = milestones.filter(m => getVerificationLevel(m).level === 2).length;
+  const level3Count = milestones.filter(m => getVerificationLevel(m).level === 3).length;
+  const totalVerified = level1Count + level2Count + level3Count;
+  const portfolioScore = milestones.length > 0 ? Math.round((totalVerified / milestones.length) * 100) : 0;
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col antialiased selection:bg-emerald-100">
       <header className="sticky top-0 z-50 bg-white border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
@@ -906,47 +915,61 @@ export default function StudioPage() {
         {/* LIVE CANVAS */}
         <main className="flex-1 overflow-y-auto p-8 max-w-5xl mx-auto space-y-8 antialiased">
           {milestones.length > 0 && (
-            <div className="bg-white border border-[#E2E8F0] rounded-2xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-xs font-black text-[#0F172A] tracking-tight">Trust Spectrum:</span>
+            <div className="bg-white border border-[#E2E8F0] rounded-3xl p-5 shadow-xs space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <h2 className="text-sm font-black text-[#0F172A] tracking-tight">Portfolio Verification Status</h2>
+                </div>
                 <span className="text-xs font-bold text-[#059669] bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
-                  {verifiedSignalsCount} Signals Confirmed
+                  {portfolioScore}% Validated
                 </span>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
-                <span
-                  onClick={() => setContact((c) => ({ ...c, emailVerified: !c.emailVerified }))}
-                  className={`px-2.5 py-1 rounded-lg border flex items-center gap-1 cursor-pointer transition-colors ${
-                    contact.emailVerified
-                      ? "bg-emerald-50 border-emerald-200 text-[#059669]"
-                      : "bg-slate-50 border-[#E2E8F0] text-slate-500 hover:border-slate-300"
-                  }`}
-                  title="Click to toggle email domain verification"
-                >
-                  <Mail className="w-3 h-3" />
-                  <span>{contact.emailVerified ? "Domain Verified" : "Verify Email"}</span>
-                </span>
-
-                <span
-                  onClick={() => setContact((c) => ({ ...c, linkedinVerified: !c.linkedinVerified }))}
-                  className={`px-2.5 py-1 rounded-lg border flex items-center gap-1 cursor-pointer transition-colors ${
-                    contact.linkedinVerified
-                      ? "bg-blue-50 border-blue-200 text-blue-700"
-                      : "bg-slate-50 border-[#E2E8F0] text-slate-500 hover:border-slate-300"
-                  }`}
-                  title="Click to toggle LinkedIn profile certification"
-                >
-                  <LinkedInIcon className="w-3 h-3" />
-                  <span>{contact.linkedinVerified ? "LinkedIn Certified" : "Link Profile"}</span>
-                </span>
-
-                <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-[#059669] flex items-center gap-1">
-                  <Users className="w-3 h-3" />
-                  <span>{corroboratedCount} Peer Vouchers</span>
-                </span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-col gap-1">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Level 0: Unverified</span>
+                  <div className="flex items-end justify-between">
+                    <span className="text-xl font-black text-slate-700">{level0Count}</span>
+                    <span className="text-[10px] text-slate-400 font-medium">Claims</span>
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-blue-50/50 border border-blue-100 flex flex-col gap-1">
+                  <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Level 1: Document</span>
+                  <div className="flex items-end justify-between">
+                    <span className="text-xl font-black text-blue-700">{level1Count}</span>
+                    <span className="text-[10px] text-blue-400 font-medium">Verified</span>
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-emerald-50/50 border border-emerald-100 flex flex-col gap-1">
+                  <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Level 2: Peer</span>
+                  <div className="flex items-end justify-between">
+                    <span className="text-xl font-black text-emerald-700">{level2Count}</span>
+                    <span className="text-[10px] text-emerald-400 font-medium">Corroborated</span>
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex flex-col gap-1">
+                  <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1"><ShieldCheck className="w-3 h-3"/> Level 3: Anchored</span>
+                  <div className="flex items-end justify-between">
+                    <span className="text-xl font-black text-emerald-800">{level3Count}</span>
+                    <span className="text-[10px] text-emerald-500 font-medium">Cryptographic</span>
+                  </div>
+                </div>
               </div>
+
+              {level0Count > 0 && (
+                <div className="pt-2 flex items-center justify-between text-xs">
+                  <span className="text-slate-500 font-medium">You have {level0Count} unverified claims. Attach artifacts or request corroboration to level up.</span>
+                  <button onClick={() => {
+                    const firstUnverified = milestones.find(m => getVerificationLevel(m).level === 0);
+                    if (firstUnverified) {
+                      document.getElementById(`milestone-${firstUnverified.id}`)?.scrollIntoView({ behavior: 'smooth' });
+                    }
+                  }} className="font-bold text-[#059669] hover:text-emerald-700 transition-colors cursor-pointer">
+                    Level Up Now &rarr;
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -1358,7 +1381,8 @@ export default function StudioPage() {
                         </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
