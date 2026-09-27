@@ -232,36 +232,6 @@ export default function CandidateDossierPage() {
       </header>
 
       <main className="max-w-4xl mx-auto w-full px-6 py-10 space-y-8 flex-1">
-        {/* PROGRESS BAR SUMMARY */}
-        {(level1Count > 0 || level2Count > 0 || level3Count > 0) && (
-          <div className="bg-white border border-[#E2E8F0] rounded-3xl p-5 shadow-xs space-y-3">
-            <div className="flex items-center justify-between text-xs font-bold">
-              <span className="text-slate-700 flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                Career Verification Progress
-              </span>
-              <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                {totalVerified} of {dossier.milestones.length} Chapters Verified
-              </span>
-            </div>
-            
-            <div className="relative h-2.5 w-full bg-slate-100 rounded-full overflow-hidden flex group cursor-help">
-              {/* Tooltip on hover */}
-              <div className="absolute opacity-0 group-hover:opacity-100 bottom-full left-1/2 -translate-x-1/2 mb-2 bg-slate-900 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg whitespace-nowrap transition-opacity pointer-events-none z-10">
-                {level3Count > 0 && <span className="mr-2">🛡️ {level3Count} Anchored</span>}
-                {level2Count > 0 && <span className="mr-2">👥 {level2Count} Peer Verified</span>}
-                {level1Count > 0 && <span>📄 {level1Count} Document Verified</span>}
-                <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900"></div>
-              </div>
-
-              {/* Gradient Segments */}
-              <div className="h-full bg-emerald-500 transition-all" style={{ width: `${(level3Count / dossier.milestones.length) * 100}%` }} title="Cryptographically Anchored" />
-              <div className="h-full bg-emerald-400 transition-all" style={{ width: `${(level2Count / dossier.milestones.length) * 100}%` }} title="Peer Verified" />
-              <div className="h-full bg-blue-400 transition-all" style={{ width: `${(level1Count / dossier.milestones.length) * 100}%` }} title="Document Verified" />
-            </div>
-          </div>
-        )}
-
         {/* Candidate Identity Card */}
         <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 shadow-xs space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
@@ -275,6 +245,35 @@ export default function CandidateDossierPage() {
               <div className="text-xs font-mono text-slate-400 pt-0.5">
                 verifiedcv.app/{dossier.handle}
               </div>
+            </div>
+
+            {/* Compact Verification Progress */}
+            <div className="shrink-0 flex flex-col items-end gap-1.5">
+              {totalVerified === dossier.milestones.length && dossier.milestones.length > 0 ? (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 shadow-2xs">
+                  <ShieldCheck className="w-4 h-4" />
+                  <span className="text-xs font-black uppercase tracking-wider">100% Verified</span>
+                </div>
+              ) : (dossier.milestones.length > 0 && (
+                <div className="flex flex-col items-end gap-1.5 group cursor-help relative">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    {totalVerified} / {dossier.milestones.length} Verified
+                  </div>
+                  <div className="h-2 w-24 bg-slate-100 rounded-full overflow-hidden flex shadow-inner">
+                    <div className="h-full bg-emerald-500 transition-all" style={{ width: `${(level3Count / dossier.milestones.length) * 100}%` }} />
+                    <div className="h-full bg-emerald-400 transition-all" style={{ width: `${(level2Count / dossier.milestones.length) * 100}%` }} />
+                    <div className="h-full bg-blue-400 transition-all" style={{ width: `${(level1Count / dossier.milestones.length) * 100}%` }} />
+                  </div>
+                  
+                  {/* Tooltip */}
+                  <div className="absolute opacity-0 group-hover:opacity-100 top-full right-0 mt-2 bg-slate-900 text-white text-[10px] font-bold px-3 py-2 rounded-lg whitespace-nowrap transition-opacity pointer-events-none z-10 space-y-1 text-right shadow-xl">
+                    {level3Count > 0 && <div>🛡️ {level3Count} Anchored</div>}
+                    {level2Count > 0 && <div>👥 {level2Count} Peer Verified</div>}
+                    {level1Count > 0 && <div>📄 {level1Count} Document Verified</div>}
+                    {dossier.milestones.length - totalVerified > 0 && <div className="text-slate-400">⏳ {dossier.milestones.length - totalVerified} Pending</div>}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
