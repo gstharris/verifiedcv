@@ -8,6 +8,7 @@ export interface ExtractedMilestone {
   company: string;
   role: string;
   period: string;
+  location?: string;
   claims: string[];
   calibratedClaim: string;
   isCorroborated: boolean;
@@ -20,16 +21,26 @@ export interface ExtractedEducation {
   year?: string;
 }
 
+export interface CandidateContactInfo {
+  email: string;
+  phone: string;
+  location: string;
+  linkedin: string;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  linkedinVerified: boolean;
+}
+
 export interface ParsedDossierPayload {
   fullName: string;
   headline: string;
   summaryStatement: string;
+  contact: CandidateContactInfo;
   skills: string[];
   education: ExtractedEducation[];
   milestones: ExtractedMilestone[];
 }
 
-// Clean bullet glyphs and invisible characters from body text only
 function cleanBodySentence(text: string): string {
   return text
     .replace(/[\u200B-\u200D\uFEFF]/g, "")
@@ -40,7 +51,6 @@ function cleanBodySentence(text: string): string {
     .trim();
 }
 
-// Clean entity names without stripping slashes or hyphens
 function cleanEntityHeader(text: string): string {
   return text
     .replace(/[\u200B-\u200D\uFEFF]/g, "")
@@ -55,7 +65,6 @@ function isValidAchievement(text: string): boolean {
   return lettersOnly.length >= 12;
 }
 
-// Normalizes tenure dates while preserving start months, years, and Present continuity
 export function normalizeTenurePeriod(raw: string): string {
   const cleaned = raw.replace(/[|()]/g, " ").replace(/\s{2,}/g, " ").trim();
 
@@ -148,6 +157,33 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
   const education: ExtractedEducation[] = [];
   const milestones: ExtractedMilestone[] = [];
 
+  const contact: CandidateContactInfo = {
+    email: "",
+    phone: "",
+    location: "Remote / Los Angeles, CA",
+    linkedin: "",
+    emailVerified: false,
+    phoneVerified: false,
+    linkedinVerified: false
+  };
+
+  // 1. Extract Contact Signals from Header Lines
+  const headerBlock = rawLines.slice(0, 10).join(" \n ");
+
+  const emailMatch = headerBlock.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/);
+  if (emailMatch) contact.email = emailMatch[0];
+
+  const phoneMatch = headerBlock.match(/(?:\+?1[-. ]?)?\(?([0-9]{3})\)?[-. ]?([0-9]{3})[-. ]?([0-9]{4})/);
+  if (phoneMatch) contact.phone = phoneMatch[0];
+
+  const linkedinMatch = headerBlock.match(/(?:linkedin\.com\/in\/|linkedin:\s*)([a-zA-Z0-9_-]+)/i);
+  if (linkedinMatch) contact.linkedin = `linkedin.com/in/${linkedinMatch[1]}`;
+
+  const locationMatch = headerBlock.match(/\b([A-Za-z\s]+,\s*[A-Z]{2})\b/);
+  if (locationMatch && !locationMatch[0].includes("LinkedIn")) {
+    contact.location = locationMatch[0].trim();
+  }
+
   const nonBlank = rawLines.filter(Boolean);
   if (nonBlank.length > 0 && !nonBlank[0].includes("|") && nonBlank[0].length < 50) {
     fullName = nonBlank[0].replace(/[•,]/g, "").trim();
@@ -189,7 +225,7 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
     sectionLines[currentSection].push(line);
   }
 
-  // 1. Process Summary
+  // 2. Process Summary
   if (sectionLines.SUMMARY.length > 0) {
     summaryStatement = sectionLines.SUMMARY
       .map(cleanBodySentence)
@@ -198,7 +234,7 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
       .replace(/\s{2,}/g, " ");
   }
 
-  // 2. Process Skills
+  // 3. Process Skills
   if (sectionLines.SKILLS.length > 0) {
     const rawSkillsText = sectionLines.SKILLS.join(" ");
     const skillTokens = rawSkillsText
@@ -219,7 +255,7 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
     });
   }
 
-  // 3. Process Education
+  // 4. Process Education
   if (sectionLines.EDUCATION.length > 0) {
     for (let i = 0; i < sectionLines.EDUCATION.length; i++) {
       const line = sectionLines.EDUCATION[i];
@@ -252,12 +288,13 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
     }
   }
 
-  // 4. Process Work Experience Milestones losslessly
+  // 5. Process Work Experience Milestones with full un-truncated titles
   const yearPattern = /\b(?:19\d{2}|20\d{2})\b/i;
   interface RoleBlock {
     company: string;
     role: string;
     period: string;
+    location?: string;
     lines: string[];
   }
 
@@ -279,6 +316,7 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
       const company = pipeParts[0] || "Career Chapter";
       const role = pipeParts[1] || "Leadership Role";
       const rawPeriod = pipeParts[2] || "Confirmed Tenure";
+      const loc = pipeParts[3] || "Remote";
       const period = normalizeTenurePeriod(rawPeriod);
 
       if (roleBlocks.length === 0) {
@@ -289,6 +327,7 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
         company: cleanEntityHeader(company),
         role: cleanEntityHeader(role),
         period,
+        location: loc,
         lines: []
       };
     } else if (currentBlock) {
@@ -309,6 +348,7 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
       company: block.company,
       role: block.role,
       period: block.period,
+      location: block.location,
       claims: items.length > 0 ? items : ["Directed operational execution, engineering trade-offs, and product architecture roadmaps."],
       calibratedClaim: unifiedClaim || "Directed operational execution, engineering trade-offs, and product architecture roadmaps.",
       isCorroborated: false
@@ -319,6 +359,7 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
     fullName,
     headline,
     summaryStatement,
+    contact,
     skills,
     education,
     milestones
@@ -364,6 +405,7 @@ export async function POST(req: NextRequest) {
       fullName: result.fullName,
       headline: result.headline,
       summaryStatement: result.summaryStatement,
+      contact: result.contact,
       skills: result.skills,
       education: result.education,
       milestones: result.milestones

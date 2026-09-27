@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   description:
     "Prove your track record upfront. Replace unverified resumes with forensic proof signals, peer corroboration, and registry links that bypass screening filters.",
   icons: {
-    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23059669' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/><path d='m9 12 2 2 4-4'/></svg>"
+    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' fill='none'><rect width='32' height='32' rx='8' fill='%230F172A'/><path d='M8 11L16 6L24 11V18C24 23 16 26.5 16 26.5C16 26.5 8 23 8 18V11Z' stroke='%23059669' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/><path d='M12 16L15 19L20 13' stroke='%2310B981' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/></svg>"
   }
 };
 
@@ -20,7 +20,7 @@ export default function RootLayout({
       <head>
         <link
           rel="icon"
-          href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23059669' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/><path d='m9 12 2 2 4-4'/></svg>"
+          href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' fill='none'><rect width='32' height='32' rx='8' fill='%230F172A'/><path d='M8 11L16 6L24 11V18C24 23 16 26.5 16 26.5C16 26.5 8 23 8 18V11Z' stroke='%23059669' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/><path d='M12 16L15 19L20 13' stroke='%2310B981' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/></svg>"
           type="image/svg+xml"
         />
       </head>

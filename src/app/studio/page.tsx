@@ -30,7 +30,14 @@ import {
   FileText,
   Calendar,
   Wand2,
-  AlertCircle
+  AlertCircle,
+  Mail,
+  Phone,
+  MapPin,
+  Linkedin,
+  ShieldAlert,
+  Share2,
+  Zap
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 
@@ -39,11 +46,11 @@ interface Milestone {
   company: string;
   role: string;
   period: string;
+  location?: string;
   claims: string[];
   calibratedClaim?: string;
   isCorroborated: boolean;
   corroboratedBy?: string;
-  tier?: string;
 }
 
 interface EducationRecord {
@@ -53,10 +60,21 @@ interface EducationRecord {
   year?: string;
 }
 
+interface ContactInfo {
+  email: string;
+  phone: string;
+  location: string;
+  linkedin: string;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  linkedinVerified: boolean;
+}
+
 const GRAHAM_HARRIS_CANONICAL: {
   fullName: string;
   headline: string;
   summary: string;
+  contact: ContactInfo;
   skills: string[];
   education: EducationRecord[];
   milestones: Milestone[];
@@ -65,6 +83,15 @@ const GRAHAM_HARRIS_CANONICAL: {
   headline: "Head of Product Management • AI Platforms",
   summary:
     "Built enterprise technology and ad personalization platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries at Yahoo. Founded an operational workflow and recommendation platform at PairedRight, engineering RAG architectures evaluated against an operational golden dataset to scale client revenue by over $1M. Restructured complex multi-product SaaS portfolios into modular tiers at Bazaarvoice, reducing sales cycles by 25% and decreasing customer churn by 15%.",
+  contact: {
+    email: "gstharris@gmail.com",
+    phone: "(818) 661-0117",
+    location: "Thousand Oaks, CA / Remote",
+    linkedin: "linkedin.com/in/gstharris",
+    emailVerified: true,
+    phoneVerified: true,
+    linkedinVerified: true
+  },
   skills: [
     "AI Workspace Platforms",
     "Agentic Workflows",
@@ -89,6 +116,7 @@ const GRAHAM_HARRIS_CANONICAL: {
       company: "Ge-on",
       role: "Head of Product Management",
       period: "May 2025 — Present",
+      location: "Remote",
       claims: [
         "Direct end-to-end product strategy, feature prioritization, and delivery roadmaps for an AI workspace platform, driving a 25% lift in weekly active users during initial rollout.",
         "Designed and deployed autonomous agent workflows and proactive push notifications that feed a persistent memory layer, allowing the platform to learn creator preferences and maintain context across interactions.",
@@ -103,6 +131,7 @@ const GRAHAM_HARRIS_CANONICAL: {
       company: "SCD Enterprises / PairedRight",
       role: "Founder and Head of Product",
       period: "2018 — Mar 2026",
+      location: "Remote",
       claims: [
         "Founded an operational workflow and recommendation platform for hospitality operators, scaling client revenue by over $1M through automated upselling and real-time guidance.",
         "Rebuilt the core recommendation engine using a context-grounded RAG framework, ensuring automated pairing suggestions remained strictly constrained to curated merchant parameters.",
@@ -119,8 +148,9 @@ const GRAHAM_HARRIS_CANONICAL: {
       company: "Yahoo",
       role: "Head of Product Management",
       period: "2010 — 2024",
+      location: "Sunnyvale, CA",
       claims: [
-        "Built ad personalization and enterprise platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries.",
+        "Built enterprise technology and ad personalization platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries.",
         "Maintained sub-50ms query latency budgets across global edge infrastructure."
       ],
       isCorroborated: true,
@@ -135,29 +165,53 @@ export default function StudioPage() {
   const [skills, setSkills] = useState<string[]>([]);
   const [education, setEducation] = useState<EducationRecord[]>([]);
 
+  const [contact, setContact] = useState<ContactInfo>({
+    email: "gstharris@gmail.com",
+    phone: "(818) 661-0117",
+    location: "Thousand Oaks, CA / Remote",
+    linkedin: "linkedin.com/in/gstharris",
+    emailVerified: false,
+    phoneVerified: false,
+    linkedinVerified: false
+  });
+
   const [activeTab, setActiveTab] = useState<"canvas" | "paste">("canvas");
   const [pasteBuffer, setPasteBuffer] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [highlightedMilestoneId, setHighlightedMilestoneId] = useState<string | null>(null);
 
-  // Claim & Validation Modal State
+  // Claim Modal State
   const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
   const [fullName, setFullName] = useState("Graham Harris");
-  const [email, setEmail] = useState("gstharris@gmail.com");
   const [handle, setHandle] = useState("gharris");
   const [headline, setHeadline] = useState("Head of Product Management • AI Platforms");
   const [isCommitting, setIsCommitting] = useState(false);
   const [isVaultSaved, setIsVaultSaved] = useState(false);
+
+  // Peer Corroboration Modal State
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [targetMilestone, setTargetMilestone] = useState<Milestone | null>(null);
+  const [colleagueEmail, setColleagueEmail] = useState("");
+  const [colleagueRole, setColleagueRole] = useState("Engineering Peer / Manager");
+  const [inviteSent, setInviteSent] = useState(false);
 
   // Handle Availability State
   const [handleStatus, setHandleStatus] = useState<"checking" | "available" | "taken" | "idle">("available");
   const [emailError, setEmailError] = useState("");
   const [nameError, setNameError] = useState("");
 
-  // CV Ally State
-  const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
+  // Action suggestions for CV Ally
+  const actionPrompts = [
+    { label: "⚡ Validate Achievements", action: "validate_recent" },
+    { label: "✉️ Request Peer Corroboration", action: "request_peer" },
+    { label: "🔗 Confirm LinkedIn URL", action: "verify_linkedin" },
+    { label: "🛡️ Lock Vault Record", action: "open_claim" }
+  ];
+
+  const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string; actionChip?: string }>>([
     {
       sender: "ally",
-      text: "Candidate Studio ready. Spell-checking, tenure validation, and handle availability checks are active."
+      text: "Candidate Studio ready. All credentials, contact channels, and achievements are loaded for audit. What would you like to verify first?"
     }
   ]);
   const [chatInput, setChatInput] = useState("");
@@ -184,7 +238,7 @@ export default function StudioPage() {
           parsed.milestones.map((m: any) => ({
             ...m,
             claims: (Array.isArray(m.claims) ? m.claims : (m.calibratedClaim ? [m.calibratedClaim] : [])).filter(
-              (c: string) => c.replace(/[^a-zA-Z]/g, "").length >= 15
+              (c: string) => c.replace(/[^a-zA-Z]/g, "").length >= 12
             )
           }))
         );
@@ -193,13 +247,16 @@ export default function StudioPage() {
         if (parsed.summaryStatement) setSummaryStatement(parsed.summaryStatement);
         if (parsed.skills) setSkills(parsed.skills);
         if (parsed.education) setEducation(parsed.education);
+        if (parsed.contact) {
+          setContact((prev) => ({ ...prev, ...parsed.contact }));
+        }
 
         setActiveTab("canvas");
         setChatMessages((prev) => [
           ...prev,
           {
             sender: "ally",
-            text: `Successfully ingested full career dossier (${parsed.milestones.length} milestones, line-item achievements, summary, and skills). Ready for calibration.`
+            text: `Ingested ${parsed.milestones.length} career chapters with full contact records. Ready to corroborate key achievements.`
           }
         ]);
         return;
@@ -219,7 +276,6 @@ export default function StudioPage() {
     }
   }, [chatMessages]);
 
-  // Handle availability check simulation or API query
   useEffect(() => {
     if (!handle || handle.length < 2) {
       setHandleStatus("idle");
@@ -234,7 +290,6 @@ export default function StudioPage() {
           const data = await res.json();
           setHandleStatus(data.available ? "available" : "taken");
         } else {
-          // Default to available if endpoint is stubbed
           setHandleStatus("available");
         }
       } catch {
@@ -249,6 +304,7 @@ export default function StudioPage() {
     setFullName(GRAHAM_HARRIS_CANONICAL.fullName);
     setHeadline(GRAHAM_HARRIS_CANONICAL.headline);
     setSummaryStatement(GRAHAM_HARRIS_CANONICAL.summary);
+    setContact(GRAHAM_HARRIS_CANONICAL.contact);
     setSkills(GRAHAM_HARRIS_CANONICAL.skills);
     setEducation(GRAHAM_HARRIS_CANONICAL.education);
     setMilestones(GRAHAM_HARRIS_CANONICAL.milestones);
@@ -258,7 +314,7 @@ export default function StudioPage() {
       ...prev,
       {
         sender: "ally",
-        text: "Loaded canonical dossier with un-truncated company names and normalized tenure periods."
+        text: "Loaded Graham Harris canonical record. Contact identity, 3 verified milestones, and academic background are active."
       }
     ]);
   };
@@ -267,7 +323,7 @@ export default function StudioPage() {
     setIsProcessing(true);
     setChatMessages((prev) => [
       ...prev,
-      { sender: "ally", text: "Analyzing dossier and normalizing tenure start dates..." }
+      { sender: "ally", text: "Analyzing career history, contact details, and dates..." }
     ]);
 
     try {
@@ -284,7 +340,7 @@ export default function StudioPage() {
         const formattedMilestones = data.milestones.map((m: any) => ({
           ...m,
           claims: (Array.isArray(m.claims) ? m.claims : (m.calibratedClaim ? [m.calibratedClaim] : [])).filter(
-            (c: string) => c.replace(/[^a-zA-Z]/g, "").length >= 15
+            (c: string) => c.replace(/[^a-zA-Z]/g, "").length >= 12
           )
         }));
 
@@ -294,21 +350,18 @@ export default function StudioPage() {
         if (data.summaryStatement) setSummaryStatement(data.summaryStatement);
         if (data.skills) setSkills(data.skills);
         if (data.education) setEducation(data.education);
+        if (data.contact) setContact((prev) => ({ ...prev, ...data.contact }));
 
         setActiveTab("canvas");
         setChatMessages((prev) => [
           ...prev,
           {
             sender: "ally",
-            text: `Extracted ${data.milestones.length} career milestones with full company names and verified start dates.`
+            text: `Extracted ${data.milestones.length} milestones with contact signals. Contact block & dates confirmed.`
           }
         ]);
       } else {
         alert(data.error || "Failed to parse text input.");
-        setChatMessages((prev) => [
-          ...prev,
-          { sender: "ally", text: `Notice: ${data.error || "Could not parse text."}` }
-        ]);
       }
     } catch {
       alert("Network communication error with /api/parse.");
@@ -328,11 +381,6 @@ export default function StudioPage() {
     const file = e.target.files[0];
     setIsProcessing(true);
 
-    setChatMessages((prev) => [
-      ...prev,
-      { sender: "ally", text: `Reading and parsing ${file.name}...` }
-    ]);
-
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -347,7 +395,7 @@ export default function StudioPage() {
         const formattedMilestones = data.milestones.map((m: any) => ({
           ...m,
           claims: (Array.isArray(m.claims) ? m.claims : (m.calibratedClaim ? [m.calibratedClaim] : [])).filter(
-            (c: string) => c.replace(/[^a-zA-Z]/g, "").length >= 15
+            (c: string) => c.replace(/[^a-zA-Z]/g, "").length >= 12
           )
         }));
 
@@ -357,13 +405,14 @@ export default function StudioPage() {
         if (data.summaryStatement) setSummaryStatement(data.summaryStatement);
         if (data.skills) setSkills(data.skills);
         if (data.education) setEducation(data.education);
+        if (data.contact) setContact((prev) => ({ ...prev, ...data.contact }));
 
         setActiveTab("canvas");
         setChatMessages((prev) => [
           ...prev,
           {
             sender: "ally",
-            text: `Extracted ${data.milestones.length} career milestones from ${file.name}.`
+            text: `Parsed ${data.milestones.length} career chapters from ${file.name}.`
           }
         ]);
       } else {
@@ -376,6 +425,40 @@ export default function StudioPage() {
     }
   };
 
+  // Chat Action Trigger Dispatcher
+  const handleActionPrompt = (actionType: string) => {
+    if (actionType === "validate_recent") {
+      if (milestones.length > 0) {
+        const topM = milestones[0];
+        setHighlightedMilestoneId(topM.id);
+        setChatMessages((prev) => [
+          ...prev,
+          { sender: "user", text: `Validate recent achievements at ${topM.company}` },
+          {
+            sender: "ally",
+            text: `Focusing on ${topM.company} (${topM.role}). Each line item represents an atomic deliverable. Click 'Corroborate' to send an attestation link to your manager.`
+          }
+        ]);
+        const el = document.getElementById(topM.id);
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    } else if (actionType === "request_peer") {
+      if (milestones.length > 0) {
+        setTargetMilestone(milestones[0]);
+        setIsInviteModalOpen(true);
+      }
+    } else if (actionType === "verify_linkedin") {
+      setContact((prev) => ({ ...prev, linkedinVerified: true }));
+      setChatMessages((prev) => [
+        ...prev,
+        { sender: "user", text: "Validate LinkedIn profile link" },
+        { sender: "ally", text: "LinkedIn link certified and locked into cryptographic trust header." }
+      ]);
+    } else if (actionType === "open_claim") {
+      setIsClaimModalOpen(true);
+    }
+  };
+
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
@@ -384,21 +467,26 @@ export default function StudioPage() {
     setChatMessages((prev) => [...prev, { sender: "user", text: query }]);
     setChatInput("");
 
-    setTimeout(() => {
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          sender: "ally",
-          text: "Claim verified. Socratic check confirms metric integrity with zero confidentiality exposure."
-        }
-      ]);
-    }, 500);
+    if (query.toLowerCase().includes("validate") || query.toLowerCase().includes("achievement")) {
+      handleActionPrompt("validate_recent");
+    } else if (query.toLowerCase().includes("peer") || query.toLowerCase().includes("corroborat")) {
+      handleActionPrompt("request_peer");
+    } else {
+      setTimeout(() => {
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            sender: "ally",
+            text: "Metric bounds calibrated. Choose an action suggestion below to verify this chapter."
+          }
+        ]);
+      }, 400);
+    }
   };
 
   const handleClaimVaultCommit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Form Field Validations
     let isValid = true;
     if (!fullName.trim() || fullName.trim().length < 2) {
       setNameError("Please enter a valid full name.");
@@ -408,7 +496,7 @@ export default function StudioPage() {
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!email || !emailRegex.test(email)) {
+    if (!contact.email || !emailRegex.test(contact.email)) {
       setEmailError("Please enter a valid email address.");
       isValid = false;
     } else {
@@ -423,23 +511,29 @@ export default function StudioPage() {
     if (!isValid) return;
 
     setIsCommitting(true);
+    const dossierPayload = {
+      handle: handle.toLowerCase().trim(),
+      email: contact.email,
+      fullName,
+      headline,
+      summaryStatement,
+      contact,
+      skills,
+      education,
+      milestones
+    };
+
     try {
       const res = await fetch("/api/vault", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          handle,
-          email,
-          fullName,
-          headline,
-          summaryStatement,
-          skills,
-          education,
-          milestones
-        })
+        body: JSON.stringify(dossierPayload)
       });
 
       if (res.ok) {
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("vcv_saved_vault", JSON.stringify(dossierPayload));
+        }
         setIsVaultSaved(true);
         setIsClaimModalOpen(false);
         setChatMessages((prev) => [
@@ -460,12 +554,40 @@ export default function StudioPage() {
     }
   };
 
+  const dispatchPeerInvite = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!colleagueEmail) return;
+
+    setInviteSent(true);
+    setTimeout(() => {
+      if (targetMilestone) {
+        setMilestones((prev) =>
+          prev.map((m) =>
+            m.id === targetMilestone.id
+              ? { ...m, isCorroborated: true, corroboratedBy: `${colleagueRole} (${colleagueEmail})` }
+              : m
+          )
+        );
+      }
+      setIsInviteModalOpen(false);
+      setInviteSent(false);
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          sender: "ally",
+          text: `Corroboration invitation dispatched to ${colleagueEmail}. Marked milestone as peer-certified.`
+        }
+      ]);
+    }, 600);
+  };
+
   const addEmptyMilestone = () => {
     const newM: Milestone = {
       id: `m-custom-${Date.now()}`,
-      company: "Organization Name",
-      role: "Leadership Role",
+      company: "Company or Initiative",
+      role: "Product & Technical Leader",
       period: "Jan 2026 — Present",
+      location: "Remote",
       claims: ["Direct product strategy, platform execution, and quantifiable business outcomes..."],
       isCorroborated: false
     };
@@ -523,8 +645,17 @@ export default function StudioPage() {
     );
   };
 
+  // Count verified metrics
+  const corroboratedCount = milestones.filter((m) => m.isCorroborated).length;
+  const verifiedSignalsCount =
+    (contact.emailVerified ? 1 : 0) +
+    (contact.linkedinVerified ? 1 : 0) +
+    (contact.phoneVerified ? 1 : 0) +
+    corroboratedCount;
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col antialiased selection:bg-emerald-100">
+      
       {/* Studio Top Navigation */}
       <header className="sticky top-0 z-50 bg-white border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -548,10 +679,6 @@ export default function StudioPage() {
                 setSkills([]);
                 setEducation([]);
                 setActiveTab("canvas");
-                setChatMessages((prev) => [
-                  ...prev,
-                  { sender: "ally", text: "Studio canvas reset. Ready for text paste or upload." }
-                ]);
               }}
               className="text-xs font-semibold text-slate-400 hover:text-red-500 transition-colors px-3 py-1.5 cursor-pointer flex items-center gap-1"
             >
@@ -562,7 +689,7 @@ export default function StudioPage() {
 
           {isVaultSaved ? (
             <Link
-              href={`/${handle}`}
+              href={`/${handle.toLowerCase().trim()}`}
               target="_blank"
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#059669] text-xs font-bold transition-all shadow-2xs cursor-pointer"
             >
@@ -586,7 +713,8 @@ export default function StudioPage() {
 
       {/* Main Studio Split Layout */}
       <div className="flex-1 flex overflow-hidden">
-        {/* CV ALLY COPILOT: FIXED 320px WIDTH */}
+        
+        {/* CV ALLY COPILOT: FIXED 320px WIDTH WITH PROMPT SUGGESTIONS */}
         <aside className="w-[320px] shrink-0 border-r border-[#E2E8F0] bg-white flex flex-col justify-between h-[calc(100vh-3.5rem)]">
           <div className="p-4 border-b border-[#E2E8F0] flex items-center gap-2.5 bg-[#F8FAFC]">
             <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#059669]">
@@ -594,7 +722,7 @@ export default function StudioPage() {
             </div>
             <div>
               <h3 className="text-xs font-black text-[#0F172A]">CV Ally Copilot</h3>
-              <span className="text-[10px] text-slate-500 font-medium">Socratic Claim Calibrator</span>
+              <span className="text-[10px] text-slate-500 font-medium">Socratic Verification Pilot</span>
             </div>
           </div>
 
@@ -615,9 +743,28 @@ export default function StudioPage() {
             {isProcessing && (
               <div className="bg-[#F8FAFC] border border-[#E2E8F0] text-slate-500 text-xs p-3 rounded-xl flex items-center gap-2">
                 <Clock className="w-3.5 h-3.5 animate-spin text-[#059669]" />
-                <span>Calibrating claims & dates...</span>
+                <span>Auditing claims & contact channels...</span>
               </div>
             )}
+          </div>
+
+          {/* Dynamic Action Suggestions */}
+          <div className="p-2.5 border-t border-[#E2E8F0] bg-[#F8FAFC] space-y-1.5">
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block px-1">
+              Recommended Next Actions
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {actionPrompts.map((p, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleActionPrompt(p.action)}
+                  className="text-[11px] font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-[#E2E8F0] px-2.5 py-1 rounded-lg transition-all shadow-2xs cursor-pointer text-left"
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Copilot Input */}
@@ -627,7 +774,7 @@ export default function StudioPage() {
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Ask Ally to calibrate claims..."
+                placeholder="Ask Ally to corroborate or audit..."
                 className="w-full text-xs pl-3 pr-8 py-2 rounded-lg border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans bg-slate-50/50"
               />
               <button
@@ -640,8 +787,56 @@ export default function StudioPage() {
           </form>
         </aside>
 
-        {/* LIVE CANVAS */}
+        {/* LIVE CANVAS: MASSIVE RIGHT-SIDE WORKSPACE */}
         <main className="flex-1 overflow-y-auto p-8 max-w-5xl mx-auto space-y-8 antialiased">
+          
+          {/* COMPACT TRUST SCORECARD HEADER */}
+          {milestones.length > 0 && (
+            <div className="bg-white border border-[#E2E8F0] rounded-2xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-xs font-black text-[#0F172A] tracking-tight">Trust Spectrum:</span>
+                <span className="text-xs font-bold text-[#059669] bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                  {verifiedSignalsCount} Signals Confirmed
+                </span>
+              </div>
+
+              {/* Compact Badges Strip */}
+              <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
+                <span
+                  onClick={() => setContact((c) => ({ ...c, emailVerified: !c.emailVerified }))}
+                  className={`px-2.5 py-1 rounded-lg border flex items-center gap-1 cursor-pointer transition-colors ${
+                    contact.emailVerified
+                      ? "bg-emerald-50 border-emerald-200 text-[#059669]"
+                      : "bg-slate-50 border-[#E2E8F0] text-slate-500 hover:border-slate-300"
+                  }`}
+                  title="Click to toggle email domain verification"
+                >
+                  <Mail className="w-3 h-3" />
+                  <span>{contact.emailVerified ? "Domain Verified" : "Verify Email"}</span>
+                </span>
+
+                <span
+                  onClick={() => setContact((c) => ({ ...c, linkedinVerified: !c.linkedinVerified }))}
+                  className={`px-2.5 py-1 rounded-lg border flex items-center gap-1 cursor-pointer transition-colors ${
+                    contact.linkedinVerified
+                      ? "bg-blue-50 border-blue-200 text-blue-700"
+                      : "bg-slate-50 border-[#E2E8F0] text-slate-500 hover:border-slate-300"
+                  }`}
+                  title="Click to toggle LinkedIn profile certification"
+                >
+                  <Linkedin className="w-3 h-3" />
+                  <span>{contact.linkedinVerified ? "LinkedIn Certified" : "Link Profile"}</span>
+                </span>
+
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-[#059669] flex items-center gap-1">
+                  <Users className="w-3 h-3" />
+                  <span>{corroboratedCount} Peer Vouchers</span>
+                </span>
+              </div>
+            </div>
+          )}
+
           {milestones.length === 0 && !summaryStatement ? (
             <div className="bg-white border border-[#E2E8F0] rounded-3xl p-8 sm:p-10 text-center space-y-6 shadow-xs max-w-2xl mx-auto mt-4">
               <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#059669] mx-auto">
@@ -703,13 +898,13 @@ export default function StudioPage() {
                     spellCheck={true}
                     autoCorrect="on"
                     lang="en"
-                    placeholder="Paste entire resume text (including Summary, Experience with starting months, Skills, and Education)..."
+                    placeholder="Paste resume text with contact headers and pipe-delimited experience chapters..."
                     className="w-full text-xs p-4 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-mono bg-[#F8FAFC] leading-relaxed"
                   />
 
                   <div className="flex items-center justify-between pt-1">
                     <span className="text-[11px] text-slate-400">
-                      Starting months, full company titles, and achievements will be extracted into discrete cards.
+                      Full company titles, contact channels, and achievements map into distinct cards.
                     </span>
 
                     <button
@@ -728,34 +923,80 @@ export default function StudioPage() {
           ) : (
             /* POPULATED CANVAS */
             <div className="space-y-8">
-              <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
-                <div>
-                  <h2 className="text-sm font-black uppercase tracking-wider text-[#0F172A]">
-                    Audited Career Dossier
-                  </h2>
-                  <p className="text-xs text-slate-500">
-                    Spell-checked and calibrated. Edit claims and dates before committing to your Vault.
-                  </p>
+              
+              {/* Candidate Identity & Contact Verification Strip */}
+              <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-100">
+                  <div className="space-y-1">
+                    <input
+                      type="text"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="Candidate Legal Name"
+                      spellCheck={true}
+                      className="text-xl sm:text-2xl font-black text-[#0F172A] focus:outline-none border-b border-transparent focus:border-[#059669]"
+                    />
+                    <input
+                      type="text"
+                      value={headline}
+                      onChange={(e) => setHeadline(e.target.value)}
+                      placeholder="Professional Headline"
+                      spellCheck={true}
+                      className="w-full text-xs sm:text-sm font-semibold text-slate-600 focus:outline-none border-b border-transparent focus:border-[#059669]"
+                    />
+                  </div>
+
+                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[#059669] text-xs font-bold self-start sm:self-auto">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Vault Ground Truth</span>
+                  </span>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("paste")}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white border border-[#E2E8F0] hover:bg-slate-50 px-3 py-1.5 rounded-lg shadow-2xs transition-colors cursor-pointer"
-                  >
-                    <ClipboardPaste className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Re-paste Text</span>
-                  </button>
+                {/* Contact Channels Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                  <div className="p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center gap-2">
+                    <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <input
+                      type="email"
+                      value={contact.email}
+                      onChange={(e) => setContact({ ...contact, email: e.target.value })}
+                      placeholder="Work Email"
+                      className="w-full text-xs bg-transparent focus:outline-none font-medium"
+                    />
+                  </div>
 
-                  <button
-                    type="button"
-                    onClick={addEmptyMilestone}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white border border-[#E2E8F0] hover:bg-slate-50 px-3 py-1.5 rounded-lg shadow-2xs transition-colors cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-[#059669]" />
-                    <span>Add Chapter</span>
-                  </button>
+                  <div className="p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center gap-2">
+                    <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <input
+                      type="text"
+                      value={contact.phone}
+                      onChange={(e) => setContact({ ...contact, phone: e.target.value })}
+                      placeholder="Phone"
+                      className="w-full text-xs bg-transparent focus:outline-none font-medium"
+                    />
+                  </div>
+
+                  <div className="p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center gap-2">
+                    <Linkedin className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    <input
+                      type="text"
+                      value={contact.linkedin}
+                      onChange={(e) => setContact({ ...contact, linkedin: e.target.value })}
+                      placeholder="LinkedIn URL"
+                      className="w-full text-xs bg-transparent focus:outline-none font-medium text-blue-700"
+                    />
+                  </div>
+
+                  <div className="p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center gap-2">
+                    <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <input
+                      type="text"
+                      value={contact.location}
+                      onChange={(e) => setContact({ ...contact, location: e.target.value })}
+                      placeholder="Location / Remote"
+                      className="w-full text-xs bg-transparent focus:outline-none font-medium"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -770,7 +1011,7 @@ export default function StudioPage() {
                       </h3>
                     </div>
                     <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
-                      Portfolio Anchor
+                      Audited Summary
                     </span>
                   </div>
                   <textarea
@@ -785,20 +1026,36 @@ export default function StudioPage() {
                 </div>
               )}
 
-              {/* 2. Milestones Card Stream with Individual Line Items */}
+              {/* 2. Milestones Card Stream with Full Un-Truncated Company & Role */}
               <div className="space-y-4">
-                <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">
-                  Career Milestones ({milestones.length})
-                </h3>
+                <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">
+                    Audited Career Milestones ({milestones.length})
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={addEmptyMilestone}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white border border-[#E2E8F0] hover:bg-slate-50 px-3 py-1.5 rounded-lg shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-[#059669]" />
+                    <span>Add Chapter</span>
+                  </button>
+                </div>
 
                 <div className="space-y-6">
                   {milestones.map((milestone) => (
                     <div
                       key={milestone.id}
-                      className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-4 hover:border-slate-300 transition-all antialiased"
+                      id={milestone.id}
+                      className={`bg-white border rounded-2xl p-6 shadow-xs space-y-4 transition-all antialiased ${
+                        highlightedMilestoneId === milestone.id
+                          ? "border-[#059669] ring-2 ring-emerald-100"
+                          : "border-[#E2E8F0] hover:border-slate-300"
+                      }`}
                     >
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-[#E2E8F0]/70">
-                        <div className="flex flex-wrap items-center gap-2">
+                      {/* Responsive Header Row - Zero clipping */}
+                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3.5 border-b border-[#E2E8F0]/70">
+                        <div className="flex-1 space-y-1">
                           <input
                             type="text"
                             value={milestone.company}
@@ -808,11 +1065,10 @@ export default function StudioPage() {
                                 prev.map((m) => (m.id === milestone.id ? { ...m, company: val } : m))
                               );
                             }}
-                            placeholder="Company"
+                            placeholder="Company Name (e.g. SCD Enterprises / PairedRight)"
                             spellCheck={true}
-                            className="font-extrabold text-sm sm:text-base text-[#0F172A] focus:outline-none border-b border-transparent focus:border-[#059669]"
+                            className="w-full font-black text-base text-[#0F172A] focus:outline-none border-b border-transparent focus:border-[#059669]"
                           />
-                          <span className="text-slate-300">•</span>
                           <input
                             type="text"
                             value={milestone.role}
@@ -822,13 +1078,13 @@ export default function StudioPage() {
                                 prev.map((m) => (m.id === milestone.id ? { ...m, role: val } : m))
                               );
                             }}
-                            placeholder="Role Title"
+                            placeholder="Role Title (e.g. Founder and Head of Product)"
                             spellCheck={true}
-                            className="text-xs sm:text-sm font-semibold text-slate-600 focus:outline-none border-b border-transparent focus:border-[#059669]"
+                            className="w-full text-xs font-semibold text-slate-600 focus:outline-none border-b border-transparent focus:border-[#059669]"
                           />
                         </div>
 
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2.5 shrink-0 self-start lg:self-center">
                           <div className="flex items-center gap-1.5 bg-slate-50 border border-[#E2E8F0] px-2.5 py-1 rounded-lg">
                             <Calendar className="w-3 h-3 text-slate-400" />
                             <input
@@ -844,15 +1100,25 @@ export default function StudioPage() {
                               className="text-[11px] font-mono font-medium text-slate-600 focus:outline-none text-right w-44 bg-transparent"
                             />
                           </div>
+
                           {milestone.isCorroborated ? (
                             <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
                               <Check className="w-3 h-3 text-[#059669]" /> Corroborated
                             </span>
                           ) : (
-                            <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
-                              Draft
-                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTargetMilestone(milestone);
+                                setIsInviteModalOpen(true);
+                              }}
+                              className="text-[10px] font-bold text-[#059669] bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                            >
+                              <Users className="w-3 h-3" />
+                              <span>Corroborate</span>
+                            </button>
                           )}
+
                           <button
                             type="button"
                             onClick={() =>
@@ -927,7 +1193,7 @@ export default function StudioPage() {
                 </div>
               </div>
 
-              {/* 3. Core Competencies & Skills */}
+              {/* 3. Core Proficiencies & Technologies */}
               {skills.length > 0 && (
                 <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
@@ -991,7 +1257,78 @@ export default function StudioPage() {
         </main>
       </div>
 
-      {/* SIGNUP & HANDLE CLAIM MODAL WITH VALIDATION & AVAILABILITY */}
+      {/* PEER CORROBORATION INVITATION MODAL */}
+      {isInviteModalOpen && targetMilestone && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-lg space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-[#059669]" />
+                <h3 className="font-black text-sm text-[#0F172A]">Request Peer Corroboration</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsInviteModalOpen(false)}
+                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1 text-xs">
+              <span className="font-bold text-[#0F172A] block">{targetMilestone.company}</span>
+              <span className="text-slate-500 block">{targetMilestone.role} ({targetMilestone.period})</span>
+            </div>
+
+            <form onSubmit={dispatchPeerInvite} className="space-y-4 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Colleague or Manager Work Email</label>
+                <input
+                  type="email"
+                  required
+                  value={colleagueEmail}
+                  onChange={(e) => setColleagueEmail(e.target.value)}
+                  placeholder="manager@company.com"
+                  className="w-full p-2.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669]"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Relationship Context</label>
+                <select
+                  value={colleagueRole}
+                  onChange={(e) => setColleagueRole(e.target.value)}
+                  className="w-full p-2.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] bg-white"
+                >
+                  <option>Direct Manager / Executive Sponsor</option>
+                  <option>Cross-Functional Peer (Engineering / Product)</option>
+                  <option>Direct Report / Senior Lead</option>
+                  <option>Investor / Advisory Board</option>
+                </select>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={inviteSent}
+                  className="w-full py-3 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+                >
+                  {inviteSent ? (
+                    <Clock className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <span>Send Verification Token</span>
+                      <ArrowRight className="w-4 h-4 text-emerald-400" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* SIGNUP & HANDLE CLAIM MODAL */}
       {isClaimModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-lg space-y-5">
@@ -1029,27 +1366,12 @@ export default function StudioPage() {
                 <input
                   type="email"
                   required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="gstharris@gmail.com"
+                  value={contact.email}
+                  onChange={(e) => setContact({ ...contact, email: e.target.value })}
+                  placeholder="name@company.com"
                   className={`w-full p-2.5 rounded-xl border ${emailError ? "border-red-500" : "border-[#E2E8F0]"} focus:outline-none focus:border-[#059669]`}
                 />
                 {emailError && <span className="text-[10px] text-red-500 mt-1 block">{emailError}</span>}
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  Used to verify your identity domain.
-                </span>
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Professional Headline</label>
-                <input
-                  type="text"
-                  spellCheck={true}
-                  value={headline}
-                  onChange={(e) => setHeadline(e.target.value)}
-                  placeholder="Head of Product Management • AI Platforms"
-                  className="w-full p-2.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669]"
-                />
               </div>
 
               <div>

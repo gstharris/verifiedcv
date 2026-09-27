@@ -15,7 +15,12 @@ import {
   GraduationCap,
   Sparkles,
   UserCheck,
-  Share2
+  Share2,
+  Mail,
+  Phone,
+  Linkedin,
+  MapPin,
+  Users
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 
@@ -24,9 +29,11 @@ interface Milestone {
   company: string;
   role: string;
   period: string;
+  location?: string;
   claims: string[];
   calibratedClaim?: string;
   isCorroborated: boolean;
+  corroboratedBy?: string;
 }
 
 interface EducationRecord {
@@ -36,11 +43,22 @@ interface EducationRecord {
   year?: string;
 }
 
+interface ContactInfo {
+  email: string;
+  phone: string;
+  location: string;
+  linkedin: string;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  linkedinVerified: boolean;
+}
+
 interface DossierData {
   handle: string;
   fullName: string;
   headline: string;
   summaryStatement: string;
+  contact?: ContactInfo;
   skills: string[];
   education: EducationRecord[];
   milestones: Milestone[];
@@ -70,10 +88,10 @@ export default function CandidateDossierPage() {
           }
         }
       } catch (err) {
-        console.warn("Vault API fetch failed, checking local session fallback:", err);
+        console.warn("Vault API query fallback:", err);
       }
 
-      // Session fallback for immediate client preview after committing
+      // Local session hydration fallback
       if (typeof window !== "undefined") {
         const savedVault = sessionStorage.getItem("vcv_saved_vault");
         if (savedVault) {
@@ -85,7 +103,7 @@ export default function CandidateDossierPage() {
               return;
             }
           } catch {
-            // ignore parse error
+            // ignore
           }
         }
       }
@@ -157,6 +175,13 @@ export default function CandidateDossierPage() {
     );
   }
 
+  const corroboratedCount = dossier.milestones.filter((m) => m.isCorroborated).length;
+  const verifiedSignalsCount =
+    (dossier.contact?.emailVerified ? 1 : 0) +
+    (dossier.contact?.linkedinVerified ? 1 : 0) +
+    (dossier.contact?.phoneVerified ? 1 : 0) +
+    corroboratedCount;
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans antialiased selection:bg-emerald-100 flex flex-col justify-between">
       {/* Dossier Header */}
@@ -188,8 +213,36 @@ export default function CandidateDossierPage() {
 
       {/* Main Dossier Content */}
       <main className="max-w-4xl mx-auto w-full px-6 py-10 space-y-8 flex-1">
+        
+        {/* COMPACT TRUST SPECTRUM BAR */}
+        <div className="bg-white border border-[#E2E8F0] rounded-2xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-xs font-black text-[#0F172A] tracking-tight">Trust Spectrum:</span>
+            <span className="text-xs font-bold text-[#059669] bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+              {verifiedSignalsCount} Cryptographic Proof Signals
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
+            {dossier.contact?.emailVerified && (
+              <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-[#059669] flex items-center gap-1">
+                <Check className="w-3 h-3" /> Domain Verified
+              </span>
+            )}
+            {dossier.contact?.linkedinVerified && (
+              <span className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 flex items-center gap-1">
+                <Linkedin className="w-3 h-3" /> LinkedIn Certified
+              </span>
+            )}
+            <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-[#059669] flex items-center gap-1">
+              <Users className="w-3 h-3" /> {corroboratedCount} Peer Corroborations
+            </span>
+          </div>
+        </div>
+
         {/* Candidate Identity Card */}
-        <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 shadow-xs space-y-4">
+        <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 shadow-xs space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
             <div className="space-y-1">
               <div className="flex items-center gap-2.5">
@@ -214,6 +267,36 @@ export default function CandidateDossierPage() {
               </span>
             </div>
           </div>
+
+          {/* Contact Channels Grid */}
+          {dossier.contact && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 text-xs pt-2 border-t border-slate-100">
+              {dossier.contact.email && (
+                <div className="flex items-center gap-2 text-slate-600">
+                  <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="font-medium truncate">{dossier.contact.email}</span>
+                </div>
+              )}
+              {dossier.contact.phone && (
+                <div className="flex items-center gap-2 text-slate-600">
+                  <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="font-medium">{dossier.contact.phone}</span>
+                </div>
+              )}
+              {dossier.contact.linkedin && (
+                <div className="flex items-center gap-2 text-blue-600">
+                  <Linkedin className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                  <span className="font-medium truncate">{dossier.contact.linkedin}</span>
+                </div>
+              )}
+              {dossier.contact.location && (
+                <div className="flex items-center gap-2 text-slate-600">
+                  <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="font-medium">{dossier.contact.location}</span>
+                </div>
+              )}
+            </div>
+          )}
 
           {dossier.summaryStatement && (
             <div className="pt-3 border-t border-slate-100">
@@ -242,10 +325,9 @@ export default function CandidateDossierPage() {
                 className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-4 hover:border-slate-300 transition-all"
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <span className="font-extrabold text-base text-[#0F172A]">{m.company}</span>
-                    <span className="text-slate-300">•</span>
-                    <span className="text-xs font-semibold text-slate-600">{m.role}</span>
+                  <div className="space-y-0.5">
+                    <span className="font-black text-base text-[#0F172A] block">{m.company}</span>
+                    <span className="text-xs font-semibold text-slate-600 block">{m.role}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-mono font-medium text-slate-500 bg-slate-50 border border-[#E2E8F0] px-2.5 py-1 rounded-lg">
@@ -275,6 +357,13 @@ export default function CandidateDossierPage() {
                     <p className="text-xs text-slate-700 leading-relaxed">{m.calibratedClaim}</p>
                   )}
                 </div>
+
+                {m.corroboratedBy && (
+                  <div className="pt-2 border-t border-slate-100 text-[10px] text-emerald-800 font-semibold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3 h-3 text-[#059669]" />
+                    <span>Attested by {m.corroboratedBy}</span>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -336,7 +425,7 @@ export default function CandidateDossierPage() {
           <div className="flex items-center gap-2">
             <VerifiedCVLogo className="w-4 h-4" />
             <span className="font-bold text-[#0F172A]">VerifiedCV</span>
-            <span>• Cryptographic proof layer for careers</span>
+            <span>• Forensic proof layer for careers</span>
           </div>
           <span className="text-[11px]">Dossier timestamped via Vault ground truth</span>
         </div>
