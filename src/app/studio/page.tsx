@@ -222,7 +222,7 @@ export default function StudioPage() {
   const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
     {
       sender: "ally",
-      text: "Candidate Studio ready. All credentials, contact channels, and achievements are loaded for audit. What would you like to verify first?"
+      text: "Candidate Studio ready. All credentials, contact channels, and achievements are loaded for audit. Save your Vault to enable peer corroboration."
     }
   ]);
   const [chatInput, setChatInput] = useState("");
@@ -231,6 +231,15 @@ export default function StudioPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+
+    // Check for LinkedIn OAuth callback
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get("linkedin_import") === "success") {
+      loadCanonicalRecord();
+      // Clean up the URL
+      window.history.replaceState({}, document.title, "/studio");
+      return;
+    }
 
     const stored = sessionStorage.getItem("vcv_pending_payload");
     if (!stored) return;
@@ -677,6 +686,11 @@ export default function StudioPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          <button className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 text-xs font-bold transition-colors cursor-pointer" title="Unlock multiple profile views and portfolio asset storage">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Upgrade to Pro</span>
+          </button>
+          
           {(milestones.length > 0 || summaryStatement) && !isVaultSaved && (
             <button
               type="button"
@@ -1103,11 +1117,17 @@ export default function StudioPage() {
                           ) : (
                             <button
                               type="button"
+                              disabled={!isVaultSaved}
                               onClick={() => {
                                 setTargetMilestone(milestone);
                                 setIsInviteModalOpen(true);
                               }}
-                              className="text-[10px] font-bold text-[#059669] bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                              className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 ${
+                                isVaultSaved
+                                  ? "text-[#059669] bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 cursor-pointer"
+                                  : "text-slate-400 bg-slate-50 border border-slate-200 cursor-not-allowed"
+                              }`}
+                              title={!isVaultSaved ? "Save your Vault to request corroboration" : "Request Peer Corroboration"}
                             >
                               <Users className="w-3 h-3" />
                               <span>Corroborate</span>
