@@ -1,23 +1,28 @@
-# SYSTEM PROMPT & CONTEXT: PROJECT PITH
+# VerifiedCV Project Rules & AI Agent Directives
 
-## 1. Product Overview
-You are the software architect, AI engineer, and product strategist for Pith (usepith.app). Pith is a candidate-enablement platform built to solve trust friction in an AI-inflated, noisy job market. Instead of acting as an adversarial gatekeeper, Pith provides a private sandbox where candidates audit, refine, and prove their career track record. Through asynchronous AI forensics, peer consensus, and a unified Master Vault, Pith strips away superficial resume filler to expose the verifiable core of a candidate's experience. The output is a high-trust public link (usepith.app/{handle}/{view}) and an ATS-compliant PDF export.
+## 1. Core Identity & Architecture
+- **Product:** VerifiedCV (verifiedcv.app) — Candidate-enablement trust platform replacing unverified resumes with forensic proof signals.
+- **Stack:** Next.js (App Router, Turbopack), TypeScript, Tailwind CSS.
+- **Visual Design:** Strictly clean, modern light theme. 
+  - Pure white cards: `#FFFFFF`
+  - Off-white canvas: `#F8FAFC`
+  - Crisp dark-slate text: `#0F172A`
+  - Structural borders: `#E2E8F0`
+  - Emerald trust accent: `#059669` (hover: `#047857`)
+  - NEVER use dark charcoal backdrops, cyan grids, or blue neon tech aesthetics.
 
-## 2. Core Feature Set
-* The Master Vault & Multi-View Engine: Stores a candidate's complete career history. Candidates toggle specific verified claims into discrete public views (e.g., Executive, Product Lead, IC Delivery, 8-10 Year Window).
-* Ingestion Node: Serverless PDF parser extracting resume text into structured claims (Metric, Architecture, Leadership, Execution).
-* Forensic Interrogator: Asynchronous AI auditor asking operational questions to calculate a Pith Fidelity Score (0-100).
-* Private Remediation Loop: Flags weak or inflated bullets privately with rewrite suggestions before publishing.
-* Overlapping Peer Consensus: Uses LinkedIn OAuth to verify coworker overlapping tenures and shared deliverables.
-* The Pith Profile: A clean web link showcasing verified claims, supporting artifacts, and ATS exports.
+## 2. Unbreakable Architectural Guardrails
+1. **Never Import `Linkedin` from `lucide-react`:** Lucide does not reliably export a social LinkedIn icon across builds. Always use the project's inline SVG `LinkedInIcon` component with `viewBox="0 0 24 24"`.
+2. **Serverless PDF Parsing via `unpdf`:** In `/api/parse/route.ts`, all PDF text extraction MUST run server-side using `unpdf` (`extractText`). Never use binary regex hacks, `pdf2json`, browser script tags, or non-ESM PDF libraries.
+3. **Lossless Header Ingestion:**
+   - Never truncate company names containing slashes or dashes (e.g., `SCD Enterprises / PairedRight`).
+   - Never truncate compound leadership roles (e.g., `Founder and Head of Product`).
+   - Experience header lines are pipe-delimited (`|`). Parse tokens safely and never run entity names through bullet-stripping regexes.
+4. **Tenure Date Normalization:** Preserve starting months and years alongside `Present` continuity (e.g., `May 2025 — Present`, `2018 — Mar 2026`).
+5. **Atomic Claim Scrubber:** Milestone accomplishments must be separated into individual line items in `claims: string[]`. Any item with fewer than 12 alphabetical letters (`[a-zA-Z]`) must be discarded to prevent orphan bullet glyphs (`●`, `•`, `-`).
+6. **Strict Section Boundaries:** Education and Academic Degrees must NEVER bleed into Core Proficiencies / Skills. Filter strictly on degree/institution signifiers.
+7. **No Truncated Code Snippets:** When editing files, preserve the complete production layout, state bindings, and accessibility tags. Never replace core sections with placeholders like `// ... rest of code`.
 
-## 3. Brand Identity
-* Name: Pith
-* Domain: usepith.app
-* Metaphor: The pith—the essential core and substance of a career once buzzwords are stripped away.
-* Nomenclature: Pith, Master Vault, Forensic Interrogator, Pith Fidelity Score, Pith Profile.
-
-## 4. Instructions
-* Maintain a candidate-first mindset.
-* Focus on building a lightweight MVP (Next.js App Router, Supabase, Tailwind, shadcn/ui).
-* Keep code and explanations clear, direct, and practical.
+## 3. Engineering Protocol
+- Prioritize test-driven development: Write and run `vitest` unit tests for parsing and business logic before asking for manual browser testing.
+- Always run `npm run build` to verify clean compilation before concluding a task.
