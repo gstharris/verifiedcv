@@ -182,9 +182,6 @@ export default function VerifiedCVLandingPage() {
               <span className="font-black text-lg tracking-tight text-[#0F172A] leading-none">
                 VerifiedCV
               </span>
-              <span className="text-[9px] font-bold text-[#059669] uppercase tracking-widest mt-0.5">
-                Living Portfolio
-              </span>
             </div>
           </Link>
 
@@ -224,34 +221,13 @@ export default function VerifiedCVLandingPage() {
       {/* Hero Section */}
       <section className="relative pt-12 pb-14 md:pt-16 md:pb-16 overflow-hidden">
         <div className="max-w-4xl mx-auto px-6 text-center space-y-4">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/80 text-[#059669] text-xs font-bold shadow-2xs mb-1">
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>The Candidate-Enablement Trust Platform</span>
-          </div>
-
           <h1 className="text-3xl sm:text-5xl font-black text-[#0F172A] tracking-tight leading-[1.12] max-w-3xl mx-auto">
-            The living portfolio for verified careers.
+            Your Living & Verified Portfolio.
           </h1>
 
-          <p className="text-sm sm:text-base text-slate-600 max-w-2xl mx-auto leading-relaxed">
-            Prove your track record upfront. Replace unverified resumes with forensic proof signals, peer corroboration, and registry links that bypass automated screening filters.
-          </p>
-
           {/* Conversational Ingress Window with Multi-line Safe Textarea */}
-          <div className="max-w-xl mx-auto pt-6 text-left">
+          <div className="max-w-xl mx-auto pt-2 text-left">
             <div className="bg-white border border-[#E2E8F0] rounded-2xl shadow-sm p-5 space-y-4">
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#059669] shrink-0 mt-0.5">
-                  <Bot className="w-4 h-4" />
-                </div>
-                <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-3 text-xs text-slate-700 leading-relaxed w-full">
-                  <span className="font-bold text-[#0F172A] block mb-0.5">
-                    CV Ally Career Copilot
-                  </span>
-                  Paste your resume text or upload your document. I will extract your milestones, summary, and skills cleanly into Candidate Studio.
-                </div>
-              </div>
-
               {/* Action Buttons */}
               <div className="flex flex-wrap items-center gap-2.5 pt-1">
                 <input
