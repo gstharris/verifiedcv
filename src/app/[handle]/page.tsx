@@ -202,14 +202,6 @@ export default function CandidateDossierPage() {
     (dossier.contact?.phoneVerified ? 1 : 0) +
     corroboratedCount;
 
-  // Portfolio Verification Stats
-  const level0Count = dossier.milestones.filter(m => getVerificationLevel(m) === 0).length;
-  const level1Count = dossier.milestones.filter(m => getVerificationLevel(m) === 1).length;
-  const level2Count = dossier.milestones.filter(m => getVerificationLevel(m) === 2).length;
-  const level3Count = dossier.milestones.filter(m => getVerificationLevel(m) === 3).length;
-  const totalVerified = level1Count + level2Count + level3Count;
-  const portfolioScore = dossier.milestones.length > 0 ? Math.round((totalVerified / dossier.milestones.length) * 100) : 0;
-
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans antialiased selection:bg-emerald-100 flex flex-col justify-between">
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
@@ -239,50 +231,6 @@ export default function CandidateDossierPage() {
       </header>
 
       <main className="max-w-4xl mx-auto w-full px-6 py-10 space-y-8 flex-1">
-        {/* COMPACT TRUST SPECTRUM BAR */}
-        <div className="bg-white border border-[#E2E8F0] rounded-3xl p-5 shadow-xs space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-              <h2 className="text-sm font-black text-[#0F172A] tracking-tight">Verified Portfolio Score</h2>
-            </div>
-            <span className="text-xs font-bold text-[#059669] bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
-              {portfolioScore}% Validated
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-col gap-1">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Level 0: Unverified</span>
-              <div className="flex items-end justify-between">
-                <span className="text-xl font-black text-slate-700">{level0Count}</span>
-                <span className="text-[10px] text-slate-400 font-medium">Claims</span>
-              </div>
-            </div>
-            <div className="p-3 rounded-xl bg-blue-50/50 border border-blue-100 flex flex-col gap-1">
-              <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Level 1: Document</span>
-              <div className="flex items-end justify-between">
-                <span className="text-xl font-black text-blue-700">{level1Count}</span>
-                <span className="text-[10px] text-blue-400 font-medium">Verified</span>
-              </div>
-            </div>
-                <div className="p-3 rounded-xl bg-emerald-50/50 border border-emerald-100 flex flex-col gap-1">
-              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Level 2: Peer</span>
-              <div className="flex items-end justify-between">
-                <span className="text-xl font-black text-emerald-700">{level2Count}</span>
-                <span className="text-[10px] text-emerald-400 font-medium">Verified</span>
-              </div>
-            </div>
-            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex flex-col gap-1">
-              <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1"><ShieldCheck className="w-3 h-3"/> Level 3: Anchored</span>
-              <div className="flex items-end justify-between">
-                <span className="text-xl font-black text-emerald-800">{level3Count}</span>
-                <span className="text-[10px] text-emerald-500 font-medium">Cryptographic</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* Candidate Identity Card */}
         <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 shadow-xs space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
@@ -291,49 +239,49 @@ export default function CandidateDossierPage() {
                 <h1 className="text-2xl sm:text-3xl font-black text-[#0F172A] tracking-tight">
                   {dossier.fullName}
                 </h1>
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[#059669] text-[10px] font-bold">
-                  <BadgeCheck className="w-3.5 h-3.5" />
-                  <span>Vault Anchored</span>
-                </span>
               </div>
               <p className="text-sm font-semibold text-slate-600">{dossier.headline}</p>
               <div className="text-xs font-mono text-slate-400 pt-0.5">
                 verifiedcv.app/{dossier.handle}
               </div>
             </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-bold text-slate-500 bg-slate-50 border border-[#E2E8F0] px-3 py-1.5 rounded-xl flex items-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5 text-[#059669]" />
-                <span>Forensic Proof Signal</span>
-              </span>
-            </div>
           </div>
 
           {dossier.contact && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 text-xs pt-2 border-t border-slate-100">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs pt-3 border-t border-slate-100">
               {dossier.contact.email && (
-                <div className="flex items-center gap-2 text-slate-600">
-                  <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span className="font-medium truncate">{dossier.contact.email}</span>
+                <div className="flex items-center gap-2">
+                  <div className={`flex items-center justify-center w-6 h-6 rounded-full ${dossier.contact.emailVerified ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-50 text-slate-400'}`}>
+                    <Mail className="w-3 h-3" />
+                  </div>
+                  <span className={`font-medium truncate ${dossier.contact.emailVerified ? 'text-slate-900' : 'text-slate-500'}`}>{dossier.contact.email}</span>
+                  {dossier.contact.emailVerified && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
                 </div>
               )}
               {dossier.contact.phone && (
-                <div className="flex items-center gap-2 text-slate-600">
-                  <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span className="font-medium">{dossier.contact.phone}</span>
+                <div className="flex items-center gap-2">
+                  <div className={`flex items-center justify-center w-6 h-6 rounded-full ${dossier.contact.phoneVerified ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-50 text-slate-400'}`}>
+                    <Phone className="w-3 h-3" />
+                  </div>
+                  <span className={`font-medium ${dossier.contact.phoneVerified ? 'text-slate-900' : 'text-slate-500'}`}>{dossier.contact.phone}</span>
+                  {dossier.contact.phoneVerified && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
                 </div>
               )}
               {dossier.contact.linkedin && (
-                <div className="flex items-center gap-2 text-blue-600">
-                  <LinkedInIcon className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                  <span className="font-medium truncate">{dossier.contact.linkedin}</span>
+                <div className="flex items-center gap-2">
+                  <div className={`flex items-center justify-center w-6 h-6 rounded-full ${dossier.contact.linkedinVerified ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
+                    <LinkedInIcon className="w-3 h-3" />
+                  </div>
+                  <span className={`font-medium truncate ${dossier.contact.linkedinVerified ? 'text-slate-900' : 'text-slate-500'}`}>{dossier.contact.linkedin}</span>
+                  {dossier.contact.linkedinVerified && <CheckCircle2 className="w-3.5 h-3.5 text-blue-500" />}
                 </div>
               )}
               {dossier.contact.location && (
-                <div className="flex items-center gap-2 text-slate-600">
-                  <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span className="font-medium">{dossier.contact.location}</span>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-50 text-slate-400">
+                    <MapPin className="w-3 h-3" />
+                  </div>
+                  <span className="font-medium text-slate-500">{dossier.contact.location}</span>
                 </div>
               )}
             </div>
