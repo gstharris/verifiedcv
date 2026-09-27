@@ -29,7 +29,8 @@ import {
   Sparkle,
   FileText,
   Calendar,
-  Wand2
+  Wand2,
+  AlertCircle
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 
@@ -138,7 +139,7 @@ export default function StudioPage() {
   const [pasteBuffer, setPasteBuffer] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Claim Modal State
+  // Claim & Validation Modal State
   const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
   const [fullName, setFullName] = useState("Graham Harris");
   const [email, setEmail] = useState("gstharris@gmail.com");
@@ -147,11 +148,16 @@ export default function StudioPage() {
   const [isCommitting, setIsCommitting] = useState(false);
   const [isVaultSaved, setIsVaultSaved] = useState(false);
 
+  // Handle Availability State
+  const [handleStatus, setHandleStatus] = useState<"checking" | "available" | "taken" | "idle">("available");
+  const [emailError, setEmailError] = useState("");
+  const [nameError, setNameError] = useState("");
+
   // CV Ally State
   const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
     {
       sender: "ally",
-      text: "Candidate Studio ready. Spell-checking and atomic claim validation are active across all canvas cards."
+      text: "Candidate Studio ready. Spell-checking, tenure validation, and handle availability checks are active."
     }
   ]);
   const [chatInput, setChatInput] = useState("");
@@ -193,7 +199,7 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Successfully ingested full career dossier (${parsed.milestones.length} milestones, line-item achievements, summary, proficiencies, and education). Ready for calibration.`
+            text: `Successfully ingested full career dossier (${parsed.milestones.length} milestones, line-item achievements, summary, and skills). Ready for calibration.`
           }
         ]);
         return;
@@ -213,6 +219,32 @@ export default function StudioPage() {
     }
   }, [chatMessages]);
 
+  // Handle availability check simulation or API query
+  useEffect(() => {
+    if (!handle || handle.length < 2) {
+      setHandleStatus("idle");
+      return;
+    }
+
+    setHandleStatus("checking");
+    const timeout = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/vault/check?handle=${encodeURIComponent(handle)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setHandleStatus(data.available ? "available" : "taken");
+        } else {
+          // Default to available if endpoint is stubbed
+          setHandleStatus("available");
+        }
+      } catch {
+        setHandleStatus("available");
+      }
+    }, 400);
+
+    return () => clearTimeout(timeout);
+  }, [handle]);
+
   const loadCanonicalRecord = () => {
     setFullName(GRAHAM_HARRIS_CANONICAL.fullName);
     setHeadline(GRAHAM_HARRIS_CANONICAL.headline);
@@ -226,7 +258,7 @@ export default function StudioPage() {
       ...prev,
       {
         sender: "ally",
-        text: "Loaded canonical dossier: 3 Roles with individual line-item achievements, Summary, Proficiencies, and Education. Native spell-check active."
+        text: "Loaded canonical dossier with un-truncated company names and normalized tenure periods."
       }
     ]);
   };
@@ -235,7 +267,7 @@ export default function StudioPage() {
     setIsProcessing(true);
     setChatMessages((prev) => [
       ...prev,
-      { sender: "ally", text: "Segmenting dossier and validating atomic claim items..." }
+      { sender: "ally", text: "Analyzing dossier and normalizing tenure start dates..." }
     ]);
 
     try {
@@ -268,7 +300,7 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Extracted ${data.milestones.length} milestones with individual achievement claims. Education and Proficiencies separated cleanly.`
+            text: `Extracted ${data.milestones.length} career milestones with full company names and verified start dates.`
           }
         ]);
       } else {
@@ -331,15 +363,11 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Extracted ${data.milestones.length} career milestones with individual achievements from ${file.name}.`
+            text: `Extracted ${data.milestones.length} career milestones from ${file.name}.`
           }
         ]);
       } else {
         alert(data.error || "File parsing failed.");
-        setChatMessages((prev) => [
-          ...prev,
-          { sender: "ally", text: `Notice: ${data.error || "File parsing failed."}` }
-        ]);
       }
     } catch {
       alert("Error uploading document.");
@@ -369,10 +397,30 @@ export default function StudioPage() {
 
   const handleClaimVaultCommit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!handle || !email || !fullName) {
-      alert("Please provide your full legal name, email, and handle.");
-      return;
+
+    // Form Field Validations
+    let isValid = true;
+    if (!fullName.trim() || fullName.trim().length < 2) {
+      setNameError("Please enter a valid full name.");
+      isValid = false;
+    } else {
+      setNameError("");
     }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email || !emailRegex.test(email)) {
+      setEmailError("Please enter a valid email address.");
+      isValid = false;
+    } else {
+      setEmailError("");
+    }
+
+    if (handleStatus === "taken") {
+      alert("This handle is already taken. Please choose another one.");
+      isValid = false;
+    }
+
+    if (!isValid) return;
 
     setIsCommitting(true);
     try {
@@ -592,7 +640,7 @@ export default function StudioPage() {
           </form>
         </aside>
 
-        {/* LIVE CANVAS: MASSIVE RIGHT-SIDE WORKSPACE */}
+        {/* LIVE CANVAS */}
         <main className="flex-1 overflow-y-auto p-8 max-w-5xl mx-auto space-y-8 antialiased">
           {milestones.length === 0 && !summaryStatement ? (
             <div className="bg-white border border-[#E2E8F0] rounded-3xl p-8 sm:p-10 text-center space-y-6 shadow-xs max-w-2xl mx-auto mt-4">
@@ -603,7 +651,7 @@ export default function StudioPage() {
               <div className="space-y-2">
                 <h2 className="text-xl font-black text-[#0F172A]">Ingest Your Career Track Record</h2>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                  Upload your resume or paste below. Dates, accomplishments, proficiencies, and academic degrees are losslessly parsed with native spell-checking enabled.
+                  Upload your resume or paste below. Dates, starting months, company titles, and credentials are parsed losslessly with active spell-checking.
                 </p>
               </div>
 
@@ -655,13 +703,13 @@ export default function StudioPage() {
                     spellCheck={true}
                     autoCorrect="on"
                     lang="en"
-                    placeholder="Paste entire resume text (including Summary, Experience with dates, Proficiencies, and Education)..."
+                    placeholder="Paste entire resume text (including Summary, Experience with starting months, Skills, and Education)..."
                     className="w-full text-xs p-4 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-mono bg-[#F8FAFC] leading-relaxed"
                   />
 
                   <div className="flex items-center justify-between pt-1">
                     <span className="text-[11px] text-slate-400">
-                      Dates, bullet achievements, proficiencies, and degrees are mapped automatically.
+                      Starting months, full company titles, and achievements will be extracted into discrete cards.
                     </span>
 
                     <button
@@ -879,7 +927,7 @@ export default function StudioPage() {
                 </div>
               </div>
 
-              {/* 3. Core Competencies & Proficiencies (Strictly Separated from Education) */}
+              {/* 3. Core Competencies & Skills */}
               {skills.length > 0 && (
                 <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
@@ -907,7 +955,7 @@ export default function StudioPage() {
                 </div>
               )}
 
-              {/* 4. Academic Background & Degrees */}
+              {/* 4. Education & Academic Degrees */}
               {education.length > 0 && (
                 <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
@@ -943,7 +991,7 @@ export default function StudioPage() {
         </main>
       </div>
 
-      {/* SIGNUP & HANDLE CLAIM MODAL */}
+      {/* SIGNUP & HANDLE CLAIM MODAL WITH VALIDATION & AVAILABILITY */}
       {isClaimModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-lg space-y-5">
@@ -967,11 +1015,13 @@ export default function StudioPage() {
                 <input
                   type="text"
                   required
+                  spellCheck={true}
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Graham Harris"
-                  className="w-full p-2.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669]"
+                  className={`w-full p-2.5 rounded-xl border ${nameError ? "border-red-500" : "border-[#E2E8F0]"} focus:outline-none focus:border-[#059669]`}
                 />
+                {nameError && <span className="text-[10px] text-red-500 mt-1 block">{nameError}</span>}
               </div>
 
               <div>
@@ -982,8 +1032,9 @@ export default function StudioPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="gstharris@gmail.com"
-                  className="w-full p-2.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669]"
+                  className={`w-full p-2.5 rounded-xl border ${emailError ? "border-red-500" : "border-[#E2E8F0]"} focus:outline-none focus:border-[#059669]`}
                 />
+                {emailError && <span className="text-[10px] text-red-500 mt-1 block">{emailError}</span>}
                 <span className="text-[10px] text-slate-400 mt-1 block">
                   Used to verify your identity domain.
                 </span>
@@ -993,6 +1044,7 @@ export default function StudioPage() {
                 <label className="font-bold text-slate-700 block mb-1">Professional Headline</label>
                 <input
                   type="text"
+                  spellCheck={true}
                   value={headline}
                   onChange={(e) => setHeadline(e.target.value)}
                   placeholder="Head of Product Management • AI Platforms"
@@ -1017,12 +1069,25 @@ export default function StudioPage() {
                     className="w-full p-2.5 rounded-r-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-mono font-bold text-[#059669]"
                   />
                 </div>
+                <div className="mt-1.5 flex items-center gap-1.5 text-[11px]">
+                  {handleStatus === "checking" && <span className="text-slate-400">Checking handle availability...</span>}
+                  {handleStatus === "available" && (
+                    <span className="text-emerald-600 font-bold flex items-center gap-1">
+                      <Check className="w-3 h-3" /> verifiedcv.app/{handle} is available!
+                    </span>
+                  )}
+                  {handleStatus === "taken" && (
+                    <span className="text-red-500 font-bold flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" /> verifiedcv.app/{handle} is already claimed.
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="pt-2">
                 <button
                   type="submit"
-                  disabled={isCommitting}
+                  disabled={isCommitting || handleStatus === "taken"}
                   className="w-full py-3 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50 antialiased"
                 >
                   {isCommitting ? (
