@@ -45,7 +45,15 @@ export default function VerifiedCVLandingPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [viewPerspective, setViewPerspective] = useState<"candidate" | "recruiter">("candidate");
 
-  const [isLinkedInModalOpen, setIsLinkedInModalOpen] = useState(false);
+  const DEMO_NAMES = ["janedoe", "alexchen", "sarahsmith", "mikeross", "davidkim"];
+  const [nameIndex, setNameIndex] = useState(0);
+
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      setNameIndex((prev) => (prev + 1) % DEMO_NAMES.length);
+    }, 2500);
+    return () => clearInterval(interval);
+  }, []);
 
   const forwardPayloadToStudio = (data: any) => {
     if (typeof window !== "undefined") {
@@ -127,10 +135,6 @@ export default function VerifiedCVLandingPage() {
     }
 
     router.push("/studio");
-  };
-
-  const handleLinkedInImport = () => {
-    setIsLinkedInModalOpen(true);
   };
 
   const verifiedFacts = [
@@ -237,20 +241,10 @@ export default function VerifiedCVLandingPage() {
                   type="button"
                   disabled={isProcessing}
                   onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#059669] text-xs font-bold transition-all cursor-pointer shadow-2xs disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold transition-all cursor-pointer shadow-2xs disabled:opacity-50"
                 >
-                  <UploadCloud className="w-3.5 h-3.5" />
+                  <UploadCloud className="w-4 h-4 text-emerald-400" />
                   <span>{isProcessing ? "Processing..." : "Upload Resume (PDF / Word)"}</span>
-                </button>
-
-                <button
-                  type="button"
-                  disabled={isProcessing}
-                  onClick={handleLinkedInImport}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-bold transition-all cursor-pointer shadow-2xs disabled:opacity-50"
-                >
-                  <LinkedInIcon className="w-3.5 h-3.5" />
-                  <span>Import Career Profile</span>
                 </button>
               </div>
 
@@ -284,17 +278,18 @@ export default function VerifiedCVLandingPage() {
               </form>
             </div>
 
-            {/* Strategic Placement Strip */}
-            <div className="flex flex-wrap items-center justify-center gap-5 mt-4 text-[11px] font-semibold text-slate-500">
-              <span className="flex items-center gap-1.5">
-                <Link2 className="w-3.5 h-3.5 text-[#059669]" /> Place on Top of Your 1-Page Resume
-              </span>
-              <span className="flex items-center gap-1.5">
-                <LinkedInIcon className="w-3.5 h-3.5 text-blue-600" /> Link from LinkedIn Featured
-              </span>
-              <span className="flex items-center gap-1.5">
-                <Briefcase className="w-3.5 h-3.5 text-[#059669]" /> Submit as Portfolio URL
-              </span>
+            {/* Value Prop & Rotating URL */}
+            <div className="mt-6 flex flex-col items-center justify-center gap-3 text-center">
+              <p className="text-xs font-bold text-slate-600 max-w-md leading-relaxed">
+                Creating your validated profile is as easy as uploading a resume and sending an email to your peers to corroborate.
+              </p>
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-[#E2E8F0] shadow-sm text-xs font-mono text-slate-500">
+                <Globe className="w-3.5 h-3.5 text-[#059669]" />
+                <span>Own your portfolio: </span>
+                <span className="font-bold text-[#0F172A] min-w-[140px] text-left">
+                  verifiedcv.app/<span className="text-[#059669] transition-all duration-300">{DEMO_NAMES[nameIndex]}</span>
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -601,58 +596,6 @@ export default function VerifiedCVLandingPage() {
           </div>
         </div>
       </section>
-
-      {/* LinkedIn PDF Import Modal */}
-      {isLinkedInModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-lg space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
-              <div className="flex items-center gap-2">
-                <LinkedInIcon className="w-5 h-5 text-[#0A66C2]" />
-                <h3 className="font-black text-sm text-[#0F172A]">Import LinkedIn Profile</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsLinkedInModalOpen(false)}
-                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
-              >
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-              </button>
-            </div>
-
-            <div className="space-y-4 text-xs">
-              <p className="text-slate-600 leading-relaxed">
-                LinkedIn restricts direct access to your work history. To import your profile, simply download it as a PDF and upload it here.
-              </p>
-
-              <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-4 space-y-3">
-                <h4 className="font-bold text-[#0F172A]">How to get your LinkedIn PDF:</h4>
-                <ol className="list-decimal list-inside text-slate-600 space-y-2 ml-1">
-                  <li>Go to your <a href="https://www.linkedin.com/in/me/" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-semibold">LinkedIn Profile</a></li>
-                  <li>Click the <strong>More</strong> button (next to Add profile section)</li>
-                  <li>Select <strong>Save to PDF</strong></li>
-                  <li>Upload the downloaded file below</li>
-                </ol>
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="button"
-                  disabled={isProcessing}
-                  onClick={() => {
-                    setIsLinkedInModalOpen(false);
-                    fileInputRef.current?.click();
-                  }}
-                  className="w-full py-3 rounded-xl bg-[#0A66C2] hover:bg-[#004182] text-white font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
-                >
-                  <UploadCloud className="w-4 h-4" />
-                  <span>Upload LinkedIn PDF</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Footer */}
       <footer className="border-t border-[#E2E8F0] bg-white py-8 text-xs text-slate-500">
