@@ -392,11 +392,6 @@ export default function CandidateDossierPage() {
                         <BadgeCheck className="w-3 h-3 text-blue-600" /> Document Verified
                       </span>
                     )}
-                    {level === 0 && (
-                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded">
-                        Self-Reported
-                      </span>
-                    )}
                   </div>
                 </div>
 

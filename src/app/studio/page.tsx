@@ -236,8 +236,8 @@ export default function StudioPage() {
     if (m.artifacts && m.artifacts.length > 0) {
       return { level: 1, label: "Document Verified", color: "text-blue-800 bg-blue-50 border-blue-200", icon: <FileCheck className="w-3 h-3 text-blue-600" /> };
     }
-    // Level 0: Self-Reported
-    return { level: 0, label: "Self-Reported", color: "text-slate-600 bg-slate-100 border-slate-200", icon: <AlertCircle className="w-3 h-3 text-slate-500" /> };
+    // Level 0: Unverified
+    return { level: 0, label: "Unverified", color: "text-slate-600 bg-slate-100 border-slate-200", icon: <AlertCircle className="w-3 h-3 text-slate-500" /> };
   };
 
   const actionPrompts = [
@@ -605,100 +605,138 @@ export default function StudioPage() {
     }
   };
 
-  const handleArtifactUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const updateVaultStore = async (updatedMilestones: Milestone[]) => {
+    if (!isVaultSaved || !handle) return;
+    const dossierPayload = {
+      handle: handle.toLowerCase().trim(),
+      email: contact.email,
+      fullName,
+      headline,
+      summaryStatement,
+      contact,
+      skills,
+      education,
+      milestones: updatedMilestones
+    };
+    try {
+      await fetch("/api/vault", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(dossierPayload)
+      });
+    } catch (err) {
+      console.warn("Failed to background sync vault:", err);
+    }
+  };
+
+  const handleArtifactUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0 || !targetMilestone) return;
     const file = e.target.files[0];
     
-    // Mock upload delay
     setIsProcessing(true);
-    setTimeout(() => {
-      setMilestones((prev) =>
-        prev.map((m) => {
-          if (m.id !== targetMilestone.id) return m;
-          const newArtifact = {
-            id: `art-${Date.now()}`,
-            name: file.name,
-            type: file.name.endsWith('.pdf') ? 'Document' : 'Work Product'
-          };
-          return {
-            ...m,
-            artifacts: [...(m.artifacts || []), newArtifact]
-          };
-        })
-      );
+    await new Promise(resolve => setTimeout(resolve, 1200));
+
+    const newArtifact = {
+      id: `art-${Date.now()}`,
+      name: file.name,
+      type: file.name.endsWith('.pdf') ? 'Document' : 'Work Product'
+    };
+
+    const updatedMilestones = milestones.map((m) => {
+      if (m.id !== targetMilestone.id) return m;
+      return {
+        ...m,
+        artifacts: [...(m.artifacts || []), newArtifact]
+      };
+    });
+
+    setMilestones(updatedMilestones);
+    await updateVaultStore(updatedMilestones);
       
-      setIsProcessing(false);
-      setIsArtifactModalOpen(false);
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          sender: "ally",
-          text: `Artifact "${file.name}" attached to ${targetMilestone.company}. AI scan confirms employer match. Milestone upgraded to Document Verified (Level 1).`
-        }
-      ]);
-    }, 1200);
+    setIsProcessing(false);
+    setIsArtifactModalOpen(false);
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        sender: "ally",
+        text: `Artifact "${file.name}" attached to ${targetMilestone.company}. AI scan confirms employer match. Milestone upgraded to Document Verified (Level 1).`
+      }
+    ]);
   };
 
-  const handleRegistryLink = (e: React.FormEvent) => {
+  const handleRegistryLink = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!registryUrl || !targetMilestone) return;
 
     setIsProcessing(true);
-    setTimeout(() => {
-      setMilestones((prev) =>
-        prev.map((m) => {
-          if (m.id !== targetMilestone.id) return m;
-          const newLink = {
-            id: `reg-${Date.now()}`,
-            type: registryType,
-            url: registryUrl,
-            label: registryType === "github" ? "GitHub Commits" : registryType === "credly" ? "Credly Badge" : "USPTO Patent"
-          };
-          return {
-            ...m,
-            registryLinks: [...(m.registryLinks || []), newLink]
-          };
-        })
-      );
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    const newLink = {
+      id: `reg-${Date.now()}`,
+      type: registryType as any,
+      url: registryUrl,
+      label: registryType === "github" ? "GitHub Commits" : registryType === "credly" ? "Credly Badge" : "USPTO Patent"
+    };
+
+    const updatedMilestones = milestones.map((m) => {
+      if (m.id !== targetMilestone.id) return m;
+      return {
+        ...m,
+        registryLinks: [...(m.registryLinks || []), newLink]
+      };
+    });
+
+    setMilestones(updatedMilestones);
+    await updateVaultStore(updatedMilestones);
       
-      setIsProcessing(false);
-      setIsRegistryModalOpen(false);
-      setRegistryUrl("");
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          sender: "ally",
-          text: `Registry link verified via ${registryType.toUpperCase()} API. Milestone upgraded to Cryptographically Anchored (Level 3).`
-        }
-      ]);
-    }, 1000);
+    setIsProcessing(false);
+    setIsRegistryModalOpen(false);
+    setRegistryUrl("");
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        sender: "ally",
+        text: `Registry link verified via ${registryType.toUpperCase()} API. Milestone upgraded to Cryptographically Anchored (Level 3).`
+      }
+    ]);
   };
 
-  const dispatchPeerInvite = (e: React.FormEvent) => {
+  const dispatchPeerInvite = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!colleagueEmail) return;
+    if (!colleagueEmail || !targetMilestone) return;
 
     setInviteSent(true);
-    setTimeout(() => {
-      if (targetMilestone) {
-        setMilestones((prev) =>
-          prev.map((m) =>
-            m.id === targetMilestone.id
-              ? { ...m, isCorroborated: true, corroboratedBy: `${colleagueRole} (${colleagueEmail})` }
-              : m
-          )
-        );
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    setIsInviteModalOpen(false);
+    setInviteSent(false);
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        sender: "ally",
+        text: `Corroboration invitation dispatched to ${colleagueEmail}. Awaiting peer response...`
       }
-      setIsInviteModalOpen(false);
-      setInviteSent(false);
+    ]);
+
+    // Simulate peer clicking link and approving (after 3 seconds)
+    setTimeout(async () => {
+      const updatedMilestones = milestones.map((m) =>
+        m.id === targetMilestone.id
+          ? { ...m, isCorroborated: true, corroboratedBy: `${colleagueRole} (${colleagueEmail})` }
+          : m
+      );
+      
+      setMilestones(updatedMilestones);
+      await updateVaultStore(updatedMilestones);
+
       setChatMessages((prev) => [
         ...prev,
         {
           sender: "ally",
-          text: `Corroboration invitation dispatched to ${colleagueEmail}. Marked milestone as peer-certified.`
+          text: `✅ Peer Corroboration Received! ${colleagueEmail} has attested to your claims at ${targetMilestone.company}. Milestone upgraded to Level 2.`
         }
       ]);
-    }, 600);
+    }, 3000);
   };
 
   const addEmptyMilestone = () => {
@@ -1191,9 +1229,11 @@ export default function StudioPage() {
                       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3.5 border-b border-[#E2E8F0]/70">
                         <div className="flex-1 space-y-1">
                           <div className="flex items-center gap-2 mb-1.5">
-                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded flex items-center gap-1 border ${trustStatus.color}`}>
-                              {trustStatus.icon} {trustStatus.label}
-                            </span>
+                            {trustStatus.level > 0 && (
+                              <span className={`text-[9px] font-bold px-2 py-0.5 rounded flex items-center gap-1 border ${trustStatus.color}`}>
+                                {trustStatus.icon} {trustStatus.label}
+                              </span>
+                            )}
                           </div>
                           <input
                             type="text"
