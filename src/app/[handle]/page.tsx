@@ -267,11 +267,11 @@ export default function CandidateDossierPage() {
                 <span className="text-[10px] text-blue-400 font-medium">Verified</span>
               </div>
             </div>
-            <div className="p-3 rounded-xl bg-emerald-50/50 border border-emerald-100 flex flex-col gap-1">
+                <div className="p-3 rounded-xl bg-emerald-50/50 border border-emerald-100 flex flex-col gap-1">
               <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Level 2: Peer</span>
               <div className="flex items-end justify-between">
                 <span className="text-xl font-black text-emerald-700">{level2Count}</span>
-                <span className="text-[10px] text-emerald-400 font-medium">Corroborated</span>
+                <span className="text-[10px] text-emerald-400 font-medium">Verified</span>
               </div>
             </div>
             <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex flex-col gap-1">
@@ -356,7 +356,7 @@ export default function CandidateDossierPage() {
               Audited Career Milestones ({dossier.milestones.length})
             </h2>
             <span className="text-[11px] font-semibold text-slate-400">
-              Corroborated peer claims & deliverables
+              Verified peer claims & deliverables
             </span>
           </div>
 
@@ -384,7 +384,7 @@ export default function CandidateDossierPage() {
                     )}
                     {level === 2 && (
                       <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3 text-[#059669]" /> Corroborated
+                        <CheckCircle2 className="w-3 h-3 text-[#059669]" /> Peer Verified
                       </span>
                     )}
                     {level === 1 && (
@@ -422,7 +422,7 @@ export default function CandidateDossierPage() {
                 {m.corroboratedBy && (
                   <div className="pt-2 border-t border-slate-100 text-[10px] text-emerald-800 font-semibold flex items-center gap-1.5">
                     <CheckCircle2 className="w-3 h-3 text-[#059669]" />
-                    <span>Attested by {m.corroboratedBy}</span>
+                    <span>Verified by {m.corroboratedBy}</span>
                   </div>
                 )}
               </div>

@@ -230,7 +230,7 @@ export default function StudioPage() {
     }
     // Level 2: Peer Corroborated
     if (m.isCorroborated) {
-      return { level: 2, label: "Peer Corroborated", color: "text-indigo-800 bg-indigo-50 border-indigo-200", icon: <Users className="w-3 h-3 text-indigo-600" /> };
+      return { level: 2, label: "Peer Verified", color: "text-indigo-800 bg-indigo-50 border-indigo-200", icon: <Users className="w-3 h-3 text-indigo-600" /> };
     }
     // Level 1: Document Verified
     if (m.artifacts && m.artifacts.length > 0) {
@@ -710,11 +710,20 @@ export default function StudioPage() {
 
     setIsInviteModalOpen(false);
     setInviteSent(false);
+    
+    // Generate a mock token link for testing
+    const mockToken = `mock-token-${Date.now()}`;
+    const mockUrl = `${window.location.origin}/attest/${mockToken}`;
+
     setChatMessages((prev) => [
       ...prev,
       {
         sender: "ally",
         text: `Corroboration invitation dispatched to ${colleagueEmail}. Awaiting peer response...`
+      },
+      {
+        sender: "ally",
+        text: `(Dev Mode) To see the corroborator's experience, open this link in a new tab: ${mockUrl}`
       }
     ]);
 
@@ -736,7 +745,7 @@ export default function StudioPage() {
           text: `✅ Peer Corroboration Received! ${colleagueEmail} has attested to your claims at ${targetMilestone.company}. Milestone upgraded to Level 2.`
         }
       ]);
-    }, 3000);
+    }, 15000); // Give the user 15 seconds to click the link before auto-approving
   };
 
   const addEmptyMilestone = () => {
@@ -983,7 +992,7 @@ export default function StudioPage() {
                   <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Level 2: Peer</span>
                   <div className="flex items-end justify-between">
                     <span className="text-xl font-black text-emerald-700">{level2Count}</span>
-                    <span className="text-[10px] text-emerald-400 font-medium">Corroborated</span>
+                    <span className="text-[10px] text-emerald-400 font-medium">Verified</span>
                   </div>
                 </div>
                 <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex flex-col gap-1">
@@ -1282,7 +1291,7 @@ export default function StudioPage() {
 
                           {milestone.isCorroborated ? (
                             <span className="text-[10px] font-bold text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded flex items-center gap-1">
-                              <Check className="w-3 h-3 text-indigo-600" /> Corroborated
+                              <Check className="w-3 h-3 text-indigo-600" /> Peer Verified
                             </span>
                           ) : (
                             <button
@@ -1297,10 +1306,10 @@ export default function StudioPage() {
                                   ? "text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 cursor-pointer"
                                   : "text-slate-400 bg-slate-50 border border-slate-200 cursor-not-allowed"
                               }`}
-                              title={!isVaultSaved ? "Save your Vault to request corroboration" : "Request Peer Corroboration"}
+                              title={!isVaultSaved ? "Save your Vault to request verification" : "Request Peer Verification"}
                             >
                               <Users className="w-3 h-3" />
-                              <span>Corroborate</span>
+                              <span>Verify</span>
                             </button>
                           )}
 
