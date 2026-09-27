@@ -73,7 +73,7 @@ export default function AllyDrawer({
             <Sparkles className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-slate-900">Pith Ally</h3>
+            <h3 className="text-sm font-bold text-slate-900">VerifiedCV Ally</h3>
             <p className="text-[11px] text-slate-500">Dossier Strategist & Outbox</p>
           </div>
         </div>
