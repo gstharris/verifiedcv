@@ -29,7 +29,8 @@ export interface ParsedDossierPayload {
   milestones: ExtractedMilestone[];
 }
 
-function cleanSentence(text: string): string {
+// Clean bullet glyphs and invisible characters from body text only
+function cleanBodySentence(text: string): string {
   return text
     .replace(/[\u200B-\u200D\uFEFF]/g, "")
     .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ")
@@ -39,16 +40,25 @@ function cleanSentence(text: string): string {
     .trim();
 }
 
+// Clean entity names without stripping slashes or hyphens
+function cleanEntityHeader(text: string): string {
+  return text
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ")
+    .replace(/^[●•\-\*–—◦‣⁃·\s]+/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function isValidAchievement(text: string): boolean {
   const lettersOnly = text.replace(/[^a-zA-Z]/g, "");
   return lettersOnly.length >= 12;
 }
 
-// Robust tenure normalizer that preserves starting month/year and handles Present
+// Normalizes tenure dates while preserving start months, years, and Present continuity
 export function normalizeTenurePeriod(raw: string): string {
   const cleaned = raw.replace(/[|()]/g, " ").replace(/\s{2,}/g, " ").trim();
 
-  // Matches: [Month] YYYY to [Month] YYYY or Present
   const rangePattern = /(?:(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s*)?(\b(?:19|20)\d{2}\b)\s*(?:—|-|–|to|\/)\s*(?:(?:(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s*)?(\b(?:19|20)\d{2}\b)|(Present|Current|Now))/i;
 
   const match = cleaned.match(rangePattern);
@@ -69,7 +79,6 @@ export function normalizeTenurePeriod(raw: string): string {
     return `${startPart} — ${endPart}`;
   }
 
-  // Fallback for single date + present
   const presentOnlyPattern = /(?:(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s*)?(\b(?:19|20)\d{2}\b)\s*(?:to|-|—|–)?\s*(Present|Current)/i;
   const pMatch = cleaned.match(presentOnlyPattern);
   if (pMatch) {
@@ -95,7 +104,7 @@ function extractAtomicAchievements(rawLines: string[]): string[] {
   for (let i = 0; i < contentLines.length; i++) {
     const raw = contentLines[i];
     const startsWithBullet = /^[●•\-\*–—◦‣⁃·]/.test(raw);
-    const cleanText = cleanSentence(raw);
+    const cleanText = cleanBodySentence(raw);
 
     if (!cleanText || cleanText.replace(/[^a-zA-Z]/g, "").length < 3) continue;
 
@@ -180,21 +189,21 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
     sectionLines[currentSection].push(line);
   }
 
-  // 1. Summary
+  // 1. Process Summary
   if (sectionLines.SUMMARY.length > 0) {
     summaryStatement = sectionLines.SUMMARY
-      .map(cleanSentence)
+      .map(cleanBodySentence)
       .filter((l) => l.replace(/[^a-zA-Z]/g, "").length >= 10)
       .join(" ")
       .replace(/\s{2,}/g, " ");
   }
 
-  // 2. Skills
+  // 2. Process Skills
   if (sectionLines.SKILLS.length > 0) {
     const rawSkillsText = sectionLines.SKILLS.join(" ");
     const skillTokens = rawSkillsText
       .split(/[,|•●;•\/\n]/)
-      .map(cleanSentence)
+      .map(cleanEntityHeader)
       .filter((s) => s.length > 1 && s.length < 50 && !/^(Languages|Frameworks|Tools|Methodologies):?$/i.test(s));
 
     skillTokens.forEach((s) => {
@@ -210,13 +219,13 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
     });
   }
 
-  // 3. Education
+  // 3. Process Education
   if (sectionLines.EDUCATION.length > 0) {
     for (let i = 0; i < sectionLines.EDUCATION.length; i++) {
       const line = sectionLines.EDUCATION[i];
       if (/^[●•\-\*–—◦‣⁃·\s]+$/.test(line)) continue;
 
-      const cleanedLine = cleanSentence(line);
+      const cleanedLine = cleanEntityHeader(line);
       if (!isEducationItem(cleanedLine) && cleanedLine.length < 45 && !cleanedLine.includes("|")) {
         if (!skills.some((s) => s.toLowerCase() === cleanedLine.toLowerCase()) && cleanedLine.length > 2) {
           skills.push(cleanedLine);
@@ -225,7 +234,7 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
       }
 
       if (line.includes("|")) {
-        const parts = line.split("|").map((p) => cleanSentence(p));
+        const parts = line.split("|").map((p) => cleanEntityHeader(p));
         education.push({
           id: `edu-${Date.now()}-${education.length}`,
           institution: parts[0] || "University",
@@ -236,14 +245,14 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
         education.push({
           id: `edu-${Date.now()}-${education.length}`,
           institution: cleanedLine,
-          degree: sectionLines.EDUCATION[i + 1] ? cleanSentence(sectionLines.EDUCATION[i + 1]) : "Degree Program"
+          degree: sectionLines.EDUCATION[i + 1] ? cleanEntityHeader(sectionLines.EDUCATION[i + 1]) : "Degree Program"
         });
         i++;
       }
     }
   }
 
-  // 4. Experience Milestones (Preserving Full Company/Title strings)
+  // 4. Process Work Experience Milestones losslessly
   const yearPattern = /\b(?:19\d{2}|20\d{2})\b/i;
   interface RoleBlock {
     company: string;
@@ -266,14 +275,10 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
         roleBlocks.push(currentBlock);
       }
 
-      // Do NOT split company name if it contains slashes or spaces
-      const firstPipe = line.indexOf("|");
-      const secondPipe = line.indexOf("|", firstPipe + 1);
-      const thirdPipe = line.indexOf("|", secondPipe + 1);
-
-      const company = (firstPipe !== -1 ? line.slice(0, firstPipe) : line).trim();
-      const role = (firstPipe !== -1 && secondPipe !== -1 ? line.slice(firstPipe + 1, secondPipe) : "Leadership Role").trim();
-      const rawPeriod = (secondPipe !== -1 ? line.slice(secondPipe + 1, thirdPipe !== -1 ? thirdPipe : undefined) : "Confirmed Tenure").trim();
+      const pipeParts = line.split("|").map((p) => p.trim());
+      const company = pipeParts[0] || "Career Chapter";
+      const role = pipeParts[1] || "Leadership Role";
+      const rawPeriod = pipeParts[2] || "Confirmed Tenure";
       const period = normalizeTenurePeriod(rawPeriod);
 
       if (roleBlocks.length === 0) {
@@ -281,8 +286,8 @@ function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
       }
 
       currentBlock = {
-        company: cleanSentence(company),
-        role: cleanSentence(role),
+        company: cleanEntityHeader(company),
+        role: cleanEntityHeader(role),
         period,
         lines: []
       };

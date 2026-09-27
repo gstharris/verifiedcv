@@ -1,273 +1,346 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   ShieldCheck,
   CheckCircle2,
-  FileText,
+  BadgeCheck,
+  ExternalLink,
+  Building2,
+  Calendar,
   Lock,
   ArrowRight,
-  UploadCloud,
-  Check,
-  Globe,
-  Briefcase,
-  Layers,
+  GraduationCap,
   Sparkles,
-  Users,
-  Award,
-  Clock,
-  Link2,
+  UserCheck,
   Share2
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
-import { createClient } from "@supabase/supabase-js";
+
+interface Milestone {
+  id: string;
+  company: string;
+  role: string;
+  period: string;
+  claims: string[];
+  calibratedClaim?: string;
+  isCorroborated: boolean;
+}
+
+interface EducationRecord {
+  id: string;
+  institution: string;
+  degree: string;
+  year?: string;
+}
+
+interface DossierData {
+  handle: string;
+  fullName: string;
+  headline: string;
+  summaryStatement: string;
+  skills: string[];
+  education: EducationRecord[];
+  milestones: Milestone[];
+}
 
 export default function CandidateDossierPage() {
   const params = useParams();
-  const routeHandle = (params?.handle as string)?.toLowerCase().trim() || "";
+  const requestedHandle = (params?.handle as string || "").toLowerCase().trim();
 
-  const [candidate, setCandidate] = useState<any | null>(null);
-  const [milestones, setMilestones] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isNotFound, setIsNotFound] = useState(false);
+  const [dossier, setDossier] = useState<DossierData | null>(null);
+  const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
+    if (!requestedHandle) return;
+
     async function loadDossier() {
-      setIsLoading(true);
-
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-      if (!supabaseUrl || !supabaseKey) {
-        setIsNotFound(true);
-        setIsLoading(false);
-        return;
-      }
-
+      setLoading(true);
       try {
-        const supabase = createClient(supabaseUrl, supabaseKey);
-
-        const { data: candData, error: candError } = await supabase
-          .from("candidates")
-          .select("*")
-          .eq("handle", routeHandle)
-          .single();
-
-        if (candError || !candData) {
-          setIsNotFound(true);
-          setIsLoading(false);
-          return;
+        const res = await fetch(`/api/vault?handle=${encodeURIComponent(requestedHandle)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.handle) {
+            setDossier(data);
+            setLoading(false);
+            return;
+          }
         }
-
-        const { data: msData } = await supabase
-          .from("milestones")
-          .select("*")
-          .eq("candidate_id", candData.id);
-
-        setCandidate(candData);
-        setMilestones(msData || []);
-      } catch {
-        setIsNotFound(true);
-      } finally {
-        setIsLoading(false);
+      } catch (err) {
+        console.warn("Vault API fetch failed, checking local session fallback:", err);
       }
+
+      // Session fallback for immediate client preview after committing
+      if (typeof window !== "undefined") {
+        const savedVault = sessionStorage.getItem("vcv_saved_vault");
+        if (savedVault) {
+          try {
+            const parsed = JSON.parse(savedVault);
+            if (parsed.handle && parsed.handle.toLowerCase().trim() === requestedHandle) {
+              setDossier(parsed);
+              setLoading(false);
+              return;
+            }
+          } catch {
+            // ignore parse error
+          }
+        }
+      }
+
+      setDossier(null);
+      setLoading(false);
     }
 
-    if (routeHandle) {
-      loadDossier();
-    }
-  }, [routeHandle]);
+    loadDossier();
+  }, [requestedHandle]);
 
-  const handleShare = () => {
-    if (typeof window !== "undefined" && navigator.clipboard) {
+  const copyDossierLink = () => {
+    if (typeof window !== "undefined") {
       navigator.clipboard.writeText(window.location.href);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
   };
 
-  if (isLoading) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center text-slate-500 font-sans text-xs">
-        <Clock className="w-4 h-4 animate-spin text-[#059669] mr-2" />
-        Resolving Cryptographic Vault Ground Truth...
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center space-y-3 font-sans text-[#0F172A]">
+        <div className="w-8 h-8 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+        <span className="text-xs font-bold text-slate-500">Retrieving Vault Ground Truth...</span>
       </div>
     );
   }
 
-  // PLG LOOP: High-converting Unclaimed Handle Screen
-  if (isNotFound || !candidate) {
+  if (!dossier) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col justify-between antialiased">
-        <header className="bg-white border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col justify-between font-sans text-[#0F172A]">
+        <header className="h-14 border-b border-[#E2E8F0] bg-white px-6 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
             <VerifiedCVLogo className="w-6 h-6" />
-            <span className="font-black text-base text-[#0F172A]">VerifiedCV</span>
+            <span className="font-black text-base tracking-tight">VerifiedCV</span>
           </Link>
           <Link
             href="/studio"
-            className="text-xs font-bold text-slate-700 hover:text-slate-950 px-3 py-1.5"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#059669] hover:bg-emerald-600 text-white text-xs font-bold transition-all shadow-xs"
           >
-            Open Studio
+            <span>Open Studio</span>
+            <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </header>
 
-        <main className="max-w-md mx-auto px-6 py-20 text-center space-y-6">
+        <main className="max-w-md mx-auto text-center p-8 bg-white border border-[#E2E8F0] rounded-3xl shadow-xs space-y-4 my-auto">
           <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#059669] mx-auto">
             <ShieldCheck className="w-6 h-6" />
           </div>
-
-          <div className="space-y-2">
-            <span className="text-[11px] font-mono font-bold text-[#059669] bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-              verifiedcv.app/{routeHandle}
-            </span>
-            <h1 className="text-2xl font-black text-[#0F172A]">This handle is currently available.</h1>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              VerifiedCV dossiers provide forensic proof behind resumes and LinkedIn profiles. Claim this handle before someone else does.
-            </p>
-          </div>
-
+          <h2 className="text-lg font-black text-[#0F172A]">Handle Available</h2>
+          <p className="text-xs text-slate-500 leading-relaxed">
+            The handle <code className="font-mono font-bold text-[#0F172A]">verifiedcv.app/{requestedHandle}</code> has not been committed yet.
+          </p>
           <div className="pt-2">
             <Link
               href="/studio"
-              className="inline-flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white font-bold text-xs transition-all shadow-xs"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs"
             >
-              <span>Claim verifiedcv.app/{routeHandle}</span>
+              <span>Claim this Handle in Studio</span>
               <ArrowRight className="w-3.5 h-3.5 text-emerald-400" />
             </Link>
           </div>
         </main>
 
-        <footer className="border-t border-[#E2E8F0] bg-white py-6 text-center text-xs text-slate-400">
-          © {new Date().getFullYear()} VerifiedCV • The Permanent Career Proof Layer
+        <footer className="h-14 border-t border-[#E2E8F0] bg-white px-6 flex items-center justify-center text-xs text-slate-400">
+          <span>VerifiedCV • Candidate-Enablement Trust Platform</span>
         </footer>
       </div>
     );
   }
 
-  // AUTHENTIC DOSSIER VIEW
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans antialiased selection:bg-emerald-100 flex flex-col justify-between">
-      
-      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-[#E2E8F0]">
-        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 group">
-            <VerifiedCVLogo className="w-7 h-7 group-hover:scale-105 transition-transform" />
-            <div className="flex flex-col">
-              <span className="font-black text-lg tracking-tight text-[#0F172A] leading-none">
-                VerifiedCV
-              </span>
-              <span className="text-[9px] font-bold text-[#059669] uppercase tracking-widest mt-0.5">
-                Public Dossier
-              </span>
-            </div>
+      {/* Dossier Header */}
+      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
+        <Link href="/" className="flex items-center gap-2 group">
+          <VerifiedCVLogo className="w-6 h-6 group-hover:scale-105 transition-transform" />
+          <span className="font-black text-base text-[#0F172A] tracking-tight">VerifiedCV</span>
+        </Link>
+
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={copyDossierLink}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+          >
+            <Share2 className="w-3.5 h-3.5" />
+            <span>{copied ? "Link Copied!" : "Share Dossier"}</span>
+          </button>
+
+          <Link
+            href="/studio"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs"
+          >
+            <Lock className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Edit in Studio</span>
           </Link>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handleShare}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
-            >
-              <Share2 className="w-3.5 h-3.5" />
-              <span>{copied ? "Link Copied" : "Share Dossier"}</span>
-            </button>
-
-            <Link
-              href="/studio"
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
-            >
-              <span>Open Studio</span>
-              <ArrowRight className="w-3 h-3 text-emerald-400" />
-            </Link>
-          </div>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-6 py-10 space-y-8 flex-1 w-full">
-        {/* Profile Card */}
-        <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 shadow-xs space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[#E2E8F0]">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] flex items-center justify-center font-black text-xl text-[#0F172A] shadow-2xs">
-                {candidate.full_name
-                  .split(" ")
-                  .map((n: string) => n[0])
-                  .join("")}
+      {/* Main Dossier Content */}
+      <main className="max-w-4xl mx-auto w-full px-6 py-10 space-y-8 flex-1">
+        {/* Candidate Identity Card */}
+        <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-2xl sm:text-3xl font-black text-[#0F172A] tracking-tight">
+                  {dossier.fullName}
+                </h1>
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[#059669] text-[10px] font-bold">
+                  <BadgeCheck className="w-3.5 h-3.5" />
+                  <span>Vault Anchored</span>
+                </span>
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-2xl font-black text-[#0F172A]">{candidate.full_name}</h1>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-[#059669]" /> Verified Identity
-                  </span>
-                </div>
-                <p className="text-xs sm:text-sm font-semibold text-slate-600 mt-0.5">
-                  {candidate.headline}
-                </p>
-                <div className="flex items-center gap-3 text-[11px] font-mono text-slate-400 mt-1">
-                  <span>verifiedcv.app/{candidate.handle}</span>
-                </div>
+              <p className="text-sm font-semibold text-slate-600">{dossier.headline}</p>
+              <div className="text-xs font-mono text-slate-400 pt-0.5">
+                verifiedcv.app/{dossier.handle}
               </div>
             </div>
 
-            <div className="px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-left sm:text-right self-start sm:self-auto">
-              <span className="text-[10px] text-emerald-800 font-bold uppercase tracking-wider block">
-                Vault Status
-              </span>
-              <span className="text-xs font-bold text-[#059669] flex items-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5" /> Cryptographically Anchored
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold text-slate-500 bg-slate-50 border border-[#E2E8F0] px-3 py-1.5 rounded-xl flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#059669]" />
+                <span>Forensic Proof Signal</span>
               </span>
             </div>
           </div>
 
-          {/* Milestones Stream */}
-          <div className="space-y-4">
-            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 block">
-              Audited Career Milestones ({milestones.length})
-            </span>
+          {dossier.summaryStatement && (
+            <div className="pt-3 border-t border-slate-100">
+              <p className="text-xs sm:text-sm text-slate-700 leading-relaxed">
+                {dossier.summaryStatement}
+              </p>
+            </div>
+          )}
+        </div>
 
-            {milestones.length === 0 ? (
-              <p className="text-xs text-slate-400 italic">No milestones published to this dossier yet.</p>
-            ) : (
-              milestones.map((m) => (
-                <div
-                  key={m.id}
-                  className="p-5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2 text-left"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        {m.company} • {m.role}
-                      </span>
-                      <h3 className="text-xs sm:text-sm font-bold text-[#0F172A] mt-0.5">
-                        {m.calibrated_claim}
-                      </h3>
-                    </div>
-                    <span
-                      className={`inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded shrink-0 ${
-                        m.is_corroborated
-                          ? "text-emerald-800 bg-emerald-50 border border-emerald-200"
-                          : "text-slate-500 bg-slate-100 border border-slate-200"
-                      }`}
-                    >
-                      {m.is_corroborated ? "Corroborated" : "Self-Reported"}
+        {/* Milestones Card Stream */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
+            <h2 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">
+              Audited Career Milestones ({dossier.milestones.length})
+            </h2>
+            <span className="text-[11px] font-semibold text-slate-400">
+              Corroborated peer claims & deliverables
+            </span>
+          </div>
+
+          <div className="space-y-5">
+            {dossier.milestones.map((m) => (
+              <div
+                key={m.id}
+                className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-4 hover:border-slate-300 transition-all"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="font-extrabold text-base text-[#0F172A]">{m.company}</span>
+                    <span className="text-slate-300">•</span>
+                    <span className="text-xs font-semibold text-slate-600">{m.role}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono font-medium text-slate-500 bg-slate-50 border border-[#E2E8F0] px-2.5 py-1 rounded-lg">
+                      {m.period}
                     </span>
+                    {m.isCorroborated ? (
+                      <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-[#059669]" /> Corroborated
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded">
+                        Audited Claim
+                      </span>
+                    )}
                   </div>
                 </div>
-              ))
-            )}
+
+                <div className="space-y-2">
+                  {m.claims && m.claims.length > 0 ? (
+                    m.claims.map((claim, idx) => (
+                      <div key={idx} className="flex items-start gap-2.5 text-xs text-slate-700 leading-relaxed">
+                        <div className="w-1.5 h-1.5 rounded-full bg-[#059669] shrink-0 mt-1.5" />
+                        <span>{claim}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-slate-700 leading-relaxed">{m.calibratedClaim}</p>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
+
+        {/* Skills & Proficiencies */}
+        {dossier.skills && dossier.skills.length > 0 && (
+          <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
+            <h3 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">
+              Core Proficiencies & Technologies ({dossier.skills.length})
+            </h3>
+            <div className="flex flex-wrap gap-2 pt-1">
+              {dossier.skills.map((skill, idx) => (
+                <span
+                  key={idx}
+                  className="px-3 py-1.5 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-semibold text-slate-700"
+                >
+                  {skill}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Academic Credentials */}
+        {dossier.education && dossier.education.length > 0 && (
+          <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
+            <div className="flex items-center gap-2 pb-1">
+              <GraduationCap className="w-4 h-4 text-[#059669]" />
+              <h3 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">
+                Education & Credentials
+              </h3>
+            </div>
+            <div className="space-y-2.5">
+              {dossier.education.map((edu) => (
+                <div
+                  key={edu.id}
+                  className="flex items-center justify-between p-3.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC]"
+                >
+                  <div>
+                    <div className="font-bold text-xs text-[#0F172A]">{edu.institution}</div>
+                    <div className="text-[11px] text-slate-500">{edu.degree}</div>
+                  </div>
+                  {edu.year && (
+                    <span className="text-xs font-mono font-medium text-slate-500 bg-white px-2 py-0.5 rounded border border-[#E2E8F0]">
+                      {edu.year}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </main>
 
-      <footer className="border-t border-[#E2E8F0] bg-white py-6 text-center text-xs text-slate-400">
-        © {new Date().getFullYear()} VerifiedCV • The Permanent Career Proof Layer
+      {/* Footer */}
+      <footer className="border-t border-[#E2E8F0] bg-white py-6 text-xs text-slate-400">
+        <div className="max-w-4xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <VerifiedCVLogo className="w-4 h-4" />
+            <span className="font-bold text-[#0F172A]">VerifiedCV</span>
+            <span>• Cryptographic proof layer for careers</span>
+          </div>
+          <span className="text-[11px]">Dossier timestamped via Vault ground truth</span>
+        </div>
       </footer>
-
     </div>
   );
 }
