@@ -10,9 +10,9 @@ describe("beta access", () => {
     process.env.VERCEL_ENV = originalVercel;
   });
 
-  it("is open when no code is set and not on Vercel production", () => {
+  it("is open unless an access code is configured", () => {
     delete process.env.BETA_ACCESS_CODE;
-    delete process.env.VERCEL_ENV;
+    process.env.VERCEL_ENV = "production";
     expect(isBetaEnforced()).toBe(false);
     expect(betaAcceptsCode()).toBe(false);
     expect(isValidBetaCode("anything")).toBe(false);

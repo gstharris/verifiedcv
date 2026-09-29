@@ -140,33 +140,28 @@ export default function VerifiedCVLandingPage() {
   const verifiedFacts = [
     {
       id: 0,
-      title: "Scaled Ad Personalization Engine from $0 to $400M",
+      title: "Led personalization products used at large scale",
       company: "Yahoo",
       role: "Head of Product Management",
-      badgeText: "Peer Corroborated",
+      badgeText: "Colleague confirmed",
       proofDetail:
-        "Corroborated by Senior Director of Core Engineering. Overlapping tenure certified via domain OAuth with sub-50ms latency SLAs.",
-      hash: "0x8f2d...3a91"
+        "A former engineering director signed in with LinkedIn and confirmed they worked together on this chapter."
     },
     {
       id: 1,
-      title: "Restructured SaaS Portfolio Into Modular Tiers",
+      title: "Simplified a multi-product SaaS lineup",
       company: "Bazaarvoice",
       role: "Group Product Manager",
-      badgeText: "Document Verified",
-      proofDetail:
-        "Offer letter and tenure dates scanned for employer match. Combined with one peer, this chapter reaches Company Verified.",
-      hash: "0x3c7e...b412"
+      badgeText: "Document attached",
+      proofDetail: "Offer letter checked for employer name and dates. One colleague confirmation makes this Company Verified."
     },
     {
       id: 2,
-      title: "Deployed Context-Grounded RAG Platform Across Operators",
+      title: "Founded a recommendation platform for operators",
       company: "PairedRight",
       role: "Founder & Head of Product",
-      badgeText: "Golden Dataset Verified",
-      proofDetail:
-        "Calibrated against merchant benchmark parameters to drive $1M+ incremental client revenue with operational regression gates.",
-      hash: "0xd911...fe04"
+      badgeText: "Colleague confirmed",
+      proofDetail: "A teammate confirmed the role and dates. No internal customer metrics are shown."
     }
   ];
 
@@ -220,15 +215,17 @@ export default function VerifiedCVLandingPage() {
       {/* Hero Section */}
       <section className="relative pt-12 pb-14 md:pt-16 md:pb-16 overflow-hidden">
         <div className="max-w-4xl mx-auto px-6 text-center space-y-5">
-          <div className="inline-flex items-center rounded-full border border-[#E2E8F0] bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-            Beta
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#E2E8F0] bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+            <span>Beta</span>
+            <span className="text-slate-300">•</span>
+            <span className="normal-case tracking-normal font-semibold text-slate-400">Free to start</span>
           </div>
           <h1 className="text-3xl sm:text-5xl font-black text-[#0F172A] tracking-tight leading-[1.12] max-w-3xl mx-auto">
-            Your Living & Verified Portfolio.
+            A portfolio people can confirm.
           </h1>
           <p className="text-base sm:text-xl font-semibold text-slate-600 max-w-2xl mx-auto leading-snug">
-            70% of workers have lied on a resume.{" "}
-            <span className="text-[#059669]">Show you are the other 30%.</span>
+            Most resumes are just claims.{" "}
+            <span className="text-[#059669]">Add the colleagues who can back yours up.</span>
           </p>
 
           <div className="max-w-xl mx-auto pt-2 space-y-4">
@@ -250,7 +247,7 @@ export default function VerifiedCVLandingPage() {
                 <span>{isProcessing ? "Processing..." : "Upload Resume (PDF / Word)"}</span>
               </button>
 
-              <p className="text-[11px] font-medium text-slate-400">or paste your career history</p>
+              <p className="text-[11px] font-medium text-slate-400">or paste your resume</p>
 
               <form onSubmit={handleSendMessage} className="relative text-left">
                 <textarea
@@ -263,7 +260,7 @@ export default function VerifiedCVLandingPage() {
                       handleSendMessage();
                     }
                   }}
-                  placeholder="Paste complete career text or describe recent achievements..."
+                  placeholder="Paste your resume text..."
                   className="w-full text-xs pl-3.5 pr-12 py-3 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] focus:ring-1 focus:ring-[#059669] font-sans bg-slate-50/50 resize-y"
                 />
                 <button
@@ -297,13 +294,13 @@ export default function VerifiedCVLandingPage() {
         <div className="max-w-5xl mx-auto px-6 space-y-10">
           <div className="text-center space-y-2 max-w-2xl mx-auto">
             <h2 className="text-xs font-black uppercase tracking-widest text-[#059669]">
-              How VerifiedCV Fits Your Career
+              Why VerifiedCV
             </h2>
             <p className="text-2xl sm:text-3xl font-black text-[#0F172A]">
-              Complement your LinkedIn profile with verified achievements.
+              LinkedIn shows who you know. This shows what you built.
             </p>
             <p className="text-xs sm:text-sm text-slate-500">
-              LinkedIn is for networking and connections. VerifiedCV is the permanent, corroborated proof behind what you built.
+              Built first for product, operations, and technical leaders who need more than a one-page resume.
             </p>
           </div>
 
@@ -312,9 +309,9 @@ export default function VerifiedCVLandingPage() {
               <div className="w-9 h-9 rounded-xl bg-white border border-[#E2E8F0] flex items-center justify-center text-slate-800 shadow-2xs">
                 <FileText className="w-4 h-4 text-slate-700" />
               </div>
-              <h3 className="font-extrabold text-sm text-[#0F172A]">At the Top of Your Resume</h3>
+              <h3 className="font-extrabold text-sm text-[#0F172A]">Put a link on your resume</h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Add <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-800 font-mono">verifiedcv.app/yourname</code> right under your contact info. Recruiters reading your 1-page PDF get an instant link to inspect your full forensic depth.
+                Add <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-800 font-mono">verifiedcv.app/yourname</code> under your name. Anyone reading the PDF can open the full story.
               </p>
             </div>
 
@@ -322,9 +319,9 @@ export default function VerifiedCVLandingPage() {
               <div className="w-9 h-9 rounded-xl bg-white border border-[#E2E8F0] flex items-center justify-center text-slate-800 shadow-2xs">
                 <Globe className="w-4 h-4 text-blue-600" />
               </div>
-              <h3 className="font-extrabold text-sm text-[#0F172A]">The Portfolio for Every Professional</h3>
+              <h3 className="font-extrabold text-sm text-[#0F172A]">A portfolio when they ask for one</h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                When applications request a &quot;Portfolio or Website&quot;, product leaders, operators, and technical executives finally have an answer. A living, interactive showcase of what you built.
+                Applications that ask for a website finally have a good answer for operators and product leaders — not just designers.
               </p>
             </div>
 
@@ -332,9 +329,9 @@ export default function VerifiedCVLandingPage() {
               <div className="w-9 h-9 rounded-xl bg-white border border-[#E2E8F0] flex items-center justify-center text-slate-800 shadow-2xs">
                 <CheckCircle2 className="w-4 h-4 text-[#059669]" />
               </div>
-              <h3 className="font-extrabold text-sm text-[#0F172A]">Validate Once, Keep Permanently</h3>
+              <h3 className="font-extrabold text-sm text-[#0F172A]">Confirm a chapter once</h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Stop bothering past managers for backchannel reference checks on every single interview process. Colleague attestations remain locked in your dossier forever.
+                Ask a colleague to confirm a role. That confirmation stays on your page, so you are not starting from zero in every process.
               </p>
             </div>
           </div>
@@ -346,10 +343,10 @@ export default function VerifiedCVLandingPage() {
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
           <div>
             <h2 className="text-xs font-black uppercase tracking-widest text-[#059669]">
-              Two Perspectives, One Truth
+              What it looks like
             </h2>
             <p className="text-2xl sm:text-3xl font-black text-[#0F172A] mt-1">
-              Engineered for candidates. Trusted by hiring teams.
+              You write it. A colleague confirms it.
             </p>
           </div>
 
@@ -385,12 +382,12 @@ export default function VerifiedCVLandingPage() {
           <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 sm:p-8 shadow-xs space-y-6">
             <div className="flex items-center justify-between pb-3.5 border-b border-slate-100 text-xs">
               <div className="flex items-center gap-2">
-                <span className="font-mono text-slate-400">Candidate Studio /</span>
-                <span className="font-bold text-[#0F172A]">Career Vault</span>
+                <span className="font-mono text-slate-400">Studio /</span>
+                <span className="font-bold text-[#0F172A]">Your portfolio</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[10px] font-semibold text-slate-500">Auto-saved to Vault API</span>
+                <span className="text-[10px] font-semibold text-slate-500">Saved</span>
               </div>
             </div>
 
@@ -400,30 +397,30 @@ export default function VerifiedCVLandingPage() {
                   <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#059669]">
                     <Bot className="w-4 h-4" />
                   </div>
-                  <h4 className="text-xs font-bold text-[#0F172A]">CV Ally</h4>
+                  <h4 className="text-xs font-bold text-[#0F172A]">Ally</h4>
                 </div>
 
                 <div className="p-3 rounded-lg bg-white border border-emerald-100 text-xs space-y-2.5 shadow-2xs">
                   <p className="text-slate-800 font-medium text-[11px] leading-relaxed">
-                    &quot;In your Yahoo chapter, you mention scaling personalization to 400M users. What were the specific sub-50ms query budget trade-offs?&quot;
+                    &quot;This Yahoo chapter looks clear. Invite someone who worked there with you to confirm it. Leave out anything your old employer would consider confidential.&quot;
                   </p>
                   <div className="flex items-center gap-2">
                     <span className="px-2 py-0.5 bg-emerald-50 text-[#059669] font-bold text-[9px] rounded border border-emerald-200">
-                      Socratic Check
+                      Writing help
                     </span>
-                    <span className="text-[9px] text-slate-400">Zero confidential metrics leaked</span>
+                    <span className="text-[9px] text-slate-400">No confidential numbers</span>
                   </div>
                 </div>
 
                 <div className="text-[10px] text-slate-500 space-y-1.5 pt-1">
                   <span className="font-bold text-slate-700 uppercase tracking-wider block text-[9px]">
-                    Vault Ground Truth
+                    What stays on the page
                   </span>
                   <div className="flex items-center gap-1.5 text-emerald-700 font-medium">
-                    <Check className="w-3 h-3" /> Un-truncated career chapters preserved
+                    <Check className="w-3 h-3" /> Full titles and dates, not a one-page cut
                   </div>
                   <div className="flex items-center gap-1.5 text-slate-600">
-                    <Users className="w-3 h-3 text-slate-400" /> Cryptographic peer vouchers active
+                    <Users className="w-3 h-3 text-slate-400" /> Colleague confirmations with LinkedIn sign-in
                   </div>
                 </div>
               </div>
@@ -431,20 +428,20 @@ export default function VerifiedCVLandingPage() {
               <div className="md:col-span-7 bg-white border border-[#E2E8F0] rounded-xl p-4 space-y-3.5 shadow-2xs">
                 <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                   <div>
-                    <h4 className="font-extrabold text-xs text-[#0F172A]">Active Career Milestone</h4>
-                    <p className="text-[10px] text-slate-500">Chapter: Yahoo (2010 — 2024)</p>
+                    <h4 className="font-extrabold text-xs text-[#0F172A]">Yahoo</h4>
+                    <p className="text-[10px] text-slate-500">Head of Product · 2010 — 2024</p>
                   </div>
                   <span className="text-[9px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
-                    Peer Corroborated
+                    Colleague confirmed
                   </span>
                 </div>
 
                 <div className="p-3.5 rounded-lg border border-[#E2E8F0] bg-slate-50/70 space-y-1.5">
                   <div className="text-[11px] font-bold text-slate-800">
-                    Calibrated Claim
+                    What they built
                   </div>
                   <p className="text-[11px] text-slate-700 leading-relaxed bg-white p-2.5 rounded border border-[#E2E8F0]">
-                    Built ad personalization and enterprise platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries. Maintained sub-50ms query latency budgets across global edge infrastructure.
+                    Led personalization and enterprise products, with P&L ownership, three patents, and an 18-person team across eight countries.
                   </p>
                 </div>
 
@@ -453,13 +450,13 @@ export default function VerifiedCVLandingPage() {
                     href="/studio"
                     className="inline-flex items-center gap-1.5 text-xs font-bold text-[#059669] bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
                   >
-                    <Users className="w-3.5 h-3.5" /> Send Peer Voucher Link
+                    <Users className="w-3.5 h-3.5" /> Ask a colleague
                   </Link>
                   <Link
                     href="/studio"
                     className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-[#E2E8F0] px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
                   >
-                    <Lock className="w-3.5 h-3.5 text-slate-500" /> Lock in Vault
+                    <Lock className="w-3.5 h-3.5 text-slate-500" /> Save portfolio
                   </Link>
                 </div>
               </div>
@@ -473,7 +470,7 @@ export default function VerifiedCVLandingPage() {
                 <span className="text-[11px] font-mono text-slate-400">verifiedcv.app/gharris</span>
               </div>
               <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
-                <BadgeCheck className="w-3 h-3 text-[#059669]" /> Verified Candidate Dossier
+                <BadgeCheck className="w-3 h-3 text-[#059669]" /> Confirmed chapters
               </span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
@@ -500,7 +497,7 @@ export default function VerifiedCVLandingPage() {
               How It Works
             </h2>
             <p className="text-2xl sm:text-3xl font-black text-[#0F172A]">
-              Three steps from messy resume to forensic dossier.
+              Three steps. No jargon required.
             </p>
           </div>
 
@@ -509,9 +506,9 @@ export default function VerifiedCVLandingPage() {
               <span className="w-8 h-8 rounded-xl bg-slate-900 text-white font-mono font-bold text-xs flex items-center justify-center">
                 01
               </span>
-              <h3 className="font-extrabold text-sm text-[#0F172A]">Lossless Career Ingestion</h3>
+              <h3 className="font-extrabold text-sm text-[#0F172A]">Upload your resume</h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Paste your full work history or drop your document. Our ingestion pipeline parses every leadership era, startup initiative, and title without 1-page truncation.
+                Drop a PDF or paste the text. We keep full titles, companies, and dates — not a chopped one-pager.
               </p>
             </div>
 
@@ -519,9 +516,9 @@ export default function VerifiedCVLandingPage() {
               <span className="w-8 h-8 rounded-xl bg-slate-900 text-white font-mono font-bold text-xs flex items-center justify-center">
                 02
               </span>
-              <h3 className="font-extrabold text-sm text-[#0F172A]">Socratic Claim Calibration</h3>
+              <h3 className="font-extrabold text-sm text-[#0F172A]">Keep it public-safe</h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                CV Ally guides you through structuring your achievements into testable statements. Define scale, latency, and business trade-offs with zero NDA risk.
+                Ally helps you write clearly. It will not ask for confidential numbers, and you should not include them.
               </p>
             </div>
 
@@ -529,9 +526,9 @@ export default function VerifiedCVLandingPage() {
               <span className="w-8 h-8 rounded-xl bg-slate-900 text-white font-mono font-bold text-xs flex items-center justify-center">
                 03
               </span>
-              <h3 className="font-extrabold text-sm text-[#0F172A]">Vault Anchored Dossier</h3>
+              <h3 className="font-extrabold text-sm text-[#0F172A]">Ask a colleague to confirm</h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Commit to your permanent Vault record. Claim your handle to publish a live, tamper-evident dossier ready for recruiters to inspect upfront.
+                You choose who to invite. They sign in with LinkedIn and confirm they worked with you. That is corroboration — not a replacement for a recruiter&apos;s own references.
               </p>
             </div>
           </div>
@@ -540,31 +537,31 @@ export default function VerifiedCVLandingPage() {
 
       {/* Recruiter Trust Layer */}
       <section id="recruiters" className="py-16 max-w-5xl mx-auto px-6">
-        <div className="rounded-3xl bg-slate-900 text-white p-8 sm:p-12 space-y-6">
+        <div className="rounded-3xl bg-white border border-[#E2E8F0] p-8 sm:p-12 space-y-6">
           <div className="max-w-xl space-y-3">
-            <span className="text-xs font-bold text-emerald-400 uppercase tracking-widest">
-              For Executive Recruiters & Hiring Managers
+            <span className="text-xs font-bold text-[#059669] uppercase tracking-widest">
+              For hiring teams
             </span>
-            <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight">
-              Bypass 3 weeks of backchannel reference checking.
+            <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight text-[#0F172A]">
+              See who confirmed a chapter — and how.
             </h2>
-            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              When a candidate attaches their VerifiedCV link, their accomplishments have already been checked against peer corroboration and supporting documents.
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+              A colleague confirmation is not the same as your own reference check. You still pick your backchannels. What you get here is earlier signal: a named person signed in with LinkedIn and said they worked with this candidate.
             </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
-            <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700/60 space-y-1">
-              <span className="text-emerald-400 font-black text-lg">0 days</span>
-              <p className="text-xs text-slate-300">Instant verification at first screening</p>
+            <div className="p-4 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1">
+              <span className="text-[#059669] font-black text-lg">Invite</span>
+              <p className="text-xs text-slate-600">The candidate chooses who to ask</p>
             </div>
-            <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700/60 space-y-1">
-              <span className="text-emerald-400 font-black text-lg">100%</span>
-              <p className="text-xs text-slate-300">Candidate-controlled forensic proof signals</p>
+            <div className="p-4 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1">
+              <span className="text-[#059669] font-black text-lg">LinkedIn</span>
+              <p className="text-xs text-slate-600">That person signs in before they confirm</p>
             </div>
-            <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700/60 space-y-1">
-              <span className="text-emerald-400 font-black text-lg">1-Click</span>
-              <p className="text-xs text-slate-300">Recruiter inspection of verified achievements</p>
+            <div className="p-4 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1">
+              <span className="text-[#059669] font-black text-lg">On the page</span>
+              <p className="text-xs text-slate-600">You see the confirmation next to the chapter</p>
             </div>
           </div>
         </div>
@@ -574,17 +571,17 @@ export default function VerifiedCVLandingPage() {
       <section className="py-16 bg-white border-t border-[#E2E8F0] text-center">
         <div className="max-w-2xl mx-auto px-6 space-y-5">
           <h2 className="text-2xl sm:text-3xl font-black text-[#0F172A] tracking-tight">
-            Ready to prove your career track record upfront?
+            Start with your resume. Invite one colleague.
           </h2>
           <p className="text-xs sm:text-sm text-slate-500">
-            Open the studio, map your accomplishments, and publish your verified dossier in minutes.
+            Free while we are in beta. Upload a resume to claim your page.
           </p>
           <div className="pt-2">
             <Link
               href="/studio"
               className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#059669] hover:bg-emerald-600 text-white font-black text-xs transition-all shadow-xs cursor-pointer group"
             >
-              <span>Get Started in Candidate Studio</span>
+              <span>Open Studio</span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
             </Link>
           </div>
@@ -597,7 +594,7 @@ export default function VerifiedCVLandingPage() {
           <div className="flex items-center gap-2">
             <VerifiedCVLogo className="w-4 h-4" />
             <span className="font-bold text-[#0F172A]">VerifiedCV</span>
-            <span className="text-slate-400">• The Permanent Career Proof Layer</span>
+            <span className="text-slate-400">• A portfolio people can confirm</span>
           </div>
 
           <div className="flex items-center gap-5 text-[11px]">

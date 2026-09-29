@@ -334,10 +334,10 @@ export default function CandidateDossierPage() {
         <div className="space-y-4">
           <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
             <h2 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">
-              Audited Career Milestones ({dossier.milestones.length})
+              Experience ({dossier.milestones.length})
             </h2>
             <span className="text-[11px] font-semibold text-slate-400">
-              Verified peer claims & deliverables
+              Chapters colleagues can confirm
             </span>
           </div>
 

@@ -229,22 +229,6 @@ export default function StudioPage() {
   const [waitingForPeer, setWaitingForPeer] = useState(false);
   const [emailCode, setEmailCode] = useState("");
   const [emailCodeSent, setEmailCodeSent] = useState(false);
-  const [beta, setBeta] = useState<{ locked: boolean; unlocked: boolean; acceptsCode: boolean } | null>(null);
-  const [betaCode, setBetaCode] = useState("");
-  const [betaError, setBetaError] = useState("");
-
-  useEffect(() => {
-    fetch("/api/beta/status")
-      .then((res) => res.json())
-      .then((data) =>
-        setBeta({
-          locked: Boolean(data.locked),
-          unlocked: Boolean(data.unlocked),
-          acceptsCode: Boolean(data.acceptsCode)
-        })
-      )
-      .catch(() => setBeta({ locked: false, unlocked: true, acceptsCode: false }));
-  }, []);
 
   // Handle Availability State
   const [handleStatus, setHandleStatus] = useState<"checking" | "available" | "taken" | "idle">("available");
@@ -285,7 +269,7 @@ export default function StudioPage() {
   const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
     {
       sender: "ally",
-      text: "Candidate Studio ready. Ingest your resume, then save the portfolio before verification or corroboration. Saving keeps your work if you leave to authenticate."
+      text: "Upload your resume, save your page, then invite a colleague to confirm a chapter."
     }
   ]);
   const [chatInput, setChatInput] = useState("");
@@ -1043,74 +1027,6 @@ export default function StudioPage() {
   const totalVerified = level1Count + level2Count + level3Count;
   const portfolioScore = milestones.length > 0 ? Math.round((totalVerified / milestones.length) * 100) : 0;
 
-  const unlockBeta = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBetaError("");
-    const res = await fetch("/api/beta/unlock", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: betaCode })
-    });
-    if (!res.ok) {
-      setBetaError("That access code is not valid.");
-      return;
-    }
-    setBeta({ locked: true, unlocked: true, acceptsCode: true });
-  };
-
-  if (!beta) {
-    return (
-      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center text-xs font-bold text-slate-500">
-        Loading Studio…
-      </div>
-    );
-  }
-
-  if (beta.locked && !beta.unlocked) {
-    return (
-      <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans flex items-center justify-center p-6">
-        <div className="bg-white border border-[#E2E8F0] rounded-3xl p-8 max-w-md w-full shadow-sm space-y-5">
-          <div className="flex items-center gap-2">
-            <VerifiedCVLogo className="w-6 h-6" />
-            <span className="font-black text-base tracking-tight">VerifiedCV</span>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 border border-[#E2E8F0] rounded-full px-2 py-0.5">
-              Private beta
-            </span>
-          </div>
-          <div className="space-y-2">
-            <h1 className="font-black text-xl">Studio is invite-only for now</h1>
-            <p className="text-sm text-slate-600 leading-relaxed">
-              The public site is live, but Candidate Studio is closed while we finish verification flows.
-            </p>
-          </div>
-          {beta.acceptsCode ? (
-            <form onSubmit={unlockBeta} className="space-y-3">
-              <input
-                type="password"
-                value={betaCode}
-                onChange={(e) => setBetaCode(e.target.value)}
-                placeholder="Access code"
-                className="w-full p-3 rounded-xl border border-[#E2E8F0] text-sm focus:outline-none focus:border-[#059669]"
-              />
-              {betaError && <p className="text-xs font-bold text-red-600">{betaError}</p>}
-              <button
-                type="submit"
-                className="w-full py-3 rounded-xl bg-[#0F172A] text-white text-xs font-black cursor-pointer"
-              >
-                Enter Studio
-              </button>
-            </form>
-          ) : (
-            <p className="text-xs text-slate-500">Check back soon, or ask Graham for access.</p>
-          )}
-          <Link href="/" className="block text-xs font-bold text-[#059669]">
-            Back to homepage
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="h-screen overflow-hidden bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col antialiased selection:bg-emerald-100">
       <header className="shrink-0 sticky top-0 z-50 bg-white border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
@@ -1187,7 +1103,7 @@ export default function StudioPage() {
             <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#059669]">
               <Bot className="w-4 h-4" />
             </div>
-            <h3 className="text-xs font-black text-[#0F172A]">CV Ally</h3>
+            <h3 className="text-xs font-black text-[#0F172A]">Ally</h3>
           </div>
 
           <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -1235,7 +1151,7 @@ export default function StudioPage() {
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Ask Ally to save, verify, or audit..."
+                placeholder="Ask Ally to save or invite a colleague..."
                 className="w-full text-xs pl-3 pr-8 py-2 rounded-lg border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans bg-slate-50/50"
               />
               <button
@@ -1279,7 +1195,7 @@ export default function StudioPage() {
               <div className="space-y-2">
                 <h2 className="text-xl font-black text-[#0F172A]">Ingest Your Career Track Record</h2>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                  Upload your resume or paste below. Dates, starting months, company titles, and credentials are parsed losslessly with active spell-checking.
+                  Upload your resume or paste below. We keep dates, titles, and company names intact.
                 </p>
               </div>
 

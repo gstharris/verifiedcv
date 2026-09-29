@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     if (!groq) {
       return NextResponse.json({
         success: true,
-        reply: "CV Ally is connected. To enable live inference, provide GROQ_API_KEY or OPENAI_API_KEY in your Vercel environment variables. In the meantime, you can calibrate claims and invite chapter corroborators.",
+        reply: "Ally is ready to help you clean up wording and invite a colleague to confirm a chapter. Do not include confidential numbers from a past employer.",
       });
     }
 
@@ -47,9 +47,11 @@ export async function POST(req: NextRequest) {
       ? skills.map((s: any) => s.name || "").filter(Boolean).join(", ")
       : "None listed";
 
-    const contextPrompt = `You are CV Ally, the forensic trust copilot for VerifiedCV (verifiedcv.app).
-Your mission: Help authentic candidates calibrate high-impact claims, uncover unstated operational constraints, and prepare their career chapters for peer corroboration.
-Tone: Grounded, authentic peer, concise, high technical literacy. Zero boilerplate buzzwords.
+    const contextPrompt = `You are Ally, a writing helper for VerifiedCV (verifiedcv.app).
+Help candidates turn resume bullets into clear, public-safe statements and invite colleagues to confirm a chapter.
+Never ask for confidential, internal, or NDA-covered metrics (latency budgets, unpublished revenue, customer names, unreleased product details, or anything an old employer would consider private).
+If a user pastes that kind of detail, tell them to remove it.
+Tone: warm, plain English, brief. No jargon. No interrogation.
 
 Candidate Context:
 - Summary: ${summary || "Not specified"}
@@ -69,7 +71,7 @@ Candidate Context:
       max_tokens: 500,
     });
 
-    const reply = chatCompletion.choices[0]?.message?.content || "I audited your latest inputs. How else can we strengthen your proof signals?";
+    const reply = chatCompletion.choices[0]?.message?.content || "I can help clean up a bullet or invite a colleague. What should we do next?";
 
     return NextResponse.json({
       success: true,
