@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
   });
 
   if (error) {
-    return NextResponse.json({ error: "Could not create verification code." }, { status: 500 });
+    return NextResponse.json({ error: error.message || "Could not create verification code." }, { status: 500 });
   }
 
   if (!process.env.RESEND_API_KEY) {
@@ -55,7 +55,10 @@ export async function POST(req: NextRequest) {
   });
 
   if (emailError) {
-    return NextResponse.json({ error: "Could not send the verification email." }, { status: 500 });
+    return NextResponse.json(
+      { error: emailError.message || "Could not send the verification email." },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json({ success: true });
@@ -91,5 +94,6 @@ export async function PUT(req: NextRequest) {
   }
 
   await supabase.from("email_codes").delete().eq("email", email);
+  await supabase.from("candidates").update({ email_verified: true }).eq("email", email);
   return NextResponse.json({ success: true });
 }

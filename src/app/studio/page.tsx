@@ -229,6 +229,7 @@ export default function StudioPage() {
   const [waitingForPeer, setWaitingForPeer] = useState(false);
   const [emailCode, setEmailCode] = useState("");
   const [emailCodeSent, setEmailCodeSent] = useState(false);
+  const [emailVerifyError, setEmailVerifyError] = useState("");
 
   // Handle Availability State
   const [handleStatus, setHandleStatus] = useState<"checking" | "available" | "taken" | "idle">("available");
@@ -1329,45 +1330,16 @@ export default function StudioPage() {
                     </div>
                     {contact.emailVerified ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                    ) : emailCodeSent ? (
-                      <div className="flex items-center gap-1 shrink-0">
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          maxLength={6}
-                          value={emailCode}
-                          onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                          placeholder="Code"
-                          className="w-14 text-[10px] px-1 py-0.5 rounded border border-[#E2E8F0] focus:outline-none focus:border-[#059669]"
-                        />
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const res = await fetch("/api/verify/email", {
-                              method: "PUT",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ email: contact.email, code: emailCode })
-                            });
-                            const data = await res.json();
-                            if (res.ok && data.success) {
-                              setContact((c) => ({ ...c, emailVerified: true }));
-                              setEmailCodeSent(false);
-                              setEmailCode("");
-                              setChatMessages((prev) => [...prev, { sender: "ally", text: "Email confirmed." }]);
-                            } else {
-                              alert(data.error || "That code did not match.");
-                            }
-                          }}
-                          className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100 cursor-pointer"
-                        >
-                          Confirm
-                        </button>
-                      </div>
                     ) : (
                       <button
                         type="button"
                         onClick={async () => {
                           requirePortfolioSaved(async () => {
+                            setEmailVerifyError("");
+                            if (!contact.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email)) {
+                              setEmailVerifyError("Enter a valid email first.");
+                              return;
+                            }
                             const res = await fetch("/api/verify/email", {
                               method: "POST",
                               headers: { "Content-Type": "application/json" },
@@ -1378,22 +1350,22 @@ export default function StudioPage() {
                               setEmailCodeSent(true);
                               setChatMessages((prev) => [
                                 ...prev,
-                                { sender: "ally", text: `A confirmation code was sent to ${contact.email}.` }
+                                { sender: "ally", text: `Check ${contact.email} for a 6-digit code.` }
                               ]);
                             } else {
-                              alert(data.error || "Could not send the email code.");
+                              setEmailVerifyError(data.error || "Could not send the email code.");
                             }
                           });
                         }}
                         className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer shrink-0"
                       >
-                        Verify
+                        {emailCodeSent ? "Resend" : "Verify"}
                       </button>
                     )}
                   </div>
 
                   <div className="p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 flex-1">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
                       <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                       <input
                         type="text"
@@ -1404,11 +1376,7 @@ export default function StudioPage() {
                         className={`w-full text-xs bg-transparent focus:outline-none font-medium ${isPortfolioSaved ? "" : "cursor-pointer"}`}
                       />
                     </div>
-                    {contact.phoneVerified ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                    ) : (
-                      <span className="text-[10px] font-semibold text-slate-400 shrink-0">SMS later</span>
-                    )}
+                    <span className="text-[10px] font-semibold text-slate-400 shrink-0">Coming soon</span>
                   </div>
 
                   <div className="p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center justify-between gap-2">
@@ -1447,6 +1415,59 @@ export default function StudioPage() {
                     />
                   </div>
                 </div>
+                {emailCodeSent && !contact.emailVerified && (
+                  <div className="mt-3 p-3 rounded-xl border border-emerald-200 bg-emerald-50/40 flex flex-col sm:flex-row sm:items-center gap-2">
+                    <p className="text-xs text-slate-600 flex-1">
+                      Enter the 6-digit code sent to {contact.email}.
+                    </p>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      value={emailCode}
+                      onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      placeholder="000000"
+                      className="w-28 text-sm tracking-[0.3em] font-mono px-3 py-2 rounded-lg border border-[#E2E8F0] bg-white focus:outline-none focus:border-[#059669]"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setEmailVerifyError("");
+                        const res = await fetch("/api/verify/email", {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ email: contact.email, code: emailCode })
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                          const nextContact = { ...contact, emailVerified: true };
+                          setContact(nextContact);
+                          setEmailCodeSent(false);
+                          setEmailCode("");
+                          const dossierPayload = { ...buildPortfolioPayload(), contact: nextContact };
+                          persistPortfolioLocally(true, dossierPayload);
+                          if (isPortfolioSaved) {
+                            fetch("/api/vault", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify(dossierPayload)
+                            }).catch(() => undefined);
+                          }
+                          setChatMessages((prev) => [...prev, { sender: "ally", text: "Email confirmed." }]);
+                        } else {
+                          setEmailVerifyError(data.error || "That code did not match.");
+                        }
+                      }}
+                      className="text-xs font-bold text-white bg-[#059669] hover:bg-emerald-700 px-4 py-2 rounded-lg cursor-pointer"
+                    >
+                      Confirm
+                    </button>
+                  </div>
+                )}
+                {emailVerifyError && (
+                  <p className="mt-2 text-xs font-bold text-red-600">{emailVerifyError}</p>
+                )}
               </div>
 
               {/* Summary */}
@@ -1456,11 +1477,11 @@ export default function StudioPage() {
                     <div className="flex items-center gap-2">
                       <FileText className="w-4 h-4 text-[#059669]" />
                       <h3 className="font-extrabold text-xs uppercase tracking-wider text-[#0F172A]">
-                        Professional Executive Summary
+                        Summary
                       </h3>
                     </div>
-                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
-                      Audited Summary
+                    <span className="text-[10px] font-bold text-slate-500 bg-slate-50 border border-[#E2E8F0] px-2 py-0.5 rounded">
+                      Public
                     </span>
                   </div>
                   <textarea
@@ -1480,7 +1501,7 @@ export default function StudioPage() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
                   <h3 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">
-                    Audited Career Milestones ({milestones.length})
+                    Experience ({milestones.length})
                   </h3>
                   <button
                     type="button"
