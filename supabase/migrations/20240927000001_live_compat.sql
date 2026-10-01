@@ -179,6 +179,9 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
   CREATE POLICY "vcv verifications insert" ON public.verifications FOR INSERT WITH CHECK (true);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  CREATE POLICY "vcv verifications delete" ON public.verifications FOR DELETE USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
   CREATE POLICY "vcv education select" ON public.education FOR SELECT USING (true);
@@ -208,6 +211,9 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
   CREATE POLICY "vcv attestations update" ON public.attestations FOR UPDATE USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  CREATE POLICY "vcv attestations delete" ON public.attestations FOR DELETE USING (true);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN

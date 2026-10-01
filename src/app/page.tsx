@@ -224,11 +224,10 @@ export default function VerifiedCVLandingPage() {
             <span className="normal-case tracking-normal font-semibold text-slate-400">Free to start</span>
           </div>
           <h1 className="text-3xl sm:text-5xl font-black text-[#0F172A] tracking-tight leading-[1.12] max-w-3xl mx-auto">
-            A portfolio people can confirm.
+            Stand out as a real candidate.
           </h1>
           <p className="text-base sm:text-xl font-semibold text-slate-600 max-w-2xl mx-auto leading-snug">
-            Most resumes are just claims.{" "}
-            <span className="text-[#059669]">Add the colleagues who can back yours up.</span>
+            <span className="text-[#059669]">Verified by more than your word.</span>
           </p>
 
           <div className="max-w-xl mx-auto pt-2 space-y-4">
@@ -303,10 +302,10 @@ export default function VerifiedCVLandingPage() {
               Why VerifiedCV
             </h2>
             <p className="text-2xl sm:text-3xl font-black text-[#0F172A]">
-              LinkedIn shows who you know. This shows what you built.
+              LinkedIn shows who you know. This shows more than a claim.
             </p>
             <p className="text-xs sm:text-sm text-slate-500">
-              Built first for product, operations, and technical leaders who need more than a one-page resume.
+              Identity, an employment document we can read, and colleagues who say they were there.
             </p>
           </div>
 
@@ -335,9 +334,9 @@ export default function VerifiedCVLandingPage() {
               <div className="w-9 h-9 rounded-xl bg-white border border-[#E2E8F0] flex items-center justify-center text-slate-800 shadow-2xs">
                 <CheckCircle2 className="w-4 h-4 text-[#059669]" />
               </div>
-              <h3 className="font-extrabold text-sm text-[#0F172A]">Confirm a chapter once</h3>
+              <h3 className="font-extrabold text-sm text-[#0F172A]">Proof that stays with you</h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Ask a colleague to confirm a role. That confirmation stays on your page, so you are not starting from zero in every process.
+                Confirm it is you, attach a document, and ask people who were there. One colleague helps. Several with titles at that company is what starts to look verified.
               </p>
             </div>
           </div>
@@ -352,7 +351,7 @@ export default function VerifiedCVLandingPage() {
               What it looks like
             </h2>
             <p className="text-2xl sm:text-3xl font-black text-[#0F172A] mt-1">
-              You write it. A colleague confirms it.
+              You build the page. Proof sits on each chapter.
             </p>
           </div>
 
@@ -503,7 +502,7 @@ export default function VerifiedCVLandingPage() {
               How It Works
             </h2>
             <p className="text-2xl sm:text-3xl font-black text-[#0F172A]">
-              Three steps. No jargon required.
+              Resume, then proof. Not just a nicer PDF.
             </p>
           </div>
 
@@ -522,9 +521,9 @@ export default function VerifiedCVLandingPage() {
               <span className="w-8 h-8 rounded-xl bg-slate-900 text-white font-mono font-bold text-xs flex items-center justify-center">
                 02
               </span>
-              <h3 className="font-extrabold text-sm text-[#0F172A]">Keep it public-safe</h3>
+              <h3 className="font-extrabold text-sm text-[#0F172A]">Prove it is you</h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Ally helps you write clearly. It will not ask for confidential numbers, and you should not include them.
+                Confirm email, phone, and LinkedIn so the page is tied to a real person — not an anonymous PDF.
               </p>
             </div>
 
@@ -532,9 +531,9 @@ export default function VerifiedCVLandingPage() {
               <span className="w-8 h-8 rounded-xl bg-slate-900 text-white font-mono font-bold text-xs flex items-center justify-center">
                 03
               </span>
-              <h3 className="font-extrabold text-sm text-[#0F172A]">Ask a colleague to confirm</h3>
+              <h3 className="font-extrabold text-sm text-[#0F172A]">Add documents and people</h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                You choose who to invite. They sign in with LinkedIn, add a title, and confirm overlapping years. Their name stays private. One person shows as a title at that company; several people show as a count.
+                Attach an offer letter or W-2 we can match to the employer and dates. Invite colleagues: they sign in with LinkedIn, add a title, and the years they overlapped. One confirm is a start. Several people with titles at that company is close to verified. Names stay private.
               </p>
             </div>
           </div>
@@ -549,10 +548,10 @@ export default function VerifiedCVLandingPage() {
               For hiring teams
             </span>
             <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight text-[#0F172A]">
-              See who confirmed a chapter — and how.
+              See the proof on the chapter — not a sticker.
             </h2>
             <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-              A colleague confirmation is not the same as your own reference check. You still pick your backchannels. What you get here is earlier signal: a named person signed in with LinkedIn and said they worked with this candidate.
+              Identity, a matched employment document, and colleagues who signed in with LinkedIn and stated they overlapped. One person is a lead. Several with titles at that company is the signal. You still run your own backchannels.
             </p>
           </div>
 
@@ -577,7 +576,7 @@ export default function VerifiedCVLandingPage() {
       <section className="py-16 bg-white border-t border-[#E2E8F0] text-center">
         <div className="max-w-2xl mx-auto px-6 space-y-5">
           <h2 className="text-2xl sm:text-3xl font-black text-[#0F172A] tracking-tight">
-            Start with your resume. Invite one colleague.
+            Start with your resume. Then add proof.
           </h2>
           <p className="text-xs sm:text-sm text-slate-500">
             Free while we are in beta. Upload a resume to claim your page.

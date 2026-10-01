@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { toE164 } from "@/lib/phone";
+import { requireHandleOwner } from "@/lib/handleOwner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,10 @@ function twilioAuthHeader() {
   return `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}`;
 }
 
+export async function GET() {
+  return NextResponse.json({ configured: twilioConfigured() });
+}
+
 export async function POST(req: NextRequest) {
   if (!twilioConfigured()) {
     return NextResponse.json(
@@ -29,8 +34,17 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
   const phone = toE164(String(body.phone || ""));
+  const handle = String(body.handle || "").toLowerCase().trim();
   if (!phone) {
     return NextResponse.json({ error: "Enter a valid mobile number, including area code." }, { status: 400 });
+  }
+
+  const supabase = getSupabase();
+  if (supabase && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    const owner = await requireHandleOwner(req, supabase, handle);
+    if (!owner.ok) {
+      return NextResponse.json({ error: owner.error }, { status: owner.status });
+    }
   }
 
   const twilioRes = await fetch(
@@ -66,8 +80,17 @@ export async function PUT(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const phone = toE164(String(body.phone || ""));
   const code = String(body.code || "").trim();
+  const handle = String(body.handle || "").toLowerCase().trim();
   if (!phone || !code) {
     return NextResponse.json({ error: "Phone and code are required." }, { status: 400 });
+  }
+
+  const supabase = getSupabase();
+  if (supabase && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    const owner = await requireHandleOwner(req, supabase, handle);
+    if (!owner.ok) {
+      return NextResponse.json({ error: owner.error }, { status: owner.status });
+    }
   }
 
   const twilioRes = await fetch(
@@ -86,9 +109,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "That code is incorrect or expired." }, { status: 400 });
   }
 
-  const supabase = getSupabase();
   if (supabase) {
-    const handle = String(body.handle || "").toLowerCase().trim();
     if (handle) {
       await supabase.from("candidates").update({ phone_verified: true, phone }).eq("handle", handle);
     } else {

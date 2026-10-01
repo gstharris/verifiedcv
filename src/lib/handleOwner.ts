@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const HANDLE_OWNER_COOKIE = "vcv_handle_owner";
 
@@ -71,6 +72,45 @@ export function ownerCookieMatches(cookie: HandleOwnerCookie | null, handle: str
   if (!cookie || !tokenHash) return false;
   if (cookie.handle !== handle.toLowerCase().trim()) return false;
   return hashOwnerToken(cookie.token) === tokenHash;
+}
+
+export async function requireHandleOwner(
+  req: NextRequest,
+  supabase: SupabaseClient,
+  handle: string
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const normalized = handle.toLowerCase().trim();
+  if (!normalized) {
+    return { ok: false, status: 400, error: "Handle is required." };
+  }
+
+  const { data, error } = await supabase
+    .from("candidates")
+    .select("handle, owner_token_hash")
+    .eq("handle", normalized)
+    .maybeSingle();
+
+  if (error && String(error.message || "").toLowerCase().includes("owner_token_hash")) {
+    const fallback = await supabase.from("candidates").select("handle").eq("handle", normalized).maybeSingle();
+    if (!fallback.data?.handle) {
+      return { ok: false, status: 403, error: "Save your portfolio first." };
+    }
+    return { ok: true };
+  }
+
+  if (!data?.handle) {
+    return { ok: false, status: 403, error: "Save your portfolio first." };
+  }
+
+  if (data.owner_token_hash && !ownerCookieMatches(getHandleOwnerFromRequest(req), normalized, data.owner_token_hash)) {
+    return {
+      ok: false,
+      status: 403,
+      error: "This handle is claimed in another browser. Restore access first."
+    };
+  }
+
+  return { ok: true };
 }
 
 export function authorizeVaultWrite(opts: {

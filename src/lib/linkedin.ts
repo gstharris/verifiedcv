@@ -89,6 +89,17 @@ export function clearOAuthStateCookie(response: NextResponse) {
   });
 }
 
+export function clearLinkedInSessionCookie(response: NextResponse) {
+  response.cookies.set(LINKEDIN_SESSION_COOKIE, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: cookieSecure(),
+    path: "/",
+    maxAge: 0,
+    ...(cookieDomain() ? { domain: cookieDomain() } : {})
+  });
+}
+
 export function applyLinkedInSessionCookie(response: NextResponse, identity: LinkedInIdentity) {
   response.cookies.set(LINKEDIN_SESSION_COOKIE, encodeURIComponent(JSON.stringify(identity)), {
     httpOnly: true,

@@ -5,6 +5,8 @@ import {
   clearStudioPortfolioStorage,
   hasPortfolioContent,
   readStudioRecord,
+  stripProofFromMilestones,
+  unverifiedContact,
   writeStudioRecord
 } from "./studioPortfolio";
 
@@ -44,5 +46,22 @@ describe("studio portfolio storage", () => {
     clearStudioPortfolioStorage();
     expect(readStudioRecord(STUDIO_DRAFT_KEY)).toBeNull();
     expect(readStudioRecord(STUDIO_SAVED_KEY)).toBeNull();
+  });
+
+  it("clears verified flags and proof artifacts for a replay", () => {
+    const contact = unverifiedContact({
+      email: "graham@example.com",
+      emailVerified: true,
+      phoneVerified: true,
+      linkedinVerified: true
+    });
+    expect(contact.emailVerified).toBe(false);
+    expect(contact.phoneVerified).toBe(false);
+    expect(contact.linkedinVerified).toBe(false);
+    expect(
+      stripProofFromMilestones([
+        { id: "m1", artifacts: [{ id: "a1" }], verifications: [{ id: "v1" }] }
+      ])
+    ).toEqual([{ id: "m1", artifacts: [], verifications: [] }]);
   });
 });

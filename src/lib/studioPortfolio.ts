@@ -32,3 +32,24 @@ export function clearStudioPortfolioStorage() {
   sessionStorage.removeItem(STUDIO_DRAFT_KEY);
   sessionStorage.removeItem(STUDIO_SAVED_KEY);
 }
+
+export function unverifiedContact<T extends { emailVerified?: boolean; phoneVerified?: boolean; linkedinVerified?: boolean }>(
+  contact: T
+): T {
+  return {
+    ...contact,
+    emailVerified: false,
+    phoneVerified: false,
+    linkedinVerified: false
+  };
+}
+
+export function stripProofFromMilestones<T extends { artifacts?: unknown[]; verifications?: unknown[] }>(
+  milestones: T[]
+): T[] {
+  return milestones.map((milestone) => ({
+    ...milestone,
+    artifacts: [],
+    verifications: []
+  }));
+}
