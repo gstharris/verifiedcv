@@ -170,6 +170,24 @@ export async function POST(req: NextRequest) {
           isNewClaim = decision.isNewClaim;
         }
 
+        if (!existing?.handle && incomingEmail) {
+          const { data: byEmail } = await supabase
+            .from("candidates")
+            .select("handle, email")
+            .ilike("email", incomingEmail)
+            .maybeSingle();
+          if (byEmail?.handle && byEmail.handle !== handle) {
+            return NextResponse.json(
+              {
+                error: `This email already has a page at verifiedcv.app/${byEmail.handle}. Use that handle, or email a restore code if this is a new browser.`,
+                code: "EMAIL_TAKEN",
+                handle: byEmail.handle
+              },
+              { status: 409 }
+            );
+          }
+        }
+
         const { error: candidateError } = await supabase.from("candidates").upsert(
           {
             handle,
@@ -191,6 +209,20 @@ export async function POST(req: NextRequest) {
 
         if (candidateError) {
           console.error("Supabase candidate upsert error:", candidateError);
+          if (/candidates_email_key|email.*unique/i.test(candidateError.message || "")) {
+            const { data: byEmail } = incomingEmail
+              ? await supabase.from("candidates").select("handle").ilike("email", incomingEmail).maybeSingle()
+              : { data: null };
+            const taken = byEmail?.handle ? `verifiedcv.app/${byEmail.handle}` : "another handle";
+            return NextResponse.json(
+              {
+                error: `This email already has a page at ${taken}. Use that handle, or email a restore code if this is a new browser.`,
+                code: "EMAIL_TAKEN",
+                handle: byEmail?.handle || null
+              },
+              { status: 409 }
+            );
+          }
           return NextResponse.json({ error: candidateError.message }, { status: 500 });
         }
 

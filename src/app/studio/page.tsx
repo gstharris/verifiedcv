@@ -961,6 +961,10 @@ export default function StudioPage() {
       } else {
         setRestoreNotice(data.error || "Failed to save portfolio.");
         if (data.code === "HANDLE_OWNED") setHandleStatus("taken");
+        if (data.code === "EMAIL_TAKEN" && data.handle) {
+          setHandle(String(data.handle).toLowerCase().trim());
+          setHandleStatus("taken");
+        }
       }
     } catch {
       alert("Network error saving portfolio.");
