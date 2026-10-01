@@ -41,5 +41,6 @@ describe("linkedin helpers", () => {
     expect(identity?.email).toBe("alex@example.com");
     expect(identity?.emailVerified).toBe(true);
     expect(mapUserInfoToIdentity({ name: "Missing Sub" })).toBeNull();
+    expect(mapUserInfoToIdentity({ sub: "linkedin-member-2", email: "alex@example.com" })?.name).toBe("alex");
   });
 });

@@ -4,7 +4,7 @@ import { BETA_COOKIE, isBetaEnforced } from "@/lib/betaAccess";
 function isProtectedWrite(method: string, pathname: string) {
   if (method !== "POST" && method !== "PUT" && method !== "DELETE") return false;
   if (pathname === "/api/vault" || pathname.startsWith("/api/vault/")) return true;
-  if (pathname === "/api/verify/email") return true;
+    if (pathname === "/api/verify/email" || pathname === "/api/verify/phone") return true;
   if (pathname === "/api/verify/attest" && method === "POST") return true;
   if (pathname.startsWith("/api/ally")) return true;
   return false;

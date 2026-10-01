@@ -48,6 +48,8 @@ import {
   writeStudioRecord
 } from "@/lib/studioPortfolio";
 import { getVerificationStatus, previewVerificationStatus } from "@/lib/verificationLevel";
+import { corroborationHeadline } from "@/lib/corroborationDisplay";
+import { captureEvent, identifyHandle } from "@/lib/analytics";
 
 function LinkedInIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
   return (
@@ -176,8 +178,8 @@ const GRAHAM_HARRIS_CANONICAL: {
       verifications: [
         {
           id: "ver-123",
-          name: "Colleague",
-          role: "Senior Director of Core Engineering",
+          name: "Senior Director of Core Engineering",
+          role: "Overlapped 2012 — 2018 · 84 months (stated)",
           email: "colleague@yahoo.com",
           verifiedAt: new Date().toISOString()
         }
@@ -185,6 +187,20 @@ const GRAHAM_HARRIS_CANONICAL: {
     }
   ]
 };
+
+function linkedInReturnMessage(auth: string | null, reason: string | null, hasSession: boolean) {
+  if (hasSession) return "";
+  if (auth === "success") {
+    return "LinkedIn signed you in, but this browser did not keep the session. Use www.verifiedcv.app and try again.";
+  }
+  if (auth !== "error") return "";
+  if (reason === "state") {
+    return "LinkedIn sign-in lost its session cookie. Open this page on www.verifiedcv.app and try again.";
+  }
+  if (reason === "denied") return "LinkedIn sign-in was cancelled.";
+  if (reason === "profile") return "LinkedIn did not return a usable profile. Try again.";
+  return "LinkedIn sign-in did not complete. Try again.";
+}
 
 export default function StudioPage() {
   const [milestones, setMilestones] = useState<Milestone[]>([]);
@@ -221,6 +237,7 @@ export default function StudioPage() {
   const [isVerifyHubOpen, setIsVerifyHubOpen] = useState(false);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isArtifactModalOpen, setIsArtifactModalOpen] = useState(false);
+  const [artifactScanError, setArtifactScanError] = useState<string | null>(null);
   const returnToVerifyHubRef = useRef(false);
   const [targetMilestone, setTargetMilestone] = useState<Milestone | null>(null);
   const [colleagueEmail, setColleagueEmail] = useState("");
@@ -230,11 +247,19 @@ export default function StudioPage() {
   const [emailCode, setEmailCode] = useState("");
   const [emailCodeSent, setEmailCodeSent] = useState(false);
   const [emailVerifyError, setEmailVerifyError] = useState("");
+  const [phoneCode, setPhoneCode] = useState("");
+  const [phoneCodeSent, setPhoneCodeSent] = useState(false);
+  const [phoneVerifyError, setPhoneVerifyError] = useState("");
+  const [linkedinVerifyError, setLinkedinVerifyError] = useState("");
 
   // Handle Availability State
-  const [handleStatus, setHandleStatus] = useState<"checking" | "available" | "taken" | "idle">("available");
+  const [handleStatus, setHandleStatus] = useState<"checking" | "available" | "owned" | "taken" | "idle">("available");
   const [emailError, setEmailError] = useState("");
   const [nameError, setNameError] = useState("");
+  const [restoreCode, setRestoreCode] = useState("");
+  const [restoreSending, setRestoreSending] = useState(false);
+  const [restoreUnlocking, setRestoreUnlocking] = useState(false);
+  const [restoreNotice, setRestoreNotice] = useState("");
 
   const milestoneCounts = (m: Milestone) => ({
     peers: m.verifications?.length || 0,
@@ -353,7 +378,10 @@ export default function StudioPage() {
     returnToVerifyHubRef.current = true;
     setIsVerifyHubOpen(false);
     if (step === "peer") setIsInviteModalOpen(true);
-    if (step === "doc") setIsArtifactModalOpen(true);
+    if (step === "doc") {
+      setArtifactScanError(null);
+      setIsArtifactModalOpen(true);
+    }
   };
 
   const closeVerifyStep = (close: () => void) => {
@@ -369,6 +397,7 @@ export default function StudioPage() {
 
     const urlParams = new URLSearchParams(window.location.search);
     const linkedInAuth = urlParams.get("linkedin_auth");
+    const linkedInReason = urlParams.get("linkedin_reason");
     const saved = readStudioRecord<any>(STUDIO_SAVED_KEY);
     const draft = readStudioRecord<any>(STUDIO_DRAFT_KEY);
     const pendingRaw = sessionStorage.getItem("vcv_pending_payload");
@@ -409,6 +438,13 @@ export default function StudioPage() {
         const res = await fetch("/api/auth/linkedin/session");
         const data = await res.json();
         if (data?.authenticated && data.profile) {
+          if (data.usableForConfirm === false) {
+            setLinkedinVerifyError(data.confirmError || "This LinkedIn account is too incomplete to verify.");
+            if (linkedInAuth) {
+              window.history.replaceState({}, document.title, "/studio");
+            }
+            return;
+          }
           setContact((prev) => {
             const nextContact = {
               ...prev,
@@ -417,7 +453,12 @@ export default function StudioPage() {
             };
             const base = saved && hasPortfolioContent(saved) ? saved : draft;
             if (base && hasPortfolioContent(base)) {
-              const synced = { ...base, contact: { ...base.contact, ...nextContact }, email: nextContact.email };
+              const synced = {
+                ...base,
+                contact: { ...base.contact, ...nextContact },
+                email: nextContact.email,
+                linkedinSub: data.profile.sub
+              };
               writeStudioRecord(STUDIO_DRAFT_KEY, synced);
               if (saved) {
                 skipNextAutosaveRef.current = true;
@@ -425,6 +466,7 @@ export default function StudioPage() {
                 fetch("/api/vault", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
+                  credentials: "include",
                   body: JSON.stringify(synced)
                 }).catch(() => {});
               }
@@ -432,13 +474,15 @@ export default function StudioPage() {
             return nextContact;
           });
           if (linkedInAuth === "success") {
+            setLinkedinVerifyError("");
             setChatMessages((prev) => [
               ...prev,
               {
                 sender: "ally",
-                text: `✅ LinkedIn identity verified${data.profile.name ? ` for ${data.profile.name}` : ""}. We will not post to your profile.`
+                text: `LinkedIn identity confirmed${data.profile.name ? ` for ${data.profile.name}` : ""}. We will not post to your profile.`
               }
             ]);
+            captureEvent("linkedin_verified");
             window.history.replaceState({}, document.title, "/studio");
           }
           return;
@@ -447,14 +491,10 @@ export default function StudioPage() {
         // Session lookup is optional; the Verify button still works.
       }
 
-      if (linkedInAuth === "error") {
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            sender: "ally",
-            text: "LinkedIn sign-in did not complete. You can try again from the contact strip."
-          }
-        ]);
+      const returnError = linkedInReturnMessage(linkedInAuth, linkedInReason, false);
+      if (returnError) {
+        setLinkedinVerifyError(returnError);
+        setChatMessages((prev) => [...prev, { sender: "ally", text: returnError }]);
         window.history.replaceState({}, document.title, "/studio");
       }
     }
@@ -496,6 +536,7 @@ export default function StudioPage() {
         const res = await fetch("/api/vault", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify(payload)
         });
         setSaveStatus(res.ok ? "saved" : "error");
@@ -524,7 +565,7 @@ export default function StudioPage() {
         const res = await fetch(`/api/vault/check?handle=${encodeURIComponent(handle)}`);
         if (res.ok) {
           const data = await res.json();
-          setHandleStatus(data.available ? "available" : "taken");
+          setHandleStatus(data.reason === "owned" ? "owned" : data.available ? "available" : "taken");
         } else {
           setHandleStatus("available");
         }
@@ -620,6 +661,7 @@ export default function StudioPage() {
         if (data.contact) setContact((prev) => ({ ...prev, ...data.contact }));
 
         setActiveTab("canvas");
+        captureEvent("resume_parsed", { source: "studio_paste", chapters: data.milestones.length });
         setChatMessages((prev) => [
           ...prev,
           {
@@ -675,6 +717,7 @@ export default function StudioPage() {
         if (data.contact) setContact((prev) => ({ ...prev, ...data.contact }));
 
         setActiveTab("canvas");
+        captureEvent("resume_parsed", { source: "studio_upload", chapters: data.milestones.length });
         setChatMessages((prev) => [
           ...prev,
           {
@@ -814,7 +857,7 @@ export default function StudioPage() {
     }
 
     if (handleStatus === "taken" && !isPortfolioSaved) {
-      alert("This handle is already taken. Please choose another one.");
+      setRestoreNotice("This handle is already claimed. If it is yours, send a restore code to the email on the account.");
       isValid = false;
     }
 
@@ -837,25 +880,31 @@ export default function StudioPage() {
       const res = await fetch("/api/vault", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(dossierPayload)
       });
 
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         skipNextAutosaveRef.current = true;
         persistPortfolioLocally(true, dossierPayload);
         setIsPortfolioSaved(true);
         setSaveStatus("saved");
         setIsClaimModalOpen(false);
+        identifyHandle(handle.toLowerCase().trim());
+        captureEvent("portfolio_saved", { handle: handle.toLowerCase().trim(), restoreEmailed: Boolean(data.restoreEmailed) });
         setChatMessages((prev) => [
           ...prev,
           {
             sender: "ally",
-            text: `Portfolio saved. Live dossier is active at verifiedcv.app/${handle.toLowerCase().trim()}. You can now verify identity and request corroboration.`
+            text: data.restoreEmailed
+              ? `Portfolio saved at verifiedcv.app/${handle.toLowerCase().trim()}. We emailed a restore code so you can unlock this page from another browser.`
+              : `Portfolio saved. Live dossier is active at verifiedcv.app/${handle.toLowerCase().trim()}. You can now verify identity and request corroboration.`
           }
         ]);
       } else {
-        const data = await res.json();
-        alert(data.error || "Failed to save portfolio.");
+        setRestoreNotice(data.error || "Failed to save portfolio.");
+        if (data.code === "HANDLE_OWNED") setHandleStatus("taken");
       }
     } catch {
       alert("Network error saving portfolio.");
@@ -882,6 +931,7 @@ export default function StudioPage() {
       await fetch("/api/vault", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(dossierPayload)
       });
     } catch (err) {
@@ -889,39 +939,142 @@ export default function StudioPage() {
     }
   };
 
+  const sendRestoreCode = async () => {
+    setRestoreSending(true);
+    setRestoreNotice("");
+    try {
+      const res = await fetch("/api/vault/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ handle: handle.toLowerCase().trim(), email: contact.email })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setRestoreNotice(data.error || "Could not send a restore code.");
+        return;
+      }
+      setRestoreNotice("Check your email for a 6-digit restore code.");
+    } catch {
+      setRestoreNotice("Network error sending the restore code.");
+    } finally {
+      setRestoreSending(false);
+    }
+  };
+
+  const unlockWithRestoreCode = async () => {
+    setRestoreUnlocking(true);
+    setRestoreNotice("");
+    try {
+      const claimed = handle.toLowerCase().trim();
+      const res = await fetch("/api/vault/restore", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ handle: claimed, email: contact.email, code: restoreCode })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setRestoreNotice(data.error || "That code did not work.");
+        return;
+      }
+
+      const vaultRes = await fetch(`/api/vault?handle=${encodeURIComponent(claimed)}`, { credentials: "include" });
+      if (!vaultRes.ok) {
+        setRestoreNotice("Unlocked, but could not load the saved portfolio.");
+        return;
+      }
+      const record = await vaultRes.json();
+      skipNextAutosaveRef.current = true;
+      applyPortfolioRecord(record);
+      persistPortfolioLocally(true, {
+        handle: record.handle || claimed,
+        email: record.contact?.email || contact.email,
+        fullName: record.fullName,
+        headline: record.headline,
+        summaryStatement: record.summaryStatement,
+        contact: record.contact,
+        skills: record.skills,
+        education: record.education,
+        milestones: record.milestones
+      });
+      setIsPortfolioSaved(true);
+      setSaveStatus("saved");
+      setHandleStatus("owned");
+      setIsClaimModalOpen(false);
+      setRestoreCode("");
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          sender: "ally",
+          text: `Restored verifiedcv.app/${claimed} in this browser. You can edit and continue verification.`
+        }
+      ]);
+    } catch {
+      setRestoreNotice("Network error restoring this handle.");
+    } finally {
+      setRestoreUnlocking(false);
+    }
+  };
+
   const handleArtifactUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0 || !targetMilestone) return;
     const file = e.target.files[0];
-    
+    e.target.value = "";
+
     setIsProcessing(true);
-    await new Promise(resolve => setTimeout(resolve, 1200));
+    setArtifactScanError(null);
 
-    const newArtifact = {
-      id: `art-${Date.now()}`,
-      name: file.name,
-      type: file.name.endsWith('.pdf') ? 'Document' : 'Work Product'
-    };
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("company", targetMilestone.company);
+    formData.append("period", targetMilestone.period);
+    formData.append("candidateName", fullName);
+    formData.append("handle", handle.toLowerCase().trim());
+    formData.append("milestoneId", targetMilestone.id);
 
-    const updatedMilestones = milestones.map((m) => {
-      if (m.id !== targetMilestone.id) return m;
-      return {
-        ...m,
-        artifacts: [...(m.artifacts || []), newArtifact]
-      };
-    });
-
-    setMilestones(updatedMilestones);
-    await updateVaultStore(updatedMilestones);
-      
-    setIsProcessing(false);
-    setIsArtifactModalOpen(false);
-    setChatMessages((prev) => [
-      ...prev,
-      {
-        sender: "ally",
-        text: `Artifact "${file.name}" attached to ${targetMilestone.company}. AI scan confirms employer match. Milestone upgraded to Document Verified (Level 1).`
+    try {
+      const res = await fetch("/api/verify/document/scan", {
+        method: "POST",
+        credentials: "include",
+        body: formData
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.matched || !data.artifact) {
+        captureEvent("document_scan_failed", { handle: handle.toLowerCase().trim(), company: targetMilestone.company });
+        setArtifactScanError(data.error || "This file did not match the employer and dates on this chapter.");
+        return;
       }
-    ]);
+
+      const newArtifact = {
+        id: data.artifact.id,
+        name: data.artifact.name,
+        type: data.artifact.type
+      };
+      const updatedMilestones = milestones.map((m) => {
+        if (m.id !== targetMilestone.id) return m;
+        return {
+          ...m,
+          artifacts: [...(m.artifacts || []), newArtifact]
+        };
+      });
+
+      setMilestones(updatedMilestones);
+      await updateVaultStore(updatedMilestones);
+      setIsArtifactModalOpen(false);
+      captureEvent("document_scan_succeeded", { handle: handle.toLowerCase().trim(), company: targetMilestone.company });
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          sender: "ally",
+          text: `Document matched ${targetMilestone.company}. The file was deleted after the scan. This chapter now has employment-document proof.`
+        }
+      ]);
+    } catch {
+      setArtifactScanError("Network error scanning that document.");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const dispatchPeerInvite = async (e: React.FormEvent) => {
@@ -952,6 +1105,7 @@ export default function StudioPage() {
 
       setIsInviteModalOpen(false);
       setWaitingForPeer(true);
+      captureEvent("peer_invite_sent", { handle: handle.toLowerCase().trim(), company: targetMilestone.company });
       setChatMessages((prev) => [
         ...prev,
         {
@@ -1371,12 +1525,41 @@ export default function StudioPage() {
                         type="text"
                         value={contact.phone}
                         readOnly={!isPortfolioSaved}
-                        onChange={(e) => setContact({ ...contact, phone: e.target.value })}
+                        onChange={(e) => setContact({ ...contact, phone: e.target.value, phoneVerified: false })}
                         placeholder="Phone"
                         className={`w-full text-xs bg-transparent focus:outline-none font-medium ${isPortfolioSaved ? "" : "cursor-pointer"}`}
                       />
                     </div>
-                    <span className="text-[10px] font-semibold text-slate-400 shrink-0">Coming soon</span>
+                    {contact.phoneVerified ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          requirePortfolioSaved(async () => {
+                            setPhoneVerifyError("");
+                            const res = await fetch("/api/verify/phone", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ phone: contact.phone, handle })
+                            });
+                            const data = await res.json();
+                            if (res.ok && data.success) {
+                              setPhoneCodeSent(true);
+                              setChatMessages((prev) => [
+                                ...prev,
+                                { sender: "ally", text: `Check ${contact.phone} for a 6-digit SMS code.` }
+                              ]);
+                            } else {
+                              setPhoneVerifyError(data.error || "Could not send the SMS code.");
+                            }
+                          });
+                        }}
+                        className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer shrink-0"
+                      >
+                        {phoneCodeSent ? "Resend" : "Verify"}
+                      </button>
+                    )}
                   </div>
 
                   <div className="p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center justify-between gap-2">
@@ -1396,8 +1579,10 @@ export default function StudioPage() {
                     ) : (
                       <button onClick={() => {
                         requirePortfolioSaved(() => {
+                          setLinkedinVerifyError("");
                           persistPortfolioLocally(true);
                           window.location.href = "/api/auth/linkedin?next=/studio";
+                          captureEvent("linkedin_verify_clicked", { handle: handle.toLowerCase().trim() });
                         });
                       }} className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer shrink-0">Verify</button>
                     )}
@@ -1451,10 +1636,12 @@ export default function StudioPage() {
                             fetch("/api/vault", {
                               method: "POST",
                               headers: { "Content-Type": "application/json" },
+                              credentials: "include",
                               body: JSON.stringify(dossierPayload)
                             }).catch(() => undefined);
                           }
                           setChatMessages((prev) => [...prev, { sender: "ally", text: "Email confirmed." }]);
+                          captureEvent("email_verified", { handle: handle.toLowerCase().trim() });
                         } else {
                           setEmailVerifyError(data.error || "That code did not match.");
                         }
@@ -1465,8 +1652,66 @@ export default function StudioPage() {
                     </button>
                   </div>
                 )}
+                {phoneCodeSent && !contact.phoneVerified && (
+                  <div className="mt-3 p-3 rounded-xl border border-emerald-200 bg-emerald-50/40 flex flex-col sm:flex-row sm:items-center gap-2">
+                    <p className="text-xs text-slate-600 flex-1">
+                      Enter the 6-digit code sent to {contact.phone}.
+                    </p>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      value={phoneCode}
+                      onChange={(e) => setPhoneCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      placeholder="000000"
+                      className="w-28 text-sm tracking-[0.3em] font-mono px-3 py-2 rounded-lg border border-[#E2E8F0] bg-white focus:outline-none focus:border-[#059669]"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setPhoneVerifyError("");
+                        const res = await fetch("/api/verify/phone", {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ phone: contact.phone, code: phoneCode, handle })
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                          const nextContact = { ...contact, phone: data.phone || contact.phone, phoneVerified: true };
+                          setContact(nextContact);
+                          setPhoneCodeSent(false);
+                          setPhoneCode("");
+                          const dossierPayload = { ...buildPortfolioPayload(), contact: nextContact };
+                          persistPortfolioLocally(true, dossierPayload);
+                          if (isPortfolioSaved) {
+                            fetch("/api/vault", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              credentials: "include",
+                              body: JSON.stringify(dossierPayload)
+                            }).catch(() => undefined);
+                          }
+                          setChatMessages((prev) => [...prev, { sender: "ally", text: "Phone confirmed." }]);
+                          captureEvent("phone_verified", { handle: handle.toLowerCase().trim() });
+                        } else {
+                          setPhoneVerifyError(data.error || "That code did not match.");
+                        }
+                      }}
+                      className="text-xs font-bold text-white bg-[#059669] hover:bg-emerald-700 px-4 py-2 rounded-lg cursor-pointer"
+                    >
+                      Confirm
+                    </button>
+                  </div>
+                )}
                 {emailVerifyError && (
                   <p className="mt-2 text-xs font-bold text-red-600">{emailVerifyError}</p>
+                )}
+                {phoneVerifyError && (
+                  <p className="mt-2 text-xs font-bold text-red-600">{phoneVerifyError}</p>
+                )}
+                {linkedinVerifyError && (
+                  <p className="mt-2 text-xs font-bold text-red-600">{linkedinVerifyError}</p>
                 )}
               </div>
 
@@ -1634,18 +1879,11 @@ export default function StudioPage() {
                         )}
 
                         {milestone.verifications && milestone.verifications.length > 0 && (
-                          <div className="pt-2 pb-2 border-b border-slate-100 space-y-1.5">
-                            {milestone.verifications.map((v) => (
-                              <div key={v.id} className="text-[10px] text-emerald-800 font-semibold flex items-center gap-1.5">
-                                <CheckCircle2 className="w-3 h-3 text-[#059669]" />
-                                <span>Verified by {v.name} ({v.role})</span>
-                                {v.linkedInUrl && (
-                                  <a href={v.linkedInUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center w-4 h-4 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors ml-1" title="Authenticated via LinkedIn">
-                                    <LinkedInIcon className="w-2.5 h-2.5" />
-                                  </a>
-                                )}
-                              </div>
-                            ))}
+                          <div className="pt-2 pb-2 border-b border-slate-100">
+                            <div className="text-[10px] text-emerald-800 font-semibold flex items-center gap-1.5">
+                              <CheckCircle2 className="w-3 h-3 text-[#059669]" />
+                              <span>{corroborationHeadline(milestone.company, milestone.verifications)}</span>
+                            </div>
                           </div>
                         )}
 
@@ -1813,12 +2051,12 @@ export default function StudioPage() {
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-500 leading-relaxed">
-                      One LinkedIn-authenticated peer confirms your time there.
+                      They sign in with LinkedIn, add their title, and the years they overlapped you there. Their name stays private. One person shows as a title at this company; several people roll up to a count.
                       {current.peers === 0 && current.docs === 0
-                        ? " One peer gets you to Partially Verified. A second peer, or a document plus this peer, reaches Company Verified."
+                        ? " One confirmation gets you to Partially Verified. A second person, or a document plus this person, reaches Company Verified."
                         : current.peers === 0
                           ? " Combined with your document, this reaches Company Verified."
-                          : " Two or more peers reach Company Verified."}
+                          : " Two or more confirmations reach Company Verified."}
                     </p>
                   </button>
 
@@ -1871,13 +2109,19 @@ export default function StudioPage() {
 
             <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1 text-xs">
               <span className="font-bold text-[#0F172A] block">Attaching to: {targetMilestone.company}</span>
-              <span className="text-slate-500 block">Upload a W-2, Offer Letter, or Work Product.</span>
+              <span className="text-slate-500 block">{targetMilestone.period}. Upload a PDF W-2, offer letter, or contract.</span>
             </div>
 
             <div className="space-y-4 text-xs">
               <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 text-indigo-800 leading-relaxed">
-                <strong>Privacy Note:</strong> Tax documents and offer letters are scanned by our AI to verify employer and dates, then <strong>instantly deleted</strong>. They are never shown to recruiters.
+                <strong>Privacy:</strong> We read employer and dates from the PDF, then discard the file. It is never shown on your public page.
               </div>
+
+              {artifactScanError && (
+                <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 leading-relaxed">
+                  {artifactScanError}
+                </div>
+              )}
 
               <div className="pt-2">
                 <input
@@ -1885,7 +2129,7 @@ export default function StudioPage() {
                   id="artifact-upload"
                   className="hidden"
                   onChange={handleArtifactUpload}
-                  accept=".pdf,.png,.jpg,.jpeg"
+                  accept="application/pdf,.pdf"
                 />
                 <button
                   type="button"
@@ -1929,6 +2173,9 @@ export default function StudioPage() {
             <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1 text-xs">
               <span className="font-bold text-[#0F172A] block">{targetMilestone.company}</span>
               <span className="text-slate-500 block">{targetMilestone.role} ({targetMilestone.period})</span>
+              <p className="text-slate-500 pt-1">
+                They sign in with LinkedIn and add their title plus the years they overlapped you. Their name stays private. Recruiters see a title at this company, or a count if several people confirm.
+              </p>
             </div>
 
             <form onSubmit={dispatchPeerInvite} className="space-y-4 text-xs">
@@ -2052,6 +2299,11 @@ export default function StudioPage() {
                       <Check className="w-3 h-3" /> verifiedcv.app/{handle} is available!
                     </span>
                   )}
+                  {handleStatus === "owned" && (
+                    <span className="text-emerald-600 font-bold flex items-center gap-1">
+                      <Check className="w-3 h-3" /> This browser already owns verifiedcv.app/{handle}.
+                    </span>
+                  )}
                   {handleStatus === "taken" && (
                     <span className="text-red-500 font-bold flex items-center gap-1">
                       <AlertCircle className="w-3 h-3" /> verifiedcv.app/{handle} is already claimed.
@@ -2059,6 +2311,43 @@ export default function StudioPage() {
                   )}
                 </div>
               </div>
+
+              {handleStatus === "taken" && !isPortfolioSaved && (
+                <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-3">
+                  <p className="text-slate-500 leading-relaxed">
+                    If this is your page, we will email a restore code to the address already on the account. That unlocks this browser without overwriting someone else.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={sendRestoreCode}
+                    disabled={restoreSending || !contact.email}
+                    className="w-full py-2.5 rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[#0F172A] font-black cursor-pointer disabled:opacity-50"
+                  >
+                    {restoreSending ? "Sending code..." : "Email restore code"}
+                  </button>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={restoreCode}
+                    onChange={(e) => setRestoreCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="6-digit code"
+                    className="w-full p-2.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-mono tracking-widest"
+                  />
+                  <button
+                    type="button"
+                    onClick={unlockWithRestoreCode}
+                    disabled={restoreUnlocking || restoreCode.length !== 6}
+                    className="w-full py-2.5 rounded-xl bg-[#059669] hover:bg-[#047857] text-white font-black cursor-pointer disabled:opacity-50"
+                  >
+                    {restoreUnlocking ? "Unlocking..." : "Unlock this page"}
+                  </button>
+                </div>
+              )}
+
+              {restoreNotice && (
+                <p className="text-[11px] text-slate-600 leading-relaxed">{restoreNotice}</p>
+              )}
 
               <div className="pt-2">
                 <button

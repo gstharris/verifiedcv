@@ -1,17 +1,15 @@
 "use client";
 
 import { useEffect, useState, use, useRef } from "react";
-import { 
-  ShieldCheck, 
-  CheckCircle2, 
-  Building2, 
-  ArrowRight, 
-  Loader2, 
-  AlertCircle, 
-  Sparkles, 
-  Lock, 
-  EyeOff, 
-  UploadCloud, 
+import {
+  ShieldCheck,
+  CheckCircle2,
+  Building2,
+  ArrowRight,
+  Loader2,
+  AlertCircle,
+  Lock,
+  UploadCloud,
   RotateCcw,
   ChevronDown,
   ChevronUp,
@@ -20,6 +18,24 @@ import {
   ShieldAlert
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
+import { overlapMonths, parseTenureRange } from "@/lib/tenureOverlap";
+import { corroborationHeadline } from "@/lib/corroborationDisplay";
+
+const YEAR_OPTIONS = Array.from({ length: 50 }, (_, i) => String(new Date().getUTCFullYear() + 1 - i));
+
+function linkedInReturnMessage(auth: string | null, reason: string | null, hasSession: boolean) {
+  if (hasSession) return "";
+  if (auth === "success") {
+    return "LinkedIn signed you in, but this browser did not keep the session. Use www.verifiedcv.app and try again.";
+  }
+  if (auth !== "error") return "";
+  if (reason === "state") {
+    return "LinkedIn sign-in lost its session cookie. Open this page on www.verifiedcv.app and try again.";
+  }
+  if (reason === "denied") return "LinkedIn sign-in was cancelled.";
+  if (reason === "profile") return "LinkedIn did not return a usable profile. Try again.";
+  return "LinkedIn sign-in did not complete. Try again.";
+}
 
 interface ChapterClaimSummary {
   id: string;
@@ -52,13 +68,12 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
 
   // Form State
   const [attestorName, setAttestorName] = useState("");
-  const [attestorTitle, setAttestorTitle] = useState("Director of Engineering / Product");
-  const [careerYears, setCareerYears] = useState(15);
-  const [relationship, setRelationship] = useState<"PEER" | "MANAGER" | "DIRECT_REPORT" | "STAKEHOLDER">("PEER");
-  const [isRoleMasked, setIsRoleMasked] = useState(true);
-  const [notes, setNotes] = useState("");
+  const [attestorTitle, setAttestorTitle] = useState("");
   const [endorsedClaimIds, setEndorsedClaimIds] = useState<string[]>([]);
   const [isMilestonesOpen, setIsMilestonesOpen] = useState(false);
+  const [attestorStartYear, setAttestorStartYear] = useState("");
+  const [attestorEndYear, setAttestorEndYear] = useState("");
+  const [attestorStillThere, setAttestorStillThere] = useState(false);
 
   // LinkedIn Verification State
   const [isAuthenticatingLinkedIn, setIsAuthenticatingLinkedIn] = useState(false);
@@ -91,6 +106,11 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
 
         if (json.success && json.data) {
           setData(json.data);
+          const parsed = parseTenureRange(String(json.data.tenureDates || ""));
+          if (parsed) {
+            setAttestorStartYear(String(parsed.start.year));
+            setAttestorEndYear(String(parsed.end.year));
+          }
           if (json.data.status === "CONFIRMED") {
             setIsSuccess(true);
           }
@@ -111,12 +131,21 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
 
     const urlParams = new URLSearchParams(window.location.search);
     const linkedInAuth = urlParams.get("linkedin_auth");
+    const linkedInReason = urlParams.get("linkedin_reason");
 
     async function applyLinkedInSession() {
       try {
         const res = await fetch("/api/auth/linkedin/session");
         const json = await res.json();
         if (json?.authenticated && json.profile) {
+          if (json.usableForConfirm === false) {
+            setLinkedInProfile(null);
+            setLinkedInError(json.confirmError || "This LinkedIn account is too incomplete to confirm.");
+            if (linkedInAuth) {
+              window.history.replaceState({}, document.title, `/attest/${token}`);
+            }
+            return;
+          }
           setLinkedInProfile({
             sub: json.profile.sub,
             name: json.profile.name,
@@ -124,6 +153,7 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
             picture: json.profile.picture
           });
           setAttestorName((prev) => prev || json.profile.name || "");
+          setLinkedInError("");
           if (linkedInAuth) {
             window.history.replaceState({}, document.title, `/attest/${token}`);
           }
@@ -133,8 +163,9 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
         // Session lookup is optional; the Sign in button still works.
       }
 
-      if (linkedInAuth === "error") {
-        setLinkedInError("LinkedIn sign-in did not complete. Please try again.");
+      const returnError = linkedInReturnMessage(linkedInAuth, linkedInReason, false);
+      if (returnError) {
+        setLinkedInError(returnError);
         window.history.replaceState({}, document.title, `/attest/${token}`);
       }
     }
@@ -154,6 +185,14 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
     window.location.href = `/api/auth/linkedin?next=${encodeURIComponent(`/attest/${token}`)}`;
   };
 
+  const attestorPeriod = attestorStartYear
+    ? `${attestorStartYear} — ${attestorStillThere ? "Present" : attestorEndYear}`
+    : "";
+  const overlapPreview = data ? overlapMonths(data.tenureDates, attestorPeriod) : { ok: false, months: 0, label: "" };
+  const publicPreview = data
+    ? corroborationHeadline(data.companyName, [{ name: attestorTitle.trim() || "colleague" }])
+    : "";
+
   const handleConfirm = async () => {
     setSubmitting(true);
     setError(null);
@@ -164,13 +203,15 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           token,
-          attestorName: attestorName.trim(),
+          attestorName: attestorName.trim() || linkedInProfile?.name || "",
           attestorTitle: attestorTitle.trim(),
-          careerYears,
-          relationship,
-          isRoleMasked,
-          notes,
+          careerYears: 0,
+          relationship: "PEER",
+          isRoleMasked: true,
+          notes: "",
           endorsedClaimIds,
+          attestorPeriod,
+          attestorCompany: data?.companyName,
           linkedInProfile,
         }),
       });
@@ -274,11 +315,11 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
                 </span>
               </div>
               <h1 className="text-xl sm:text-2xl font-black text-slate-950 tracking-tight">
-                Vouch for {data.candidateName}'s Track Record
+                Confirm time with {data.candidateName} at {data.companyName}
               </h1>
               <p className="text-xs text-slate-600 leading-relaxed font-normal">
-                {data.candidateName} has invited you to corroborate their career chapter at{" "}
-                <strong>{data.companyName}</strong>. Zero signup or password required.
+                Sign in with LinkedIn, add your title, and the years you overlapped. Your name stays private.
+                Recruiters will see a title at {data.companyName}, or a count if several people confirm.
               </p>
             </div>
 
@@ -298,6 +339,71 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
               </div>
             </div>
 
+            <div className="p-4 rounded-xl bg-white border border-slate-200 space-y-3">
+              <div>
+                <label className="font-bold text-xs text-slate-900 block">Your title at {data.companyName}</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Senior Director"
+                  value={attestorTitle}
+                  onChange={(e) => setAttestorTitle(e.target.value)}
+                  className="mt-1.5 w-full border border-slate-200 rounded-xl p-2.5 text-xs outline-none focus:border-slate-400 bg-white"
+                />
+              </div>
+              <div>
+                <p className="font-bold text-xs text-slate-900">Years you were there</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Needs to overlap {data.candidateName}'s time ({data.tenureDates}).
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="font-bold text-slate-800 block mb-1">Started</label>
+                  <select
+                    value={attestorStartYear}
+                    onChange={(e) => setAttestorStartYear(e.target.value)}
+                    className="w-full border border-slate-200 rounded-xl p-2.5 bg-white outline-none focus:border-slate-400"
+                  >
+                    <option value="">Year</option>
+                    {YEAR_OPTIONS.map((year) => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="font-bold text-slate-800 block mb-1">Ended</label>
+                  <select
+                    value={attestorEndYear}
+                    onChange={(e) => setAttestorEndYear(e.target.value)}
+                    disabled={attestorStillThere}
+                    className="w-full border border-slate-200 rounded-xl p-2.5 bg-white outline-none focus:border-slate-400 disabled:opacity-50"
+                  >
+                    <option value="">Year</option>
+                    {YEAR_OPTIONS.map((year) => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={attestorStillThere}
+                  onChange={(e) => setAttestorStillThere(e.target.checked)}
+                  className="rounded text-emerald-600 focus:ring-0 cursor-pointer"
+                />
+                I still work there
+              </label>
+              {attestorStartYear && (attestorStillThere || attestorEndYear) && (
+                <p className={`text-[11px] font-semibold ${overlapPreview.ok ? "text-emerald-700" : "text-red-600"}`}>
+                  {overlapPreview.label}
+                </p>
+              )}
+              <p className="text-[11px] text-slate-500">
+                Recruiters will see: <strong className="text-slate-800">{publicPreview}</strong>
+              </p>
+            </div>
+
             {/* Optional Progressive Drill-Down: Specific Milestones */}
             {data.claims && data.claims.length > 0 && (
               <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
@@ -310,7 +416,7 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
                     <Award className="w-4 h-4 text-emerald-700" />
                     <div>
                       <span className="font-bold text-slate-900 block">
-                        Optional: Directly Vouch for Specific Initiatives
+                        Optional: confirm specific work
                       </span>
                       <span className="text-[11px] text-slate-500">
                         {endorsedClaimIds.length} of {data.claims.length} milestones selected
@@ -366,130 +472,19 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
               </div>
             )}
 
-            {/* Role-Masked Privacy Box (DEFAULT ON) */}
-            <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-200 space-y-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-2.5">
-                  <EyeOff className="w-4 h-4 text-emerald-700 mt-0.5 shrink-0" />
-                  <div>
-                    <span className="font-bold text-xs text-emerald-950 block">
-                      Role-Masked Privacy Protection (Active)
-                    </span>
-                    <span className="text-[11px] text-slate-600 leading-relaxed block mt-0.5">
-                      Your full name and contact information remain private in the encrypted Vault. Recruiters will only see your verified title and tenure level to comply with corporate reference policies.
-                    </span>
-                  </div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={isRoleMasked}
-                  onChange={(e) => setIsRoleMasked(e.target.checked)}
-                  className="rounded text-emerald-600 focus:ring-0 cursor-pointer mt-1"
-                />
-              </div>
-
-              <div className="p-2.5 rounded-lg bg-white border border-emerald-200/80 text-[11px] text-slate-700 font-mono">
-                {isRoleMasked ? (
-                  <span>Recruiter sees: <strong>Verified by Former {attestorTitle || "Leader"} @ {data.companyName} ({careerYears}+ Yrs Exp)</strong></span>
-                ) : (
-                  <span>Recruiter sees: <strong>Verified by {attestorName || "Your Name"} ({attestorTitle})</strong></span>
-                )}
-              </div>
+            <div className="p-3 rounded-xl bg-emerald-50/50 border border-emerald-200 text-[11px] text-slate-600 leading-relaxed">
+              Your name stays private. This is a personal confirmation, not an official {data.companyName} reference.
             </div>
 
-            {/* Form Controls */}
             <div className="space-y-4 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-slate-800 block mb-1">Your Name</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. David Chen"
-                    value={attestorName}
-                    onChange={(e) => setAttestorName(e.target.value)}
-                    className="w-full border border-slate-200 rounded-xl p-2.5 outline-none focus:border-slate-400 bg-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-800 block mb-1">Your Title During Tenure</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. VP of Systems Architecture"
-                    value={attestorTitle}
-                    onChange={(e) => setAttestorTitle(e.target.value)}
-                    className="w-full border border-slate-200 rounded-xl p-2.5 outline-none focus:border-slate-400 bg-white"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-800 block mb-1">Your Working Relationship</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { key: "PEER", label: "Colleague / Peer" },
-                    { key: "MANAGER", label: "Direct Manager" },
-                    { key: "DIRECT_REPORT", label: "Direct Report" },
-                    { key: "STAKEHOLDER", label: "Cross-Functional Partner" },
-                  ].map((rel) => (
-                    <button
-                      key={rel.key}
-                      type="button"
-                      onClick={() => setRelationship(rel.key as any)}
-                      className={`p-2.5 rounded-xl border text-left font-bold transition-all cursor-pointer ${
-                        relationship === rel.key
-                          ? "bg-emerald-50 border-emerald-500 text-emerald-950"
-                          : "bg-white hover:bg-slate-50 border-slate-200 text-slate-700"
-                      }`}
-                    >
-                      {rel.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-800 block mb-1">
-                  Total Career Experience: <span className="text-emerald-700 font-bold">{careerYears}+ Years</span>
-                </label>
-                <input
-                  type="range"
-                  min="2"
-                  max="35"
-                  step="1"
-                  value={careerYears}
-                  onChange={(e) => setCareerYears(parseInt(e.target.value, 10))}
-                  className="w-full accent-emerald-600 cursor-pointer"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-800 block mb-1">
-                  Optional Context Note <span className="font-normal text-slate-500">(1–2 sentences)</span>
-                </label>
-                <textarea
-                  placeholder="e.g. Graham led product management on core personalization systems during this tenure."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={2}
-                  className="w-full border border-slate-200 rounded-xl p-2.5 outline-none focus:border-slate-400 bg-white resize-none"
-                />
-              </div>
-
-              {/* Personal Capacity Legal Disclaimer */}
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-500 leading-relaxed">
-                <strong>Personal Capacity:</strong> You are confirming based on your direct personal experience working with {data.candidateName}. This does not constitute an official corporate communication on behalf of {data.companyName}.
-              </div>
-
-              {/* LinkedIn Identity Verification */}
               {!linkedInProfile ? (
                 <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl space-y-3">
                   <div className="flex items-start gap-2.5">
                     <ShieldAlert className="w-5 h-5 text-blue-700 shrink-0" />
                     <div>
-                      <h4 className="text-xs font-bold text-blue-900">Identity Verification Required</h4>
+                      <h4 className="text-xs font-bold text-blue-900">Sign in with LinkedIn</h4>
                       <p className="text-[11px] text-blue-700 mt-0.5 leading-relaxed">
-                        To prevent fraudulent corroborations, VerifiedCV requires peers to sign in with LinkedIn. We confirm a real LinkedIn identity and verified email. We will not post to your profile.
+                        So we know a real person confirmed. The account needs a verified email, a name, and a profile photo. LinkedIn does not tell us when the account was created. We will not post or show your name.
                       </p>
                     </div>
                   </div>
@@ -506,17 +501,9 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
                 </div>
               ) : (
                 <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                      <CheckCircle2 className="w-4 h-4 text-blue-700" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold text-emerald-900">Identity Verified</div>
-                      <div className="text-[10px] text-emerald-700">
-                        {linkedInProfile.name}
-                        {linkedInProfile.email ? ` • ${linkedInProfile.email}` : " • Authenticated via LinkedIn"}
-                      </div>
-                    </div>
+                  <div>
+                    <div className="text-xs font-bold text-emerald-900">Signed in with LinkedIn</div>
+                    <div className="text-[10px] text-emerald-700">Identity confirmed. Name stays private on the page.</div>
                   </div>
                   <CheckCircle2 className="w-5 h-5 text-emerald-600" />
                 </div>
@@ -531,20 +518,18 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
 
               <button
                 onClick={handleConfirm}
-                disabled={submitting || !linkedInProfile}
+                disabled={submitting || !linkedInProfile || !overlapPreview.ok || !attestorTitle.trim()}
                 className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs transition-all disabled:opacity-50"
               >
                 {submitting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Cryptographically Anchoring to Vault...</span>
+                    <span>Saving confirmation...</span>
                   </>
                 ) : (
                   <>
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>
-                      Confirm Chapter{endorsedClaimIds.length > 0 ? ` & ${endorsedClaimIds.length} Milestones` : ""}
-                    </span>
+                    <span>Confirm</span>
                   </>
                 )}
               </button>

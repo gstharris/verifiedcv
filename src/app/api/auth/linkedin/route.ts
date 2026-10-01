@@ -3,6 +3,7 @@ import {
   applyOAuthStateCookie,
   createOAuthState,
   getLinkedInRedirectUri,
+  isApexVerifiedCvHost,
   sanitizeNextPath
 } from "@/lib/linkedin";
 
@@ -10,6 +11,13 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  if (isApexVerifiedCvHost(req.nextUrl.hostname)) {
+    const www = req.nextUrl.clone();
+    www.hostname = "www.verifiedcv.app";
+    www.protocol = "https:";
+    return NextResponse.redirect(www);
+  }
+
   const clientId = process.env.LINKEDIN_CLIENT_ID;
   if (!clientId) {
     return NextResponse.json(

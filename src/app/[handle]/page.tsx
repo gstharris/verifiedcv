@@ -24,6 +24,8 @@ import {
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 import { getVerificationStatus } from "@/lib/verificationLevel";
+import { corroborationHeadline } from "@/lib/corroborationDisplay";
+import { captureEvent } from "@/lib/analytics";
 
 function LinkedInIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
   return (
@@ -105,6 +107,7 @@ export default function CandidateDossierPage() {
         if (res.ok) {
           const data = await res.json();
           if (data && data.handle) {
+            captureEvent("dossier_viewed", { handle: requestedHandle, found: true });
             setDossier(data);
             setLoading(false);
             return;
@@ -132,6 +135,7 @@ export default function CandidateDossierPage() {
 
       setDossier(null);
       setLoading(false);
+      captureEvent("dossier_viewed", { handle: requestedHandle, found: false });
     }
 
     loadDossier();
@@ -401,18 +405,11 @@ export default function CandidateDossierPage() {
                 </div>
 
                 {m.verifications && m.verifications.length > 0 && (
-                  <div className="pt-2 border-t border-slate-100 space-y-1.5">
-                    {m.verifications.map((v) => (
-                      <div key={v.id} className="text-[10px] text-emerald-800 font-semibold flex items-center gap-1.5">
-                        <CheckCircle2 className="w-3 h-3 text-[#059669]" />
-                        <span>Verified by {v.name} ({v.role})</span>
-                        {v.linkedInUrl && (
-                          <a href={v.linkedInUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center w-4 h-4 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors ml-1" title="Authenticated via LinkedIn">
-                            <LinkedInIcon className="w-2.5 h-2.5" />
-                          </a>
-                        )}
-                      </div>
-                    ))}
+                  <div className="pt-2 border-t border-slate-100">
+                    <div className="text-[10px] text-emerald-800 font-semibold flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3 h-3 text-[#059669]" />
+                      <span>{corroborationHeadline(m.company, m.verifications)}</span>
+                    </div>
                   </div>
                 )}
               </div>

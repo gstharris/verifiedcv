@@ -12,6 +12,8 @@ ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS location TEXT;
 ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT false;
 ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN DEFAULT false;
 ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS linkedin_verified BOOLEAN DEFAULT false;
+ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS linkedin_sub TEXT;
+ALTER TABLE public.candidates ADD COLUMN IF NOT EXISTS owner_token_hash TEXT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS candidates_handle_uidx ON public.candidates (handle);
 
@@ -109,6 +111,14 @@ CREATE TABLE IF NOT EXISTS public.email_codes (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS public.owner_codes (
+    handle TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    code TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 ALTER TABLE public.candidates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.milestones ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.artifacts ENABLE ROW LEVEL SECURITY;
@@ -118,6 +128,7 @@ ALTER TABLE public.education ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.skills ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.attestations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.email_codes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.owner_codes ENABLE ROW LEVEL SECURITY;
 
 DO $$ BEGIN
   CREATE POLICY "vcv candidates select" ON public.candidates FOR SELECT USING (true);
@@ -210,6 +221,19 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
   CREATE POLICY "vcv email_codes delete" ON public.email_codes FOR DELETE USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "vcv owner_codes select" ON public.owner_codes FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  CREATE POLICY "vcv owner_codes insert" ON public.owner_codes FOR INSERT WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  CREATE POLICY "vcv owner_codes update" ON public.owner_codes FOR UPDATE USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  CREATE POLICY "vcv owner_codes delete" ON public.owner_codes FOR DELETE USING (true);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 CREATE OR REPLACE FUNCTION update_updated_at_column()

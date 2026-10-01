@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   try {
     const supabase = getSupabase();
-    let body: any;
+    let body: Record<string, unknown>;
     try {
       body = await req.json();
     } catch {
@@ -17,40 +17,36 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { artifactId, candidateHandle, documentHash, title, type } = body || {};
+    const artifactId = String(body.artifactId || crypto.randomUUID());
+    const milestoneId = String(body.milestoneId || "").trim();
+    const name = String(body.name || body.title || "Employment document").trim();
+    const type = String(body.type || body.artifactType || "W-2 / offer letter").trim();
 
-    if (!artifactId || !candidateHandle || !documentHash) {
-      return NextResponse.json(
-        { success: false, error: "artifactId, candidateHandle, and documentHash are required." },
-        { status: 400 }
-      );
+    if (!milestoneId) {
+      return NextResponse.json({ success: false, error: "milestoneId is required." }, { status: 400 });
     }
 
     if (supabase) {
       const { error: dbError } = await supabase.from("artifacts").upsert({
         id: artifactId,
-        candidate_handle: candidateHandle,
-        document_hash: documentHash,
-        title: title || "Work Artifact",
-        type: type || "DECK",
-        verified_at: new Date().toISOString(),
+        milestone_id: milestoneId,
+        name,
+        type
       });
 
       if (dbError) {
-        console.warn("Supabase artifact upsert warning:", dbError.message);
+        return NextResponse.json({ success: false, error: dbError.message }, { status: 500 });
       }
     }
 
     return NextResponse.json({
       success: true,
-      documentHash,
-      status: "ANCHORED",
+      artifactId,
+      status: "SAVED"
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Internal server error.";
     console.error("Artifact commit error:", error);
-    return NextResponse.json(
-      { success: false, error: error?.message || "Internal server error." },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

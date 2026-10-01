@@ -23,6 +23,7 @@ import {
   BadgeCheck
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
+import { captureEvent } from "@/lib/analytics";
 
 function LinkedInIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
   return (
@@ -88,6 +89,7 @@ export default function VerifiedCVLandingPage() {
 
       const data = await res.json();
       if (res.ok && data.milestones && data.milestones.length > 0) {
+        captureEvent("resume_parsed", { source: "landing_paste", chapters: data.milestones.length });
         forwardPayloadToStudio(data);
         return;
       }
@@ -123,6 +125,7 @@ export default function VerifiedCVLandingPage() {
 
       const data = await res.json();
       if (res.ok && data.milestones && data.milestones.length > 0) {
+        captureEvent("resume_parsed", { source: "landing_upload", chapters: data.milestones.length });
         forwardPayloadToStudio(data);
         return;
       } else {
@@ -240,7 +243,10 @@ export default function VerifiedCVLandingPage() {
               <button
                 type="button"
                 disabled={isProcessing}
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => {
+                  captureEvent("landing_upload_clicked");
+                  fileInputRef.current?.click();
+                }}
                 className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold transition-all cursor-pointer shadow-2xs disabled:opacity-50"
               >
                 <UploadCloud className="w-4 h-4 text-emerald-400" />
@@ -420,7 +426,7 @@ export default function VerifiedCVLandingPage() {
                     <Check className="w-3 h-3" /> Full titles and dates, not a one-page cut
                   </div>
                   <div className="flex items-center gap-1.5 text-slate-600">
-                    <Users className="w-3 h-3 text-slate-400" /> Colleague confirmations with LinkedIn sign-in
+                    <Users className="w-3 h-3 text-slate-400" /> Colleague confirmations, names private
                   </div>
                 </div>
               </div>
@@ -432,7 +438,7 @@ export default function VerifiedCVLandingPage() {
                     <p className="text-[10px] text-slate-500">Head of Product · 2010 — 2024</p>
                   </div>
                   <span className="text-[9px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
-                    Colleague confirmed
+                    Confirmed by a Senior Director at Yahoo
                   </span>
                 </div>
 
@@ -528,7 +534,7 @@ export default function VerifiedCVLandingPage() {
               </span>
               <h3 className="font-extrabold text-sm text-[#0F172A]">Ask a colleague to confirm</h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                You choose who to invite. They sign in with LinkedIn and confirm they worked with you. That is corroboration — not a replacement for a recruiter&apos;s own references.
+                You choose who to invite. They sign in with LinkedIn, add a title, and confirm overlapping years. Their name stays private. One person shows as a title at that company; several people show as a count.
               </p>
             </div>
           </div>

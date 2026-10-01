@@ -4,6 +4,8 @@ import { Resend } from "resend";
 import { getLinkedInSessionFromRequest } from "@/lib/linkedin";
 import { getSupabase } from "@/lib/supabase";
 import { getAppUrl } from "@/lib/appUrl";
+import { companiesMatch, overlapCaption, overlapMonths } from "@/lib/tenureOverlap";
+import { assessLinkedInIdentity, emailsMatch } from "@/lib/linkedinProfileGate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -166,15 +168,20 @@ export async function PUT(req: NextRequest) {
       relationship = "PEER",
       notes = "",
       attestorName = "",
-      attestorTitle = "Leader",
-      careerYears = 15,
-      isRoleMasked = true,
-      endorsedClaimIds = []
+      attestorTitle = "colleague",
+      careerYears = 0,
+      endorsedClaimIds = [],
+      attestorPeriod = "",
+      attestorCompany = ""
     } = body;
 
     const linkedInSession = getLinkedInSessionFromRequest(req);
-    if (!linkedInSession?.sub) {
-      return NextResponse.json({ success: false, error: "LinkedIn authentication is required to verify." }, { status: 400 });
+    const linkedInGate = assessLinkedInIdentity(linkedInSession);
+    if (!linkedInSession?.sub || !linkedInGate.ok) {
+      return NextResponse.json(
+        { success: false, error: linkedInGate.message || "LinkedIn authentication is required to verify." },
+        { status: 400 }
+      );
     }
 
     const { data: record, error: loadError } = await supabase
@@ -190,11 +197,69 @@ export async function PUT(req: NextRequest) {
     if (record.status === "CONFIRMED") {
       return NextResponse.json({
         success: true,
-        message: "Chapter milestone already corroborated.",
+        message: "This chapter is already confirmed.",
         alreadyConfirmed: true,
         signature: record.cryptographic_signature
       });
     }
+
+    const candidateLookup = await supabase
+      .from("candidates")
+      .select("email, linkedin_sub")
+      .eq("handle", record.candidate_handle)
+      .maybeSingle();
+    const candidate = candidateLookup.error ? null : candidateLookup.data;
+
+    if (candidate?.linkedin_sub && candidate.linkedin_sub === linkedInSession.sub) {
+      return NextResponse.json(
+        { success: false, error: "You cannot confirm your own chapter with the same LinkedIn account." },
+        { status: 400 }
+      );
+    }
+
+    if (emailsMatch(candidate?.email, linkedInSession.email)) {
+      return NextResponse.json(
+        { success: false, error: "You cannot confirm your own chapter with the same email." },
+        { status: 400 }
+      );
+    }
+
+    const { data: alreadyUsed } = await supabase
+      .from("attestations")
+      .select("token")
+      .eq("milestone_id", record.milestone_id)
+      .eq("linkedin_sub", linkedInSession.sub)
+      .eq("status", "CONFIRMED")
+      .maybeSingle();
+
+    if (alreadyUsed) {
+      return NextResponse.json(
+        { success: false, error: "This LinkedIn account has already confirmed this chapter." },
+        { status: 400 }
+      );
+    }
+
+    if (attestorCompany && !companiesMatch(String(attestorCompany), String(record.company_name))) {
+      return NextResponse.json(
+        { success: false, error: `Confirmation is only for overlapping time at ${record.company_name}.` },
+        { status: 400 }
+      );
+    }
+
+    const overlap = overlapMonths(String(record.tenure_dates || ""), String(attestorPeriod || ""));
+    if (!overlap.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: overlap.label === "Could not read those dates."
+            ? "Enter the month and year you started and left this company."
+            : `Those dates do not overlap ${record.candidate_name || "this candidate"}'s time at ${record.company_name}.`
+        },
+        { status: 400 }
+      );
+    }
+
+    const overlapNote = overlapCaption(String(attestorPeriod).trim(), overlap.months);
 
     const confirmedAt = new Date().toISOString();
     const cryptographicSignature =
@@ -213,8 +278,8 @@ export async function PUT(req: NextRequest) {
         attestor_title: String(attestorTitle).trim(),
         career_years: careerYears,
         relationship,
-        is_role_masked: isRoleMasked,
-        notes: String(notes).trim(),
+        is_role_masked: true,
+        notes: [overlapNote, String(notes).trim()].filter(Boolean).join("\n"),
         endorsed_claim_ids: Array.isArray(endorsedClaimIds) ? endorsedClaimIds : [],
         confirmed_at: confirmedAt,
         cryptographic_signature: cryptographicSignature,
@@ -228,15 +293,13 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ success: false, error: updateError.message }, { status: 500 });
     }
 
-    const displayName = isRoleMasked
-      ? `Former ${String(attestorTitle).trim()} @ ${record.company_name}`
-      : `${String(attestorName).trim() || linkedInSession.name} (${String(attestorTitle).trim()})`;
+    const displayName = String(attestorTitle).trim() || "colleague";
 
     await supabase.from("verifications").insert({
       id: `ver-${Date.now()}`,
       milestone_id: record.milestone_id,
       name: displayName,
-      role: String(attestorTitle).trim(),
+      role: overlapNote,
       email: record.attestor_email,
       linkedin_url: null,
       verified_at: confirmedAt
@@ -246,7 +309,7 @@ export async function PUT(req: NextRequest) {
       success: true,
       message: "Chapter successfully corroborated.",
       signature: cryptographicSignature,
-      isRoleMasked,
+      isRoleMasked: true,
       endorsedClaimCount: Array.isArray(endorsedClaimIds) ? endorsedClaimIds.length : 0
     });
   } catch (error: any) {

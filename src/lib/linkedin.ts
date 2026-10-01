@@ -41,6 +41,15 @@ function cookieSecure() {
   return process.env.NODE_ENV === "production";
 }
 
+function cookieDomain() {
+  if (process.env.VERCEL_ENV !== "production") return undefined;
+  return ".verifiedcv.app";
+}
+
+export function isApexVerifiedCvHost(host: string) {
+  return host === "verifiedcv.app";
+}
+
 export function createOAuthState(next: string) {
   const nonce = crypto.randomUUID();
   const payload: OAuthStatePayload = { nonce, next: sanitizeNextPath(next) };
@@ -64,7 +73,8 @@ export function applyOAuthStateCookie(response: NextResponse, nonce: string) {
     sameSite: "lax",
     secure: cookieSecure(),
     path: "/",
-    maxAge: 10 * 60
+    maxAge: 10 * 60,
+    ...(cookieDomain() ? { domain: cookieDomain() } : {})
   });
 }
 
@@ -74,7 +84,8 @@ export function clearOAuthStateCookie(response: NextResponse) {
     sameSite: "lax",
     secure: cookieSecure(),
     path: "/",
-    maxAge: 0
+    maxAge: 0,
+    ...(cookieDomain() ? { domain: cookieDomain() } : {})
   });
 }
 
@@ -84,7 +95,8 @@ export function applyLinkedInSessionCookie(response: NextResponse, identity: Lin
     sameSite: "lax",
     secure: cookieSecure(),
     path: "/",
-    maxAge: 60 * 60 * 24 * 7
+    maxAge: 60 * 60 * 24 * 7,
+    ...(cookieDomain() ? { domain: cookieDomain() } : {})
   });
 }
 
@@ -93,7 +105,8 @@ export function getLinkedInSessionFromRequest(req: NextRequest): LinkedInIdentit
   if (!raw) return null;
   try {
     const parsed = JSON.parse(decodeURIComponent(raw)) as LinkedInIdentity;
-    if (!parsed?.sub || !parsed?.name) return null;
+    if (!parsed?.sub) return null;
+    if (!parsed.name) parsed.name = parsed.email?.split("@")[0] || "LinkedIn member";
     return parsed;
   } catch {
     return null;
@@ -107,9 +120,11 @@ export function mapUserInfoToIdentity(userInfo: Record<string, unknown>): Linked
     [userInfo.given_name, userInfo.family_name]
       .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
       .join(" ")
-      .trim();
+      .trim() ||
+    (typeof userInfo.email === "string" ? userInfo.email.split("@")[0] : "") ||
+    "LinkedIn member";
 
-  if (!sub || !name) return null;
+  if (!sub) return null;
 
   return {
     sub,

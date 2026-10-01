@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
+import { getHandleOwnerFromRequest, ownerCookieMatches } from "@/lib/handleOwner";
 
 export const dynamic = "force-dynamic";
 
@@ -32,8 +33,21 @@ export async function GET(req: NextRequest) {
 
   const supabase = getSupabase();
   if (supabase) {
-    const { data } = await supabase.from("candidates").select("handle").eq("handle", handle).maybeSingle();
-    if (data?.handle) {
+    const { data, error } = await supabase
+      .from("candidates")
+      .select("handle, owner_token_hash")
+      .eq("handle", handle)
+      .maybeSingle();
+
+    if (error && error.message.toLowerCase().includes("owner_token_hash")) {
+      const { data: fallback } = await supabase.from("candidates").select("handle").eq("handle", handle).maybeSingle();
+      if (fallback?.handle) {
+        return NextResponse.json({ available: false, handle, reason: "taken" });
+      }
+    } else if (data?.handle) {
+      if (ownerCookieMatches(getHandleOwnerFromRequest(req), handle, data.owner_token_hash)) {
+        return NextResponse.json({ available: true, handle, reason: "owned" });
+      }
       return NextResponse.json({ available: false, handle, reason: "taken" });
     }
   }

@@ -1,19 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAppUrl } from "@/lib/appUrl";
 import {
   applyLinkedInSessionCookie,
   clearOAuthStateCookie,
   getLinkedInRedirectUri,
   LINKEDIN_OAUTH_STATE_COOKIE,
   mapUserInfoToIdentity,
-  parseOAuthState
+  parseOAuthState,
+  sanitizeNextPath
 } from "@/lib/linkedin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function redirectWithStatus(req: NextRequest, next: string, status: "success" | "error") {
-  const destination = new URL(next, req.nextUrl.origin);
+function redirectWithStatus(next: string, status: "success" | "error", reason?: string) {
+  const destination = new URL(sanitizeNextPath(next), getAppUrl());
   destination.searchParams.set("linkedin_auth", status);
+  if (reason) destination.searchParams.set("linkedin_reason", reason);
   const response = NextResponse.redirect(destination);
   clearOAuthStateCookie(response);
   return response;
@@ -30,13 +33,14 @@ export async function GET(req: NextRequest) {
   const storedNonce = req.cookies.get(LINKEDIN_OAUTH_STATE_COOKIE)?.value;
 
   if (oauthError || !code || !parsedState || !storedNonce || storedNonce !== parsedState.nonce) {
-    return redirectWithStatus(req, next, "error");
+    const reason = oauthError ? "denied" : !code ? "missing_code" : "state";
+    return redirectWithStatus(next, "error", reason);
   }
 
   const clientId = process.env.LINKEDIN_CLIENT_ID;
   const clientSecret = process.env.LINKEDIN_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
-    return redirectWithStatus(req, next, "error");
+    return redirectWithStatus(next, "error", "config");
   }
 
   try {
@@ -55,7 +59,7 @@ export async function GET(req: NextRequest) {
     const tokenPayload = await tokenRes.json();
     if (!tokenRes.ok || !tokenPayload.access_token) {
       console.error("LinkedIn token exchange failed:", tokenPayload);
-      return redirectWithStatus(req, next, "error");
+      return redirectWithStatus(next, "error", "token");
     }
 
     const userInfoRes = await fetch("https://api.linkedin.com/v2/userinfo", {
@@ -67,10 +71,10 @@ export async function GET(req: NextRequest) {
 
     if (!userInfoRes.ok || !identity) {
       console.error("LinkedIn userinfo failed:", userInfo);
-      return redirectWithStatus(req, next, "error");
+      return redirectWithStatus(next, "error", "profile");
     }
 
-    const destination = new URL(next, req.nextUrl.origin);
+    const destination = new URL(sanitizeNextPath(next), getAppUrl());
     destination.searchParams.set("linkedin_auth", "success");
     const response = NextResponse.redirect(destination);
     clearOAuthStateCookie(response);
@@ -78,6 +82,6 @@ export async function GET(req: NextRequest) {
     return response;
   } catch (error) {
     console.error("LinkedIn OAuth callback error:", error);
-    return redirectWithStatus(req, next, "error");
+    return redirectWithStatus(next, "error", "callback");
   }
 }

@@ -131,7 +131,10 @@ export default function ProactiveVerifyModal({
     const formData = new FormData();
     formData.append("file", selectedFile);
     formData.append("documentType", docType);
+    formData.append("company", companyName);
     formData.append("expectedEntity", companyName);
+    formData.append("experienceId", experienceId);
+    formData.append("milestoneId", experienceId);
 
     try {
       const res = await fetch("/api/verify/document/scan", {
@@ -139,10 +142,10 @@ export default function ProactiveVerifyModal({
         body: formData,
       });
       const result = await res.json();
-      if (result.success && result.data) {
+      if (result.success && result.matched && result.data) {
         setOcrResult(result.data);
       } else {
-        setDocFeedback(result.error || "OCR audit failed to recognize credentials.");
+        setDocFeedback(result.error || "This file did not match the employer.");
       }
     } catch {
       setDocFeedback("Network error analyzing document.");
