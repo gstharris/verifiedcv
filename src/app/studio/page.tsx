@@ -359,58 +359,6 @@ export default function StudioPage() {
     }
   };
 
-  const replayVerification = async () => {
-    if (!isPortfolioSaved || !handle || isReplayingProof) return;
-    const confirmed = window.confirm(
-      `Keep verifiedcv.app/${handle.toLowerCase().trim()} and clear email, phone, LinkedIn, documents, and peer confirms so you can run the flow again?`
-    );
-    if (!confirmed) return;
-
-    setIsReplayingProof(true);
-    try {
-      const res = await fetch("/api/vault/reset", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ handle: handle.toLowerCase().trim() })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        alert(data.error || "Could not reset verification on this handle.");
-        return;
-      }
-
-      const nextContact = unverifiedContact(contact);
-      const nextMilestones = stripProofFromMilestones(milestones);
-      skipNextAutosaveRef.current = true;
-      setContact(nextContact);
-      setMilestones(nextMilestones);
-      setEmailCode("");
-      setEmailCodeSent(false);
-      setEmailVerifyError("");
-      setPhoneCode("");
-      setPhoneCodeSent(false);
-      setPhoneVerifyError("");
-      setLinkedinVerifyError("");
-      persistPortfolioLocally(true, {
-        ...buildPortfolioPayload(),
-        contact: nextContact,
-        milestones: nextMilestones
-      });
-      captureEvent("verification_replayed", { handle: handle.toLowerCase().trim() });
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          sender: "ally",
-          text: "Verification cleared on this handle. Resume stays. Run email, phone, LinkedIn, document, and peer confirm again."
-        }
-      ]);
-    } catch {
-      alert("Network error resetting verification.");
-    } finally {
-      setIsReplayingProof(false);
-    }
-  };
 
   const applyPortfolioRecord = (parsed: any) => {
     if (!parsed) return;
@@ -1324,16 +1272,6 @@ export default function StudioPage() {
 
           {isPortfolioSaved ? (
             <>
-              <button
-                type="button"
-                onClick={replayVerification}
-                disabled={isReplayingProof}
-                className="text-xs font-semibold text-slate-400 hover:text-slate-700 transition-colors px-3 py-1.5 cursor-pointer flex items-center gap-1 disabled:opacity-50"
-                title="Keep this handle and replay email, phone, LinkedIn, document, and peer confirmation"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>{isReplayingProof ? "Resetting..." : "Replay verification"}</span>
-              </button>
               <span className="text-[11px] font-semibold text-slate-400">
                 {saveStatus === "saving" ? "Saving..." : saveStatus === "error" ? "Save failed" : "All changes saved"}
               </span>
