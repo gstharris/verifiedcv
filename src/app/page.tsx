@@ -224,10 +224,10 @@ export default function VerifiedCVLandingPage() {
             <span className="normal-case tracking-normal font-semibold text-slate-400">Free to start</span>
           </div>
           <h1 className="text-3xl sm:text-5xl font-black text-[#0F172A] tracking-tight leading-[1.12] max-w-3xl mx-auto">
-            Stand out as a real candidate.
+            A verified portfolio, powered by your network.
           </h1>
           <p className="text-base sm:text-xl font-semibold text-slate-600 max-w-2xl mx-auto leading-snug">
-            <span className="text-[#059669]">Verified by more than your word.</span>
+            Claim your free, candidate-owned portfolio. Let your peers, managers, and proof validate your skills to future employers.
           </p>
 
           <div className="max-w-xl mx-auto pt-2 space-y-4">
@@ -302,10 +302,10 @@ export default function VerifiedCVLandingPage() {
               Why VerifiedCV
             </h2>
             <p className="text-2xl sm:text-3xl font-black text-[#0F172A]">
-              LinkedIn shows who you know. This shows more than a claim.
+              Your network is your strongest proof.
             </p>
             <p className="text-xs sm:text-sm text-slate-500">
-              Identity, an employment document we can read, and colleagues who say they were there.
+              A free portfolio you own forever, powered by the colleagues who were actually there.
             </p>
           </div>
 
