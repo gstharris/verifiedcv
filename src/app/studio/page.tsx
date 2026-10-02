@@ -422,6 +422,14 @@ export default function StudioPage() {
     const urlParams = new URLSearchParams(window.location.search);
     const linkedInAuth = urlParams.get("linkedin_auth");
     const linkedInReason = urlParams.get("linkedin_reason");
+    
+    // Check if we just returned from an auth callback
+    const justAuthenticated = urlParams.get("auth_success") === "true";
+    if (justAuthenticated) {
+      window.history.replaceState({}, document.title, "/studio");
+      setIsClaimModalOpen(true);
+    }
+
     const saved = readStudioRecord<any>(STUDIO_SAVED_KEY);
     const draft = readStudioRecord<any>(STUDIO_DRAFT_KEY);
     const pendingRaw = sessionStorage.getItem("vcv_pending_payload");
