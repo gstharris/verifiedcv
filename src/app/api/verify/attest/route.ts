@@ -177,7 +177,28 @@ export async function PUT(req: NextRequest) {
       attestorCompany = ""
     } = body;
 
-    const linkedInSession = getLinkedInSessionFromRequest(req);
+    const { createClient } = await import("@supabase/supabase-js");
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    const rawSupabase = createClient(supabaseUrl, supabaseAnonKey);
+    
+    // We need to get the user from the authorization header if they logged in via Supabase Auth
+    const authHeader = req.headers.get("Authorization");
+    let linkedInSession = getLinkedInSessionFromRequest(req);
+    
+    if (authHeader) {
+      const { data: { user } } = await rawSupabase.auth.getUser(authHeader.replace("Bearer ", ""));
+      if (user && user.app_metadata?.providers?.includes("linkedin_oidc")) {
+        linkedInSession = {
+          sub: user.user_metadata?.sub || user.id,
+          name: user.user_metadata?.full_name || user.user_metadata?.name || "LinkedIn member",
+          email: user.user_metadata?.email || user.email,
+          picture: user.user_metadata?.picture || user.user_metadata?.avatar_url,
+          authenticatedAt: new Date().toISOString()
+        };
+      }
+    }
+
     const linkedInGate = assessLinkedInIdentity(linkedInSession);
     if (!linkedInSession?.sub || !linkedInGate.ok) {
       return NextResponse.json(

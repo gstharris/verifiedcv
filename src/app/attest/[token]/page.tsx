@@ -132,6 +132,37 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
     const urlParams = new URLSearchParams(window.location.search);
     const linkedInAuth = urlParams.get("linkedin_auth");
     const linkedInReason = urlParams.get("linkedin_reason");
+    const authError = urlParams.get("error");
+    
+    const hash = window.location.hash;
+    const hasHashError = hash.includes("error=");
+    const hasHashToken = hash.includes("access_token=");
+    
+    if (authError || hasHashError) {
+      setLinkedInError("Authentication failed. Please try again.");
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (hasHashToken) {
+      setTimeout(async () => {
+        window.history.replaceState({}, document.title, window.location.pathname);
+        
+        const { createClient } = await import("@supabase/supabase-js");
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+        const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+        const supabase = createClient(supabaseUrl, supabaseAnonKey);
+        
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user && user.app_metadata?.providers?.includes("linkedin_oidc")) {
+          setLinkedInProfile({
+            sub: user.user_metadata?.sub || user.id,
+            name: user.user_metadata?.full_name || user.user_metadata?.name || "LinkedIn member",
+            email: user.user_metadata?.email || user.email,
+            picture: user.user_metadata?.picture || user.user_metadata?.avatar_url
+          });
+          setAttestorName((prev) => prev || user.user_metadata?.full_name || user.user_metadata?.name || "");
+          setLinkedInError("");
+        }
+      }, 500);
+    }
 
     async function applyLinkedInSession() {
       try {
@@ -170,7 +201,9 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
       }
     }
 
-    applyLinkedInSession();
+    if (!hasHashToken) {
+      applyLinkedInSession();
+    }
   }, [token]);
 
   const toggleClaimEndorsement = (claimId: string) => {
@@ -179,10 +212,21 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
     );
   };
 
-  const handleLinkedInAuth = () => {
+  const handleLinkedInAuth = async () => {
     setIsAuthenticatingLinkedIn(true);
     setLinkedInError("");
-    window.location.href = `/api/auth/linkedin?next=${encodeURIComponent(`/attest/${token}`)}`;
+    
+    const { createClient } = await import("@supabase/supabase-js");
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+    
+    await supabase.auth.signInWithOAuth({
+      provider: "linkedin_oidc",
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(`/attest/${token}`)}`,
+      },
+    });
   };
 
   const attestorPeriod = attestorStartYear
@@ -198,9 +242,20 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
     setError(null);
 
     try {
+      const { createClient } = await import("@supabase/supabase-js");
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+      const supabase = createClient(supabaseUrl, supabaseAnonKey);
+      const { data: { session } } = await supabase.auth.getSession();
+
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+      }
+
       const res = await fetch("/api/verify/attest", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           token,
           attestorName: attestorName.trim() || linkedInProfile?.name || "",
