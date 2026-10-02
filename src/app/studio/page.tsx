@@ -1550,12 +1550,23 @@ export default function StudioPage() {
                     {contact.linkedinVerified ? (
                       <CheckCircle2 className="w-4 h-4 text-blue-500 shrink-0" />
                     ) : (
-                      <button onClick={() => {
-                        requirePortfolioSaved(() => {
+                      <button onClick={async () => {
+                        requirePortfolioSaved(async () => {
                           setLinkedinVerifyError("");
                           persistPortfolioLocally(true);
-                          window.location.href = "/api/auth/linkedin?next=/studio";
                           captureEvent("linkedin_verify_clicked", { handle: handle.toLowerCase().trim() });
+                          
+                          const { createClient } = await import("@supabase/supabase-js");
+                          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+                          const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+                          const supabase = createClient(supabaseUrl, supabaseAnonKey);
+                          
+                          await supabase.auth.signInWithOAuth({
+                            provider: "linkedin_oidc",
+                            options: {
+                              redirectTo: `${window.location.origin}/auth/callback?next=/studio`,
+                            },
+                          });
                         });
                       }} className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer shrink-0">Verify</button>
                     )}
