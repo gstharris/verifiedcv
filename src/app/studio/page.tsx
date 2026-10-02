@@ -454,47 +454,50 @@ export default function StudioPage() {
         const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
         const supabase = createClient(supabaseUrl, supabaseAnonKey);
         
-        const { data: { session } } = await supabase.auth.getSession();
-        const user = session?.user;
-        
-        if (user && user.app_metadata?.providers?.includes("linkedin_oidc")) {
-          setContact((prev) => {
-            const nextContact = {
-              ...prev,
-              linkedinVerified: true
-            };
-            const base = saved && hasPortfolioContent(saved) ? saved : draft;
-            if (base && hasPortfolioContent(base)) {
-              const synced = {
-                ...base,
-                contact: { ...base.contact, ...nextContact },
-                linkedinSub: user.user_metadata?.sub || user.id
-              };
-              writeStudioRecord(STUDIO_DRAFT_KEY, synced);
-              if (saved) {
-                skipNextAutosaveRef.current = true;
-                writeStudioRecord(STUDIO_SAVED_KEY, synced);
-                fetch("/api/vault", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  credentials: "include",
-                  body: JSON.stringify(synced)
-                }).catch(() => {});
-              }
-            }
-            return nextContact;
-          });
+        // Wait an extra moment for Supabase client to fully parse the hash into local storage
+        setTimeout(async () => {
+          const { data: { session } } = await supabase.auth.getSession();
+          const user = session?.user;
           
-          setChatMessages((prev) => [
-            ...prev,
-            {
-              sender: "ally",
-              text: `LinkedIn identity confirmed${user.user_metadata?.full_name ? ` for ${user.user_metadata.full_name}` : ""}. We will not post to your profile.`
-            }
-          ]);
-          captureEvent("linkedin_verified");
-        }
-      }, 500);
+          if (user && user.app_metadata?.providers?.includes("linkedin_oidc")) {
+            setContact((prev) => {
+              const nextContact = {
+                ...prev,
+                linkedinVerified: true
+              };
+              const base = saved && hasPortfolioContent(saved) ? saved : draft;
+              if (base && hasPortfolioContent(base)) {
+                const synced = {
+                  ...base,
+                  contact: { ...base.contact, ...nextContact },
+                  linkedinSub: user.user_metadata?.sub || user.id
+                };
+                writeStudioRecord(STUDIO_DRAFT_KEY, synced);
+                if (saved) {
+                  skipNextAutosaveRef.current = true;
+                  writeStudioRecord(STUDIO_SAVED_KEY, synced);
+                  fetch("/api/vault", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                    body: JSON.stringify(synced)
+                  }).catch(() => {});
+                }
+              }
+              return nextContact;
+            });
+            
+            setChatMessages((prev) => [
+              ...prev,
+              {
+                sender: "ally",
+                text: `LinkedIn identity confirmed${user.user_metadata?.full_name ? ` for ${user.user_metadata.full_name}` : ""}. We will not post to your profile.`
+              }
+            ]);
+            captureEvent("linkedin_verified");
+          }
+        }, 500);
+      }, 100);
     }
     
     const saved = readStudioRecord<any>(STUDIO_SAVED_KEY);
