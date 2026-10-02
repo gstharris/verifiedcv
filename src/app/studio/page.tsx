@@ -248,7 +248,8 @@ export default function StudioPage() {
                 const synced = {
                   ...base,
                   contact: { ...base.contact, ...nextContact },
-                  linkedinSub: user.user_metadata?.sub || user.id
+                  linkedinSub: user.user_metadata?.sub || user.id,
+                  linkedin: base.linkedin || base.contact?.linkedin || user.user_metadata?.email || ""
                 };
                 skipNextAutosaveRef.current = true;
                 writeStudioRecord(STUDIO_SAVED_KEY, synced);
@@ -277,6 +278,7 @@ export default function StudioPage() {
           };
           if (user.app_metadata?.providers?.includes("linkedin_oidc")) {
             nextContact.linkedinVerified = true;
+            nextContact.linkedin = prev.linkedin || user.user_metadata?.email || "";
           }
           return nextContact;
         });
