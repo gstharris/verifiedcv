@@ -237,13 +237,13 @@ export default function StudioPage() {
             email: user.email || prev.email 
           };
           
-          // If they have LinkedIn linked to their Supabase account, mark it verified
           if (user.app_metadata?.providers?.includes("linkedin_oidc")) {
             nextContact.linkedinVerified = true;
             
-            // Auto-save this updated status to the vault if it wasn't already saved
             if (!prev.linkedinVerified && isPortfolioSaved) {
-              const base = saved && hasPortfolioContent(saved) ? saved : draft;
+              const savedRec = readStudioRecord<any>(STUDIO_SAVED_KEY);
+              const draftRec = readStudioRecord<any>(STUDIO_DRAFT_KEY);
+              const base = savedRec && hasPortfolioContent(savedRec) ? savedRec : draftRec;
               if (base && hasPortfolioContent(base)) {
                 const synced = {
                   ...base,
@@ -284,7 +284,7 @@ export default function StudioPage() {
     });
 
     return () => subscription.unsubscribe();
-  }, [supabase.auth, isPortfolioSaved, saved, draft]);
+  }, [supabase.auth, isPortfolioSaved]);
 
   const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
     {
