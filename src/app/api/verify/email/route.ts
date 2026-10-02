@@ -5,7 +5,9 @@ import { getSupabase } from "@/lib/supabase";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+function getResendClient() {
+  return new Resend(process.env.RESEND_API_KEY);
+}
 
 function sixDigitCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
@@ -40,6 +42,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Email delivery is not configured." }, { status: 500 });
   }
 
+  const resend = getResendClient();
   const { error: emailError } = await resend.emails.send({
     from: "VerifiedCV <verify@verifiedcv.app>",
     to: email,

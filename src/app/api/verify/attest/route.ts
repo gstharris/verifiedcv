@@ -10,7 +10,9 @@ import { assessLinkedInIdentity, emailsMatch } from "@/lib/linkedinProfileGate";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+function getResendClient() {
+  return new Resend(process.env.RESEND_API_KEY);
+}
 
 function mapAttestation(row: Record<string, any>) {
   return {
