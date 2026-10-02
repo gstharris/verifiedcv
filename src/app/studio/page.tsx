@@ -444,8 +444,46 @@ export default function StudioPage() {
     } else if (hasHashToken) {
       // Supabase Implicit Grant Flow (used by some OAuth providers)
       // We need to let the Supabase client process the hash, then clean up the URL
-      setTimeout(() => {
+      setTimeout(async () => {
         window.history.replaceState({}, document.title, window.location.pathname);
+        
+        // If they were trying to verify LinkedIn, we need to manually update the state
+        // since Supabase Auth handles the session but doesn't trigger our old custom API
+        const { createClient } = await import("@supabase/supabase-js");
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+        const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+        const supabase = createClient(supabaseUrl, supabaseAnonKey);
+        
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user && user.app_metadata?.providers?.includes("linkedin_oidc")) {
+          setContact((prev) => {
+            const nextContact = {
+              ...prev,
+              linkedinVerified: true
+            };
+            const base = saved && hasPortfolioContent(saved) ? saved : draft;
+            if (base && hasPortfolioContent(base)) {
+              const synced = {
+                ...base,
+                contact: { ...base.contact, ...nextContact },
+                linkedinSub: user.user_metadata?.sub || user.id
+              };
+              writeStudioRecord(STUDIO_DRAFT_KEY, synced);
+              if (saved) {
+                skipNextAutosaveRef.current = true;
+                writeStudioRecord(STUDIO_SAVED_KEY, synced);
+                fetch("/api/vault", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  credentials: "include",
+                  body: JSON.stringify(synced)
+                }).catch(() => {});
+              }
+            }
+            return nextContact;
+          });
+          captureEvent("linkedin_verified");
+        }
       }, 500);
     }
     
