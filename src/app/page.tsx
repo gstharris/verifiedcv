@@ -215,11 +215,11 @@ export default function VerifiedCVLandingPage() {
             <span className="text-slate-300">•</span>
             <span className="normal-case tracking-normal font-semibold text-slate-400">Free to start</span>
           </div>
-          <h1 className="text-3xl sm:text-5xl font-black text-[#0F172A] tracking-tight leading-[1.12] max-w-3xl mx-auto">
-            A verified portfolio, powered by your network.
+          <h1 className="text-4xl sm:text-5xl font-black text-[#0F172A] tracking-tight leading-[1.12] max-w-3xl mx-auto">
+            Your resume, verified by your network.
           </h1>
           <p className="text-base sm:text-xl font-semibold text-slate-600 max-w-2xl mx-auto leading-snug">
-            Claim your free, candidate-owned portfolio. Let your peers, managers, and proof validate your skills to future employers.
+            Upload your resume. Invite colleagues to verify. Stand out to employers.
           </p>
 
           <div className="max-w-xl mx-auto pt-2 space-y-4">
@@ -281,6 +281,22 @@ export default function VerifiedCVLandingPage() {
               <span className="font-semibold text-[#0F172A]">
                 verifiedcv.app/<span className="text-[#059669] transition-all duration-300">{DEMO_HANDLES[nameIndex]}</span>
               </span>
+            </div>
+
+            {/* Mini Preview Card */}
+            <div className="mt-8 max-w-md mx-auto bg-white border border-[#E2E8F0] rounded-2xl p-4 shadow-sm text-left flex items-start gap-4 transform rotate-1 hover:rotate-0 transition-transform cursor-default">
+              <div className="flex-1 space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-extrabold text-sm text-[#0F172A]">Head of Product</h4>
+                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-[#059669]" /> Confirmed
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500">Yahoo • 2018 — 2024</p>
+                <p className="text-[11px] text-slate-600 font-medium bg-slate-50 p-2 rounded border border-slate-100">
+                  "Confirmed by a Senior Director at Yahoo"
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -501,31 +517,31 @@ export default function VerifiedCVLandingPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="space-y-3">
               <span className="w-8 h-8 rounded-xl bg-slate-900 text-white font-mono font-bold text-xs flex items-center justify-center">
-                01
+                1
               </span>
-              <h3 className="font-extrabold text-sm text-[#0F172A]">Upload your resume</h3>
+              <h3 className="font-extrabold text-sm text-[#0F172A]">Upload Resume</h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Drop a PDF or paste the text. We keep full titles, companies, and dates — not a chopped one-pager.
+                Drop your PDF or paste your resume text. We automatically extract your career chapters.
               </p>
             </div>
 
             <div className="space-y-3">
-              <span className="w-8 h-8 rounded-xl bg-slate-900 text-white font-mono font-bold text-xs flex items-center justify-center">
-                02
+              <span className="w-8 h-8 rounded-xl bg-[#059669] text-white font-mono font-bold text-xs flex items-center justify-center">
+                2
               </span>
-              <h3 className="font-extrabold text-sm text-[#0F172A]">Prove it is you</h3>
+              <h3 className="font-extrabold text-sm text-[#0F172A]">Verify</h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Confirm email, phone, and LinkedIn so the page is tied to a real person — not an anonymous PDF.
+                Confirm your identity and invite former colleagues to back up your experience. One confirmation makes a chapter verified.
               </p>
             </div>
 
             <div className="space-y-3">
-              <span className="w-8 h-8 rounded-xl bg-slate-900 text-white font-mono font-bold text-xs flex items-center justify-center">
-                03
+              <span className="w-8 h-8 rounded-xl bg-blue-600 text-white font-mono font-bold text-xs flex items-center justify-center">
+                3
               </span>
-              <h3 className="font-extrabold text-sm text-[#0F172A]">Add documents and people</h3>
+              <h3 className="font-extrabold text-sm text-[#0F172A]">Post</h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Attach an offer letter or W-2 we can match to the employer and dates. Invite colleagues: they sign in with LinkedIn, add a title, and the years they overlapped. One confirm is a start. Several people with titles at that company is close to verified. Names stay private.
+                Add your verifiedcv.app link to job applications and your resume header to stand out to employers.
               </p>
             </div>
           </div>
