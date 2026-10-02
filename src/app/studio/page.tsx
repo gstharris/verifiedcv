@@ -612,7 +612,9 @@ export default function StudioPage() {
       }
     }
 
-    applyLinkedInSession();
+    if (!hasHashToken) {
+      applyLinkedInSession();
+    }
   }, []);
 
   useEffect(() => {
