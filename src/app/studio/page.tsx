@@ -454,7 +454,9 @@ export default function StudioPage() {
         const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
         const supabase = createClient(supabaseUrl, supabaseAnonKey);
         
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { session } } = await supabase.auth.getSession();
+        const user = session?.user;
+        
         if (user && user.app_metadata?.providers?.includes("linkedin_oidc")) {
           setContact((prev) => {
             const nextContact = {
@@ -482,6 +484,14 @@ export default function StudioPage() {
             }
             return nextContact;
           });
+          
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              sender: "ally",
+              text: `LinkedIn identity confirmed${user.user_metadata?.full_name ? ` for ${user.user_metadata.full_name}` : ""}. We will not post to your profile.`
+            }
+          ]);
           captureEvent("linkedin_verified");
         }
       }, 500);
