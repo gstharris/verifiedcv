@@ -45,12 +45,12 @@ export default function ClaimAuditModal({
   isOpen,
   onClose,
 }: ClaimAuditModalProps) {
-  if (!isOpen) return null;
-
   const [corroboratorEmail, setCorroboratorEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  if (!isOpen) return null;
 
   const tenureStr = experience.is_current
     ? `${experience.start_month || "Jan"} ${experience.start_year || "2020"} — Present`

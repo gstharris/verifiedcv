@@ -37,6 +37,11 @@ export default function AllyDrawer({
 }: AllyDrawerProps) {
   const [remindingId, setRemindingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [now, setNow] = useState<number | null>(null);
+
+  useEffect(() => {
+    setNow(Date.now());
+  }, []);
 
   if (!isOpen) return null;
 
@@ -113,9 +118,9 @@ export default function AllyDrawer({
           ) : (
             <div className="space-y-3">
               {pendingRequests.map((req) => {
-                const daysAgo = Math.floor(
-                  (Date.now() - new Date(req.created_at).getTime()) / (1000 * 60 * 60 * 24)
-                );
+                const daysAgo = now ? Math.floor(
+                  (now - new Date(req.created_at).getTime()) / (1000 * 60 * 60 * 24)
+                ) : 0;
                 const isStale = daysAgo >= 5;
 
                 return (

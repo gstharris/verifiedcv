@@ -448,6 +448,77 @@ export default function StudioPage() {
     }
   };
 
+  const loadCanonicalRecord = () => {
+    setFullName(GRAHAM_HARRIS_CANONICAL.fullName);
+    setHeadline(GRAHAM_HARRIS_CANONICAL.headline);
+    setSummaryStatement(GRAHAM_HARRIS_CANONICAL.summary);
+    setContact(GRAHAM_HARRIS_CANONICAL.contact);
+    setSkills(GRAHAM_HARRIS_CANONICAL.skills);
+    setEducation(GRAHAM_HARRIS_CANONICAL.education);
+    setMilestones(GRAHAM_HARRIS_CANONICAL.milestones);
+    setHandle("gharris");
+    setActiveTab("canvas");
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        sender: "ally",
+        text: "Loaded Graham Harris canonical record. Save this portfolio before verifying identity or requesting corroboration."
+      }
+    ]);
+  };
+
+  const executeIngest = async (text: string) => {
+    setIsProcessing(true);
+    setChatMessages((prev) => [
+      ...prev,
+      { sender: "ally", text: "Analyzing career history, contact details, and dates..." }
+    ]);
+
+    try {
+      const formData = new FormData();
+      formData.append("text", text);
+
+      const res = await fetch("/api/parse", {
+        method: "POST",
+        body: formData
+      });
+
+      const data = await res.json();
+      if (res.ok && data.milestones && data.milestones.length > 0) {
+        const formattedMilestones = data.milestones.map((m: any) => ({
+          ...m,
+          claims: (Array.isArray(m.claims) ? m.claims : (m.calibratedClaim ? [m.calibratedClaim] : [])).filter(
+            (c: string) => c.replace(/[^a-zA-Z]/g, "").length >= 12
+          )
+        }));
+
+        setMilestones(formattedMilestones);
+        if (data.fullName) setFullName(data.fullName);
+        if (data.headline) setHeadline(data.headline);
+        if (data.summaryStatement) setSummaryStatement(data.summaryStatement);
+        if (data.skills) setSkills(data.skills);
+        if (data.education) setEducation(data.education);
+        if (data.contact) setContact((prev) => ({ ...prev, ...data.contact }));
+
+        setActiveTab("canvas");
+        captureEvent("resume_parsed", { source: "studio_paste", chapters: data.milestones.length });
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            sender: "ally",
+            text: `Extracted ${data.milestones.length} milestones. Save your portfolio next so verification work is not lost.`
+          }
+        ]);
+      } else {
+        alert(data.error || "Failed to parse text input.");
+      }
+    } catch {
+      alert("Network communication error with /api/parse.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -606,7 +677,7 @@ export default function StudioPage() {
 
   useEffect(() => {
     if (!handle || handle.length < 2) {
-      setHandleStatus("idle");
+      setTimeout(() => setHandleStatus("idle"), 0);
       return;
     }
 
@@ -664,76 +735,6 @@ export default function StudioPage() {
     return () => clearInterval(interval);
   }, [handle, isPortfolioSaved, milestones, waitingForPeer]);
 
-  const loadCanonicalRecord = () => {
-    setFullName(GRAHAM_HARRIS_CANONICAL.fullName);
-    setHeadline(GRAHAM_HARRIS_CANONICAL.headline);
-    setSummaryStatement(GRAHAM_HARRIS_CANONICAL.summary);
-    setContact(GRAHAM_HARRIS_CANONICAL.contact);
-    setSkills(GRAHAM_HARRIS_CANONICAL.skills);
-    setEducation(GRAHAM_HARRIS_CANONICAL.education);
-    setMilestones(GRAHAM_HARRIS_CANONICAL.milestones);
-    setHandle("gharris");
-    setActiveTab("canvas");
-    setChatMessages((prev) => [
-      ...prev,
-      {
-        sender: "ally",
-        text: "Loaded Graham Harris canonical record. Save this portfolio before verifying identity or requesting corroboration."
-      }
-    ]);
-  };
-
-  const executeIngest = async (text: string) => {
-    setIsProcessing(true);
-    setChatMessages((prev) => [
-      ...prev,
-      { sender: "ally", text: "Analyzing career history, contact details, and dates..." }
-    ]);
-
-    try {
-      const formData = new FormData();
-      formData.append("text", text);
-
-      const res = await fetch("/api/parse", {
-        method: "POST",
-        body: formData
-      });
-
-      const data = await res.json();
-      if (res.ok && data.milestones && data.milestones.length > 0) {
-        const formattedMilestones = data.milestones.map((m: any) => ({
-          ...m,
-          claims: (Array.isArray(m.claims) ? m.claims : (m.calibratedClaim ? [m.calibratedClaim] : [])).filter(
-            (c: string) => c.replace(/[^a-zA-Z]/g, "").length >= 12
-          )
-        }));
-
-        setMilestones(formattedMilestones);
-        if (data.fullName) setFullName(data.fullName);
-        if (data.headline) setHeadline(data.headline);
-        if (data.summaryStatement) setSummaryStatement(data.summaryStatement);
-        if (data.skills) setSkills(data.skills);
-        if (data.education) setEducation(data.education);
-        if (data.contact) setContact((prev) => ({ ...prev, ...data.contact }));
-
-        setActiveTab("canvas");
-        captureEvent("resume_parsed", { source: "studio_paste", chapters: data.milestones.length });
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            sender: "ally",
-            text: `Extracted ${data.milestones.length} milestones. Save your portfolio next so verification work is not lost.`
-          }
-        ]);
-      } else {
-        alert(data.error || "Failed to parse text input.");
-      }
-    } catch {
-      alert("Network communication error with /api/parse.");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
 
   const handleManualPasteSubmit = async () => {
     if (!pasteBuffer.trim() || isProcessing) return;
