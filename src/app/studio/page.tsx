@@ -450,12 +450,7 @@ export default function StudioPage() {
       const refreshToken = hashParams.get("refresh_token");
       
       setTimeout(async () => {
-        const { createClient } = await import("@supabase/supabase-js");
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-        const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-        const supabase = createClient(supabaseUrl, supabaseAnonKey);
-        
-        // 2. Force the session if we have the tokens
+        // 2. Force the session if we have the tokens using the component's supabase client
         if (accessToken && refreshToken) {
           await supabase.auth.setSession({
             access_token: accessToken,
@@ -1640,11 +1635,6 @@ export default function StudioPage() {
                           setLinkedinVerifyError("");
                           persistPortfolioLocally(true);
                           captureEvent("linkedin_verify_clicked", { handle: handle.toLowerCase().trim() });
-                          
-                          const { createClient } = await import("@supabase/supabase-js");
-                          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-                          const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-                          const supabase = createClient(supabaseUrl, supabaseAnonKey);
                           
                           await supabase.auth.signInWithOAuth({
                             provider: "linkedin_oidc",
