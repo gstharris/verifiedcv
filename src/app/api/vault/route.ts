@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { supabase as rawSupabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/server";
 import { getVaultStore, saveToVaultStore } from "@/lib/store";
 import { BETA_COOKIE, isBetaEnforced } from "@/lib/betaAccess";
 import { getAppUrl } from "@/lib/appUrl";
@@ -145,9 +146,12 @@ export async function POST(req: NextRequest) {
 
     if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
       try {
-        const { data: existing, error: existingError } = await supabase
+        const supabase = await createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+
+        const { data: existing, error: existingError } = await rawSupabase
           .from("candidates")
-          .select("handle, email, owner_token_hash")
+          .select("handle, email, owner_token_hash, auth_user_id")
           .eq("handle", handle)
           .maybeSingle();
 
@@ -157,21 +161,30 @@ export async function POST(req: NextRequest) {
         }
 
         if (!existingError || !missingOwnerColumn(existingError.message)) {
-          const decision = authorizeVaultWrite({
-            handle,
-            incomingEmail,
-            existing: existing?.handle ? existing : null,
-            cookie
-          });
-          if (!decision.ok) {
-            return NextResponse.json({ error: decision.error, code: "HANDLE_OWNED" }, { status: 403 });
+          if (existing?.handle && existing.auth_user_id && user?.id !== existing.auth_user_id) {
+            return NextResponse.json({ error: "This handle is owned by another Google account.", code: "HANDLE_OWNED" }, { status: 403 });
           }
-          tokenToSet = decision.tokenToSet;
-          isNewClaim = decision.isNewClaim;
+          if (!existing?.handle && user) {
+            // New claim via Google Auth
+            isNewClaim = true;
+          } else if (!user) {
+            // Fallback to cookie auth for backwards compatibility during transition
+            const decision = authorizeVaultWrite({
+              handle,
+              incomingEmail,
+              existing: existing?.handle ? existing : null,
+              cookie
+            });
+            if (!decision.ok) {
+              return NextResponse.json({ error: decision.error, code: "HANDLE_OWNED" }, { status: 403 });
+            }
+            tokenToSet = decision.tokenToSet;
+            isNewClaim = decision.isNewClaim;
+          }
         }
 
         if (!existing?.handle && incomingEmail) {
-          const { data: byEmail } = await supabase
+          const { data: byEmail } = await rawSupabase
             .from("candidates")
             .select("handle, email")
             .ilike("email", incomingEmail)
@@ -188,7 +201,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        const { error: candidateError } = await supabase.from("candidates").upsert(
+        const { error: candidateError } = await rawSupabase.from("candidates").upsert(
           {
             handle,
             full_name: payload.fullName,
@@ -202,6 +215,7 @@ export async function POST(req: NextRequest) {
             email_verified: payload.contact?.emailVerified || false,
             phone_verified: payload.contact?.phoneVerified || false,
             linkedin_verified: payload.contact?.linkedinVerified || false,
+            auth_user_id: user?.id || existing?.auth_user_id || null,
             updated_at: new Date().toISOString()
           },
           { onConflict: "handle" }
@@ -211,7 +225,7 @@ export async function POST(req: NextRequest) {
           console.error("Supabase candidate upsert error:", candidateError);
           if (/candidates_email_key|email.*unique/i.test(candidateError.message || "")) {
             const { data: byEmail } = incomingEmail
-              ? await supabase.from("candidates").select("handle").ilike("email", incomingEmail).maybeSingle()
+              ? await rawSupabase.from("candidates").select("handle").ilike("email", incomingEmail).maybeSingle()
               : { data: null };
             const taken = byEmail?.handle ? `verifiedcv.app/${byEmail.handle}` : "another handle";
             return NextResponse.json(
@@ -227,7 +241,7 @@ export async function POST(req: NextRequest) {
         }
 
         if (tokenToSet) {
-          const { error: ownerError } = await supabase
+          const { error: ownerError } = await rawSupabase
             .from("candidates")
             .update({ owner_token_hash: hashOwnerToken(tokenToSet) })
             .eq("handle", handle);
@@ -238,7 +252,7 @@ export async function POST(req: NextRequest) {
 
         const linkedInSub = String(payload.linkedinSub || "").trim();
         if (linkedInSub) {
-          const { error: subError } = await supabase
+          const { error: subError } = await rawSupabase
             .from("candidates")
             .update({ linkedin_sub: linkedInSub })
             .eq("handle", handle);
@@ -247,16 +261,16 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        const { data: candidateRow } = await supabase.from("candidates").select("id").eq("handle", handle).maybeSingle();
+        const { data: candidateRow } = await rawSupabase.from("candidates").select("id").eq("handle", handle).maybeSingle();
 
-        await supabase.from("skills").delete().eq("candidate_handle", handle);
+        await rawSupabase.from("skills").delete().eq("candidate_handle", handle);
         if (payload.skills && payload.skills.length > 0) {
-          await supabase.from("skills").insert(payload.skills.map((skill: string) => ({ candidate_handle: handle, skill })));
+          await rawSupabase.from("skills").insert(payload.skills.map((skill: string) => ({ candidate_handle: handle, skill })));
         }
 
-        await supabase.from("education").delete().eq("candidate_handle", handle);
+        await rawSupabase.from("education").delete().eq("candidate_handle", handle);
         if (payload.education && payload.education.length > 0) {
-          await supabase.from("education").insert(
+          await rawSupabase.from("education").insert(
             payload.education.map((edu: { id?: string; institution: string; degree: string; year?: string }) => ({
               id: edu.id || `edu-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
               candidate_handle: handle,
@@ -269,16 +283,16 @@ export async function POST(req: NextRequest) {
 
         const incomingMilestones = Array.isArray(payload.milestones) ? payload.milestones : [];
         const incomingIds = incomingMilestones.map((m: { id?: string }) => m.id).filter(Boolean);
-        const { data: existingMilestones } = await supabase.from("milestones").select("id").eq("candidate_handle", handle);
+        const { data: existingMilestones } = await rawSupabase.from("milestones").select("id").eq("candidate_handle", handle);
         const staleIds = (existingMilestones || []).map((row) => row.id).filter((id) => !incomingIds.includes(id));
         if (staleIds.length > 0) {
-          await supabase.from("milestones").delete().in("id", staleIds);
+          await rawSupabase.from("milestones").delete().in("id", staleIds);
         }
 
         for (const m of incomingMilestones) {
           const milestoneId = m.id || `m-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-          await supabase.from("milestones").upsert({
+          await rawSupabase.from("milestones").upsert({
             id: milestoneId,
             candidate_handle: handle,
             candidate_id: candidateRow?.id || null,
@@ -290,9 +304,9 @@ export async function POST(req: NextRequest) {
             calibrated_claim: m.calibratedClaim || ""
           });
 
-          await supabase.from("artifacts").delete().eq("milestone_id", milestoneId);
+          await rawSupabase.from("artifacts").delete().eq("milestone_id", milestoneId);
           if (m.artifacts && m.artifacts.length > 0) {
-            await supabase.from("artifacts").insert(
+            await rawSupabase.from("artifacts").insert(
               m.artifacts.map((a: { id?: string; name: string; type: string }) => ({
                 id: a.id || `art-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
                 milestone_id: milestoneId,
@@ -302,9 +316,9 @@ export async function POST(req: NextRequest) {
             );
           }
 
-          await supabase.from("registry_links").delete().eq("milestone_id", milestoneId);
+          await rawSupabase.from("registry_links").delete().eq("milestone_id", milestoneId);
           if (m.registryLinks && m.registryLinks.length > 0) {
-            await supabase.from("registry_links").insert(
+            await rawSupabase.from("registry_links").insert(
               m.registryLinks.map((l: { id?: string; type: string; url: string; label: string }) => ({
                 id: l.id || `reg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
                 milestone_id: milestoneId,
@@ -316,11 +330,11 @@ export async function POST(req: NextRequest) {
           }
 
           if (m.verifications && m.verifications.length > 0) {
-            const { data: existingVers } = await supabase.from("verifications").select("id").eq("milestone_id", milestoneId);
+            const { data: existingVers } = await rawSupabase.from("verifications").select("id").eq("milestone_id", milestoneId);
             const existingIds = new Set((existingVers || []).map((row) => row.id));
             const fresh = m.verifications.filter((v: { id?: string }) => v.id && !existingIds.has(v.id));
             if (fresh.length > 0) {
-              await supabase.from("verifications").insert(
+              await rawSupabase.from("verifications").insert(
                 fresh.map((v: { id: string; name: string; role: string; email: string; linkedInUrl?: string; verifiedAt?: string }) => ({
                   id: v.id,
                   milestone_id: milestoneId,
@@ -335,8 +349,8 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        if (isNewClaim && incomingEmail) {
-          const issued = await issueRestoreCode(supabase, handle, incomingEmail);
+        if (isNewClaim && incomingEmail && !user) {
+          const issued = await issueRestoreCode(rawSupabase, handle, incomingEmail);
           restoreEmailed = issued.ok;
           if (!issued.ok) {
             console.warn("Restore email was not sent:", issued.error);
