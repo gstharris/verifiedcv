@@ -118,7 +118,7 @@ export default function CandidateDossierPage() {
       }
 
       if (typeof window !== "undefined") {
-        const savedVault = sessionStorage.getItem("vcv_saved_vault");
+        const savedVault = localStorage.getItem("vcv_saved_vault");
         if (savedVault) {
           try {
             const parsed = JSON.parse(savedVault);

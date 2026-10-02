@@ -12,7 +12,7 @@ import {
 
 const memory = new Map<string, string>();
 
-const sessionStorageMock = {
+const localStorageMock = {
   getItem: (key: string) => memory.get(key) ?? null,
   setItem: (key: string, value: string) => {
     memory.set(key, value);
@@ -35,7 +35,7 @@ describe("studio portfolio storage", () => {
 
   it("round-trips draft and saved portfolio records", () => {
     Object.defineProperty(globalThis, "window", { value: {}, configurable: true });
-    Object.defineProperty(globalThis, "sessionStorage", { value: sessionStorageMock, configurable: true });
+    Object.defineProperty(globalThis, "localStorage", { value: localStorageMock, configurable: true });
 
     writeStudioRecord(STUDIO_DRAFT_KEY, { handle: "gharris", milestones: [{ id: "m1" }] });
     writeStudioRecord(STUDIO_SAVED_KEY, { handle: "gharris", saved: true });

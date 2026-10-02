@@ -14,7 +14,7 @@ export function hasPortfolioContent(portfolio: {
 export function readStudioRecord<T>(key: string): T | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = sessionStorage.getItem(key);
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     return JSON.parse(raw) as T;
   } catch {
@@ -24,13 +24,13 @@ export function readStudioRecord<T>(key: string): T | null {
 
 export function writeStudioRecord(key: string, value: unknown) {
   if (typeof window === "undefined") return;
-  sessionStorage.setItem(key, JSON.stringify(value));
+  localStorage.setItem(key, JSON.stringify(value));
 }
 
 export function clearStudioPortfolioStorage() {
   if (typeof window === "undefined") return;
-  sessionStorage.removeItem(STUDIO_DRAFT_KEY);
-  sessionStorage.removeItem(STUDIO_SAVED_KEY);
+  localStorage.removeItem(STUDIO_DRAFT_KEY);
+  localStorage.removeItem(STUDIO_SAVED_KEY);
 }
 
 export function unverifiedContact<T extends { emailVerified?: boolean; phoneVerified?: boolean; linkedinVerified?: boolean }>(

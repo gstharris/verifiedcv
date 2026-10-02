@@ -432,7 +432,7 @@ export default function StudioPage() {
 
     const saved = readStudioRecord<any>(STUDIO_SAVED_KEY);
     const draft = readStudioRecord<any>(STUDIO_DRAFT_KEY);
-    const pendingRaw = sessionStorage.getItem("vcv_pending_payload");
+    const pendingRaw = localStorage.getItem("vcv_pending_payload");
 
     if (saved && hasPortfolioContent(saved)) {
       skipNextAutosaveRef.current = true;
@@ -456,7 +456,7 @@ export default function StudioPage() {
     } else if (pendingRaw) {
       try {
         const parsed = JSON.parse(pendingRaw);
-        sessionStorage.removeItem("vcv_pending_payload");
+        localStorage.removeItem("vcv_pending_payload");
 
         if (parsed.milestones && Array.isArray(parsed.milestones) && parsed.milestones.length > 0) {
           applyPortfolioRecord(parsed);

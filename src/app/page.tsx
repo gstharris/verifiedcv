@@ -50,7 +50,7 @@ export default function VerifiedCVLandingPage() {
     education?: unknown[];
   }) => {
     if (typeof window !== "undefined") {
-      sessionStorage.setItem(
+      localStorage.setItem(
         "vcv_pending_payload",
         JSON.stringify({
           milestones: data.milestones || [],
@@ -87,7 +87,7 @@ export default function VerifiedCVLandingPage() {
       }
     } catch {
       if (typeof window !== "undefined") {
-        sessionStorage.setItem(
+        localStorage.setItem(
           "vcv_pending_payload",
           JSON.stringify({ rawText: chatInput.trim() })
         );
