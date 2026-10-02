@@ -231,19 +231,60 @@ export default function StudioPage() {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
         setUser(user);
-        setContact(prev => ({ ...prev, email: user.email || prev.email }));
+        setContact(prev => {
+          const nextContact = { 
+            ...prev, 
+            email: user.email || prev.email 
+          };
+          
+          // If they have LinkedIn linked to their Supabase account, mark it verified
+          if (user.app_metadata?.providers?.includes("linkedin_oidc")) {
+            nextContact.linkedinVerified = true;
+            
+            // Auto-save this updated status to the vault if it wasn't already saved
+            if (!prev.linkedinVerified && isPortfolioSaved) {
+              const base = saved && hasPortfolioContent(saved) ? saved : draft;
+              if (base && hasPortfolioContent(base)) {
+                const synced = {
+                  ...base,
+                  contact: { ...base.contact, ...nextContact },
+                  linkedinSub: user.user_metadata?.sub || user.id
+                };
+                skipNextAutosaveRef.current = true;
+                writeStudioRecord(STUDIO_SAVED_KEY, synced);
+                fetch("/api/vault", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  credentials: "include",
+                  body: JSON.stringify(synced)
+                }).catch(() => {});
+              }
+            }
+          }
+          return nextContact;
+        });
       }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user || null);
-      if (session?.user?.email) {
-        setContact(prev => ({ ...prev, email: session.user.email || prev.email }));
+      const user = session?.user;
+      setUser(user || null);
+      if (user) {
+        setContact(prev => {
+          const nextContact = { 
+            ...prev, 
+            email: user.email || prev.email 
+          };
+          if (user.app_metadata?.providers?.includes("linkedin_oidc")) {
+            nextContact.linkedinVerified = true;
+          }
+          return nextContact;
+        });
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [supabase.auth]);
+  }, [supabase.auth, isPortfolioSaved, saved, draft]);
 
   const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
     {
