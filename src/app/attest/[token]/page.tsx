@@ -275,6 +275,7 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
       if (res.ok && json.success) {
         setIsSuccess(true);
         setConfirmedSig(json.signature || "SIG_CHAP_VERIFIED");
+        window.scrollTo({ top: 0, behavior: 'smooth' });
       } else {
         setError(json.error || "Failed to confirm chapter milestone.");
       }
