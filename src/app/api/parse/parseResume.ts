@@ -114,8 +114,9 @@ export function extractAtomicAchievements(rawLines: string[]): string[] {
 
     const prevEndedWithPeriod = currentBuffer.endsWith(".") || currentBuffer.endsWith(";");
     const isNewActionSentence = prevEndedWithPeriod && actionVerbStart.test(cleanText);
+    const isCapitalizedNewSentence = prevEndedWithPeriod && /^[A-Z]/.test(cleanText) && cleanText.length > 20;
 
-    if (startsWithBullet || isNewActionSentence) {
+    if (startsWithBullet || isNewActionSentence || isCapitalizedNewSentence) {
       if (currentBuffer && isValidAchievement(currentBuffer)) {
         achievements.push(currentBuffer);
       }
