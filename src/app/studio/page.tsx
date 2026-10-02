@@ -171,6 +171,33 @@ export default function StudioPage() {
   const [restoreUnlocking, setRestoreUnlocking] = useState(false);
   const [restoreNotice, setRestoreNotice] = useState("");
 
+  // Magic Link State
+  const [magicLinkEmail, setMagicLinkEmail] = useState("");
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [magicLinkError, setMagicLinkError] = useState("");
+  const [magicLinkLoading, setMagicLinkLoading] = useState(false);
+
+  const handleSendMagicLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!magicLinkEmail.trim()) return;
+    setMagicLinkLoading(true);
+    setMagicLinkError("");
+    
+    const { error } = await supabase.auth.signInWithOtp({
+      email: magicLinkEmail.trim(),
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback?next=/studio`,
+      },
+    });
+
+    if (error) {
+      setMagicLinkError(error.message);
+    } else {
+      setMagicLinkSent(true);
+    }
+    setMagicLinkLoading(false);
+  };
+
   const milestoneCounts = (m: Milestone) => ({
     peers: m.verifications?.length || 0,
     docs: m.artifacts?.length || 0,
@@ -2173,30 +2200,88 @@ export default function StudioPage() {
             </div>
 
             {!user ? (
-              <div className="space-y-4 text-xs antialiased">
-                <p className="text-slate-500 leading-relaxed">
-                  Sign in with Google to claim your handle and save your portfolio.
+              <div className="space-y-5 text-xs antialiased">
+                <p className="text-slate-500 leading-relaxed text-center">
+                  Sign in to claim your handle and save your portfolio.
                 </p>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await supabase.auth.signInWithOAuth({
-                      provider: "google",
-                      options: {
-                        redirectTo: `${window.location.origin}/auth/callback?next=/studio`,
-                      },
-                    });
-                  }}
-                  className="w-full py-3 rounded-xl border border-[#E2E8F0] hover:bg-slate-50 text-[#0F172A] font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs"
-                >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24">
-                    <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                    <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                    <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                    <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                  </svg>
-                  <span>Continue with Google</span>
-                </button>
+                
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await supabase.auth.signInWithOAuth({
+                        provider: "google",
+                        options: {
+                          redirectTo: `${window.location.origin}/auth/callback?next=/studio`,
+                        },
+                      });
+                    }}
+                    className="w-full py-3 rounded-xl border border-[#E2E8F0] hover:bg-slate-50 text-[#0F172A] font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                  >
+                    <svg className="w-4 h-4" viewBox="0 0 24 24">
+                      <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                      <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                      <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                      <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                    </svg>
+                    <span>Continue with Google</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await supabase.auth.signInWithOAuth({
+                        provider: "linkedin_oidc",
+                        options: {
+                          redirectTo: `${window.location.origin}/auth/callback?next=/studio`,
+                        },
+                      });
+                    }}
+                    className="w-full py-3 rounded-xl border border-[#E2E8F0] hover:bg-[#0A66C2]/5 text-[#0A66C2] font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                  >
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z" />
+                    </svg>
+                    <span>Continue with LinkedIn</span>
+                  </button>
+                </div>
+
+                <div className="relative flex items-center py-2">
+                  <div className="flex-grow border-t border-slate-200"></div>
+                  <span className="shrink-0 px-3 text-slate-400 text-[10px] uppercase font-bold tracking-widest">Or</span>
+                  <div className="flex-grow border-t border-slate-200"></div>
+                </div>
+
+                {magicLinkSent ? (
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center space-y-2">
+                    <CheckCircle2 className="w-5 h-5 text-[#059669] mx-auto" />
+                    <p className="font-bold text-emerald-800">Check your email</p>
+                    <p className="text-emerald-700 leading-relaxed">
+                      We sent a magic link to <strong>{magicLinkEmail}</strong>. Click it to sign in.
+                    </p>
+                  </div>
+                ) : (
+                  <form onSubmit={handleSendMagicLink} className="space-y-3">
+                    <div>
+                      <input
+                        type="email"
+                        required
+                        value={magicLinkEmail}
+                        onChange={(e) => setMagicLinkEmail(e.target.value)}
+                        placeholder="name@work.com"
+                        className={`w-full p-3 rounded-xl border ${magicLinkError ? "border-red-500" : "border-[#E2E8F0]"} focus:outline-none focus:border-[#059669] text-center`}
+                      />
+                      {magicLinkError && <span className="text-[10px] text-red-500 mt-1 block text-center">{magicLinkError}</span>}
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={magicLinkLoading || !magicLinkEmail.trim()}
+                      className="w-full py-3 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+                    >
+                      {magicLinkLoading ? <Clock className="w-4 h-4 animate-spin" /> : "Email me a login link"}
+                    </button>
+                  </form>
+                )}
               </div>
             ) : (
             <form onSubmit={handleClaimVaultCommit} className="space-y-4 text-xs antialiased">
