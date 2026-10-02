@@ -210,10 +210,8 @@ export default function VerifiedCVLandingPage() {
       {/* Hero Section */}
       <section className="relative pt-12 pb-14 md:pt-16 md:pb-16 overflow-hidden">
         <div className="max-w-4xl mx-auto px-6 text-center space-y-5">
-          <div className="inline-flex items-center gap-2 rounded-full border border-[#E2E8F0] bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#E2E8F0] bg-white px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
             <span>Beta</span>
-            <span className="text-slate-300">•</span>
-            <span className="normal-case tracking-normal font-semibold text-slate-400">Free to start</span>
           </div>
           <h1 className="text-4xl sm:text-5xl font-black text-[#0F172A] tracking-tight leading-[1.12] max-w-3xl mx-auto">
             Your resume, verified by your network.
@@ -287,14 +285,14 @@ export default function VerifiedCVLandingPage() {
             <div className="mt-8 max-w-md mx-auto bg-white border border-[#E2E8F0] rounded-2xl p-4 shadow-sm text-left flex items-start gap-4 transform rotate-1 hover:rotate-0 transition-transform cursor-default">
               <div className="flex-1 space-y-2">
                 <div className="flex items-center justify-between">
-                  <h4 className="font-extrabold text-sm text-[#0F172A]">Head of Product</h4>
+                  <h4 className="font-extrabold text-sm text-[#0F172A]">Senior Software Engineer</h4>
                   <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
                     <CheckCircle2 className="w-3 h-3 text-[#059669]" /> Confirmed
                   </span>
                 </div>
-                <p className="text-xs text-slate-500">Yahoo • 2018 — 2024</p>
+                <p className="text-xs text-slate-500">Netflix • 2019 — 2024</p>
                 <p className="text-[11px] text-slate-600 font-medium bg-slate-50 p-2 rounded border border-slate-100">
-                  "Confirmed by a Senior Director at Yahoo"
+                  "Confirmed by a Director of Engineering at Netflix"
                 </p>
               </div>
             </div>

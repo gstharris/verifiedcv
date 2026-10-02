@@ -97,100 +97,6 @@ interface ContactInfo {
   linkedinVerified: boolean;
 }
 
-const GRAHAM_HARRIS_CANONICAL: {
-  fullName: string;
-  headline: string;
-  summary: string;
-  contact: ContactInfo;
-  skills: string[];
-  education: EducationRecord[];
-  milestones: Milestone[];
-} = {
-  fullName: "Graham Harris",
-  headline: "Head of Product Management • AI Platforms",
-  summary:
-    "Built enterprise technology and ad personalization platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries at Yahoo. Founded an operational workflow and recommendation platform at PairedRight, engineering RAG architectures evaluated against an operational golden dataset to scale client revenue by over $1M. Restructured complex multi-product SaaS portfolios into modular tiers at Bazaarvoice, reducing sales cycles by 25% and decreasing customer churn by 15%.",
-  contact: {
-    email: "gstharris@gmail.com",
-    phone: "(818) 661-0117",
-    location: "Thousand Oaks, CA / Remote",
-    linkedin: "linkedin.com/in/gstharris",
-    emailVerified: true,
-    phoneVerified: true,
-    linkedinVerified: true
-  },
-  skills: [
-    "AI Workspace Platforms",
-    "Agentic Workflows",
-    "Context-Grounded RAG",
-    "Ad Personalization Systems",
-    "High-Throughput Distributed Microservices",
-    "Product Strategy & P&L",
-    "Operational Golden Datasets",
-    "Interactive Prototyping (React/Cursor)"
-  ],
-  education: [
-    {
-      id: "edu-gh-1",
-      institution: "University of California",
-      degree: "Bachelor of Science",
-      year: "Graduated"
-    }
-  ],
-  milestones: [
-    {
-      id: "m-gh-geon-01",
-      company: "Ge-on",
-      role: "Head of Product Management",
-      period: "May 2025 — Present",
-      location: "Remote",
-      claims: [
-        "Direct end-to-end product strategy, feature prioritization, and delivery roadmaps for an AI workspace platform, driving a 25% lift in weekly active users during initial rollout.",
-        "Designed and deployed autonomous agent workflows and proactive push notifications that feed a persistent memory layer, allowing the platform to learn creator preferences and maintain context across interactions.",
-        "Build functional interactive prototypes in React, Cursor, and modern UI tools to test user workflows, edge cases, and interface ergonomics directly with users prior to engineering sprints.",
-        "Designed and deployed self-serve onboarding journeys and workspace configuration flows, lifting new user activation and account setup completion by 20%.",
-        "Partner daily with engineering, data science, and design in Agile cadences to manage backlogs, set acceptance criteria, and ensure system stability."
-      ]
-    },
-    {
-      id: "m-gh-scd-02",
-      company: "SCD Enterprises / PairedRight",
-      role: "Founder and Head of Product",
-      period: "2018 — Mar 2026",
-      location: "Remote",
-      claims: [
-        "Founded an operational workflow and recommendation platform for hospitality operators, scaling client revenue by over $1M through automated upselling and real-time guidance.",
-        "Rebuilt the core recommendation engine using a context-grounded RAG framework, ensuring automated pairing suggestions remained strictly constrained to curated merchant parameters.",
-        "Established an operational golden dataset to benchmark, verify, and regression-test algorithmic changes, ensuring recommendation accuracy before deploying updates to frontline staff devices.",
-        "Designed operator dashboards and administrative consoles, providing business owners visibility and control over recommendation rules, inventory availability, and pricing thresholds.",
-        "Engineered API integration layers connecting customer-facing mobile interfaces directly with legacy point-of-sale and back-office systems of record to maintain data synchronization.",
-        "Designed and deployed automated quote-to-cash workflows, multi-party fee reconciliation, and transactional audit trails, eliminating manual reporting and reducing operational overhead by 10%.",
-        "Conducted hundreds of hours of on-site customer discovery shadowing managers and frontline operators during live shifts, converting ground-level friction into structured product specifications."
-      ]
-    },
-    {
-      id: "m-gh-yahoo-03",
-      company: "Yahoo",
-      role: "Head of Product Management",
-      period: "2010 — 2024",
-      location: "Sunnyvale, CA",
-      claims: [
-        "Built enterprise technology and ad personalization platforms from $0 to $400M with full P&L ownership, 3 patents, and an 18-person global team across 8 countries.",
-        "Maintained sub-50ms query latency budgets across global edge infrastructure."
-      ],
-      verifications: [
-        {
-          id: "ver-123",
-          name: "Senior Director of Core Engineering",
-          role: "Overlapped 2012 — 2018 · 84 months (stated)",
-          email: "colleague@yahoo.com",
-          verifiedAt: new Date().toISOString()
-        }
-      ]
-    }
-  ]
-};
-
 function linkedInReturnMessage(auth: string | null, reason: string | null, hasSession: boolean) {
   if (hasSession) return "";
   if (auth === "success") {
@@ -212,10 +118,10 @@ export default function StudioPage() {
   const [education, setEducation] = useState<EducationRecord[]>([]);
 
   const [contact, setContact] = useState<ContactInfo>({
-    email: "gstharris@gmail.com",
-    phone: "(818) 661-0117",
-    location: "Thousand Oaks, CA / Remote",
-    linkedin: "linkedin.com/in/gstharris",
+    email: "",
+    phone: "",
+    location: "",
+    linkedin: "",
     emailVerified: false,
     phoneVerified: false,
     linkedinVerified: false
@@ -228,9 +134,9 @@ export default function StudioPage() {
 
   // Claim Modal State
   const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
-  const [fullName, setFullName] = useState("Graham Harris");
-  const [handle, setHandle] = useState("gharris");
-  const [headline, setHeadline] = useState("Head of Product Management • AI Platforms");
+  const [fullName, setFullName] = useState("");
+  const [handle, setHandle] = useState("");
+  const [headline, setHeadline] = useState("");
   const [isCommitting, setIsCommitting] = useState(false);
   const [isPortfolioSaved, setIsPortfolioSaved] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -431,24 +337,6 @@ export default function StudioPage() {
     }
   };
 
-  const loadCanonicalRecord = () => {
-    setFullName(GRAHAM_HARRIS_CANONICAL.fullName);
-    setHeadline(GRAHAM_HARRIS_CANONICAL.headline);
-    setSummaryStatement(GRAHAM_HARRIS_CANONICAL.summary);
-    setContact(GRAHAM_HARRIS_CANONICAL.contact);
-    setSkills(GRAHAM_HARRIS_CANONICAL.skills);
-    setEducation(GRAHAM_HARRIS_CANONICAL.education);
-    setMilestones(GRAHAM_HARRIS_CANONICAL.milestones);
-    setHandle("gharris");
-    setActiveTab("canvas");
-    setChatMessages((prev) => [
-      ...prev,
-      {
-        sender: "ally",
-        text: "Loaded Graham Harris canonical record. Save this portfolio before verifying identity or requesting corroboration."
-      }
-    ]);
-  };
 
   const executeIngest = async (text: string) => {
     setIsProcessing(true);
@@ -535,9 +423,7 @@ export default function StudioPage() {
         const parsed = JSON.parse(pendingRaw);
         sessionStorage.removeItem("vcv_pending_payload");
 
-        if (parsed.action === "load_canonical") {
-          loadCanonicalRecord();
-        } else if (parsed.milestones && Array.isArray(parsed.milestones) && parsed.milestones.length > 0) {
+        if (parsed.milestones && Array.isArray(parsed.milestones) && parsed.milestones.length > 0) {
           applyPortfolioRecord(parsed);
           setChatMessages([
             {
@@ -1431,14 +1317,6 @@ export default function StudioPage() {
                   <span>Paste Resume Text</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={loadCanonicalRecord}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#059669] text-xs font-bold transition-all cursor-pointer shadow-2xs"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>Load Graham Harris Profile</span>
-                </button>
               </div>
 
               {activeTab === "paste" && (
