@@ -425,11 +425,7 @@ export default function StudioPage() {
     
     // Check if we just returned from an auth callback
     const justAuthenticated = urlParams.get("auth_success") === "true";
-    if (justAuthenticated) {
-      window.history.replaceState({}, document.title, "/studio");
-      setIsClaimModalOpen(true);
-    }
-
+    
     const saved = readStudioRecord<any>(STUDIO_SAVED_KEY);
     const draft = readStudioRecord<any>(STUDIO_DRAFT_KEY);
     const pendingRaw = localStorage.getItem("vcv_pending_payload");
@@ -453,6 +449,14 @@ export default function StudioPage() {
           text: "Loaded your draft portfolio. Review your chapters and save when ready."
         }
       ]);
+      if (justAuthenticated) {
+        // Wait for state to settle before automatically trying to save
+        setTimeout(() => {
+          setIsClaimModalOpen(true);
+          // We could auto-submit here, but it's safer to let the user click save again
+          // in case they need to change their handle.
+        }, 100);
+      }
     } else if (pendingRaw) {
       try {
         const parsed = JSON.parse(pendingRaw);
@@ -466,12 +470,19 @@ export default function StudioPage() {
               text: "Upload successful. Please review your resume below and edit as necessary. Once it looks good, save your portfolio to begin verification."
             }
           ]);
+          if (justAuthenticated) {
+            setTimeout(() => setIsClaimModalOpen(true), 100);
+          }
         } else if (parsed.rawText && parsed.rawText.trim().length > 0) {
           executeIngest(parsed.rawText);
         }
       } catch {
         // ignore
       }
+    }
+
+    if (justAuthenticated) {
+      window.history.replaceState({}, document.title, "/studio");
     }
 
     async function applyLinkedInSession() {
