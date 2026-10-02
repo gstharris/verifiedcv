@@ -96,7 +96,7 @@ export function normalizeTenurePeriod(raw: string): string {
 export function extractAtomicAchievements(rawLines: string[]): string[] {
   const contentLines = rawLines
     .map((l) => l.trim())
-    .filter((l) => Boolean(l) && !/^[●•\-\*–—◦‣⁃·\s]+$/.test(l));
+    .filter((l) => Boolean(l));
 
   if (contentLines.length === 0) return [];
 
@@ -115,13 +115,17 @@ export function extractAtomicAchievements(rawLines: string[]): string[] {
     const prevEndedWithPeriod = currentBuffer.endsWith(".") || currentBuffer.endsWith(";");
     const isNewActionSentence = prevEndedWithPeriod && actionVerbStart.test(cleanText);
 
-    if (startsWithBullet || isNewActionSentence || !currentBuffer) {
+    if (startsWithBullet || isNewActionSentence) {
       if (currentBuffer && isValidAchievement(currentBuffer)) {
         achievements.push(currentBuffer);
       }
       currentBuffer = cleanText;
     } else {
-      currentBuffer += " " + cleanText;
+      if (!currentBuffer) {
+        currentBuffer = cleanText;
+      } else {
+        currentBuffer += " " + cleanText;
+      }
     }
   }
 
