@@ -101,6 +101,7 @@ export async function POST(req: NextRequest) {
     const attestUrl = `${getAppUrl()}/attest/${token}`;
 
     if (process.env.RESEND_API_KEY) {
+      const resend = getResendClient();
       const { error: emailError } = await resend.emails.send({
         from: "VerifiedCV <verify@verifiedcv.app>",
         to: attestorEmail,

@@ -1942,7 +1942,7 @@ export default function StudioPage() {
                             title={!isPortfolioSaved ? "Save your portfolio to verify this company" : "Verify this company"}
                           >
                             <ShieldCheck className="w-3 h-3" />
-                            <span>{trustStatus.level > 0 ? "Add proof" : "Verify company"}</span>
+                            <span>{trustStatus.level > 0 ? "Add proof" : "Verify"}</span>
                           </button>
 
                           <button
@@ -2318,7 +2318,7 @@ export default function StudioPage() {
                     <Clock className="w-4 h-4 animate-spin" />
                   ) : (
                     <>
-                      <span>Send Verification Token</span>
+                      <span>Send Verification Request</span>
                       <ArrowRight className="w-4 h-4 text-emerald-400" />
                     </>
                   )}
