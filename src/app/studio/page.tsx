@@ -290,20 +290,33 @@ export default function StudioPage() {
     return { ...status, color: "text-slate-600 bg-slate-100 border-slate-200", icon: <AlertCircle className="w-3 h-3 text-slate-500" /> };
   };
 
-  const actionPrompts = [
-    { label: "Verify a company", action: "verify_company" },
-    { label: "Validate achievements", action: "validate_recent" }
-  ];
-
   const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
     {
       sender: "ally",
-      text: "Upload your resume, save your page, then invite a colleague to confirm a chapter."
+      text: "Welcome to VerifiedCV. Upload your resume or paste your career history to get started."
     }
   ]);
   const [chatInput, setChatInput] = useState("");
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const actionPrompts = React.useMemo(() => {
+    if (!isPortfolioSaved) {
+      return [
+        { label: "Review & Edit Resume", action: "review_resume" },
+        { label: "Save Portfolio", action: "save_portfolio" }
+      ];
+    }
+    if (!contact.linkedinVerified || !contact.emailVerified) {
+      return [
+        { label: "Verify Identity (Email, Phone, LinkedIn)", action: "verify_identity" }
+      ];
+    }
+    return [
+      { label: "Invite Peers & Managers", action: "invite_peers" },
+      { label: "Attach Documents", action: "attach_docs" }
+    ];
+  }, [isPortfolioSaved, contact.linkedinVerified, contact.emailVerified]);
 
   const buildPortfolioPayload = () => ({
     handle: handle.toLowerCase().trim(),
@@ -502,11 +515,10 @@ export default function StudioPage() {
 
         setActiveTab("canvas");
         captureEvent("resume_parsed", { source: "studio_paste", chapters: data.milestones.length });
-        setChatMessages((prev) => [
-          ...prev,
+        setChatMessages([
           {
             sender: "ally",
-            text: `Extracted ${data.milestones.length} milestones. Save your portfolio next so verification work is not lost.`
+            text: "Upload successful. Please review your resume below and edit as necessary. Once it looks good, save your portfolio to begin verification."
           }
         ]);
       } else {
@@ -534,8 +546,20 @@ export default function StudioPage() {
       applyPortfolioRecord(saved);
       setIsPortfolioSaved(true);
       setSaveStatus("saved");
+      setChatMessages([
+        {
+          sender: "ally",
+          text: "Welcome back. Your portfolio is saved and ready."
+        }
+      ]);
     } else if (draft && hasPortfolioContent(draft)) {
       applyPortfolioRecord(draft);
+      setChatMessages([
+        {
+          sender: "ally",
+          text: "Loaded your draft portfolio. Review your chapters and save when ready."
+        }
+      ]);
     } else if (pendingRaw) {
       try {
         const parsed = JSON.parse(pendingRaw);
@@ -545,11 +569,10 @@ export default function StudioPage() {
           loadCanonicalRecord();
         } else if (parsed.milestones && Array.isArray(parsed.milestones) && parsed.milestones.length > 0) {
           applyPortfolioRecord(parsed);
-          setChatMessages((prev) => [
-            ...prev,
+          setChatMessages([
             {
               sender: "ally",
-              text: `Ingested ${parsed.milestones.length} career chapters. Save your portfolio to unlock verification.`
+              text: "Upload successful. Please review your resume below and edit as necessary. Once it looks good, save your portfolio to begin verification."
             }
           ]);
         } else if (parsed.rawText && parsed.rawText.trim().length > 0) {
@@ -793,27 +816,28 @@ export default function StudioPage() {
   };
 
   const handleActionPrompt = (actionType: string) => {
+    if (actionType === "review_resume") {
+      setChatMessages((prev) => [
+        ...prev,
+        { sender: "user", text: "Review & Edit Resume" },
+        { sender: "ally", text: "Scroll through your career chapters on the right. You can edit titles, dates, and claims. We recommend keeping only the most impactful, factual deliverables." }
+      ]);
+      return;
+    }
+    if (actionType === "save_portfolio") {
+      setIsClaimModalOpen(true);
+      return;
+    }
+
     requirePortfolioSaved(() => {
-      if (actionType === "validate_recent") {
-        if (milestones.length > 0) {
-          const topM = milestones[0];
-          setHighlightedMilestoneId(topM.id);
-          setChatMessages((prev) => [
-            ...prev,
-            { sender: "user", text: `Validate recent achievements at ${topM.company}` },
-            {
-              sender: "ally",
-              text: `Focusing on ${topM.company} (${topM.role}). Each line item represents an atomic deliverable. Click 'Verify' to send an attestation link to your manager.`
-            }
-          ]);
-          const el = document.getElementById(topM.id);
-          el?.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-      } else if (
-        actionType === "verify_company" ||
-        actionType === "request_peer" ||
-        actionType === "attach_artifact"
-      ) {
+      if (actionType === "verify_identity") {
+        setChatMessages((prev) => [
+          ...prev,
+          { sender: "user", text: "Verify Identity" },
+          { sender: "ally", text: "Use the 'Verify Identity' button at the top to confirm your email, phone, and LinkedIn profile." }
+        ]);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } else if (actionType === "invite_peers" || actionType === "attach_docs") {
         if (milestones.length > 0) {
           setTargetMilestone(milestones[0]);
           setIsVerifyHubOpen(true);
