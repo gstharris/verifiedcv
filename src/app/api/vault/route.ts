@@ -15,7 +15,7 @@ import { issueRestoreCode } from "@/lib/handleRestore";
 export const dynamic = "force-dynamic";
 
 const CANDIDATE_PUBLIC_COLUMNS =
-  "handle, full_name, headline, summary_statement, bio_summary, email, phone, linkedin, location, email_verified, phone_verified, linkedin_verified";
+  "handle, full_name, headline, summary_statement, bio_summary, email, phone, linkedin, location, email_verified, phone_verified, linkedin_verified, preferred_layout";
 
 function stripOwnerSecret(record: Record<string, unknown>) {
   const rest = { ...record };
@@ -56,6 +56,7 @@ export async function GET(req: NextRequest) {
           fullName: candidate.full_name,
           headline: candidate.headline,
           summaryStatement: candidate.summary_statement || candidate.bio_summary,
+          preferredLayout: candidate.preferred_layout || "hybrid",
           contact: {
             email: candidate.email,
             phone: candidate.phone,
@@ -236,6 +237,7 @@ export async function POST(req: NextRequest) {
             email_verified: payload.contact?.emailVerified || false,
             phone_verified: payload.contact?.phoneVerified || false,
             linkedin_verified: payload.contact?.linkedinVerified || false,
+            preferred_layout: payload.preferredLayout || "hybrid",
             auth_user_id: user?.id || existing?.auth_user_id || null,
             updated_at: new Date().toISOString()
           },

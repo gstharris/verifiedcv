@@ -147,9 +147,17 @@ export default function StudioPage() {
   const [isVerifyHubOpen, setIsVerifyHubOpen] = useState(false);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isArtifactModalOpen, setIsArtifactModalOpen] = useState(false);
+  const [isCorpEmailModalOpen, setIsCorpEmailModalOpen] = useState(false);
   const [artifactScanError, setArtifactScanError] = useState<string | null>(null);
   const returnToVerifyHubRef = useRef(false);
   const [targetMilestone, setTargetMilestone] = useState<Milestone | null>(null);
+  
+  // Corp Email State
+  const [corpEmail, setCorpEmail] = useState("");
+  const [corpEmailCode, setCorpEmailCode] = useState("");
+  const [corpEmailSent, setCorpEmailSent] = useState(false);
+  const [corpEmailError, setCorpEmailError] = useState("");
+  const [corpEmailSending, setCorpEmailSending] = useState(false);
   const [colleagueEmail, setColleagueEmail] = useState("");
   const [colleagueRole, setColleagueRole] = useState("Engineering Peer / Manager");
   const [inviteSent, setInviteSent] = useState(false);
@@ -389,13 +397,20 @@ export default function StudioPage() {
     });
   };
 
-  const openVerifyStep = (step: "peer" | "doc") => {
+  const openVerifyStep = (step: "peer" | "doc" | "corp") => {
     returnToVerifyHubRef.current = true;
     setIsVerifyHubOpen(false);
     if (step === "peer") setIsInviteModalOpen(true);
     if (step === "doc") {
       setArtifactScanError(null);
       setIsArtifactModalOpen(true);
+    }
+    if (step === "corp") {
+      setCorpEmail("");
+      setCorpEmailCode("");
+      setCorpEmailSent(false);
+      setCorpEmailError("");
+      setIsCorpEmailModalOpen(true);
     }
   };
 
@@ -2141,6 +2156,25 @@ export default function StudioPage() {
 
                   <button
                     type="button"
+                    onClick={() => openVerifyStep("corp")}
+                    className="w-full text-left p-4 rounded-2xl border border-[#E2E8F0] hover:border-emerald-200 hover:bg-emerald-50/40 transition-colors cursor-pointer space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <Mail className="w-4 h-4 text-emerald-600" />
+                        <span className="text-xs font-black text-[#0F172A]">Corporate Email</span>
+                      </div>
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                        Becomes {peerNext.label}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      If you still work here, we can send a 6-digit code to your corporate email address (e.g. @{live.company.toLowerCase().replace(/[^a-z0-9]/g, "")}.com). This instantly verifies your current employment status.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => openVerifyStep("peer")}
                     className="w-full text-left p-4 rounded-2xl border border-[#E2E8F0] hover:border-indigo-200 hover:bg-indigo-50/40 transition-colors cursor-pointer space-y-1.5"
                   >
@@ -2193,6 +2227,160 @@ export default function StudioPage() {
       )}
 
       {/* ARTIFACT UPLOAD MODAL */}
+      {isCorpEmailModalOpen && targetMilestone && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-lg space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+              <div className="flex items-center gap-2">
+                <Mail className="w-5 h-5 text-emerald-600" />
+                <h3 className="font-black text-sm text-[#0F172A]">Corporate Email Verification</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => closeVerifyStep(() => setIsCorpEmailModalOpen(false))}
+                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs antialiased">
+              <p className="text-slate-500 leading-relaxed">
+                If you still work at <strong>{targetMilestone.company}</strong>, we can send a 6-digit code to your corporate email address to instantly verify this chapter.
+              </p>
+
+              {!corpEmailSent ? (
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    setCorpEmailError("");
+                    setCorpEmailSending(true);
+                    try {
+                      const res = await fetch("/api/verify/corp-email", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          email: corpEmail,
+                          milestoneId: targetMilestone.id,
+                          companyName: targetMilestone.company
+                        })
+                      });
+                      const data = await res.json();
+                      if (res.ok) {
+                        setCorpEmailSent(true);
+                      } else {
+                        setCorpEmailError(data.error || "Failed to send code.");
+                      }
+                    } catch {
+                      setCorpEmailError("Network error.");
+                    } finally {
+                      setCorpEmailSending(false);
+                    }
+                  }}
+                  className="space-y-3"
+                >
+                  <input
+                    type="email"
+                    required
+                    value={corpEmail}
+                    onChange={(e) => setCorpEmail(e.target.value)}
+                    placeholder={`e.g. graham@${targetMilestone.company.toLowerCase().replace(/[^a-z0-9]/g, "")}.com`}
+                    className="w-full p-2.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669]"
+                  />
+                  {corpEmailError && <p className="text-[10px] font-bold text-red-500">{corpEmailError}</p>}
+                  <button
+                    type="submit"
+                    disabled={corpEmailSending || !corpEmail}
+                    className="w-full py-2.5 bg-[#0F172A] hover:bg-slate-800 text-white font-bold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {corpEmailSending ? <Clock className="w-4 h-4 animate-spin" /> : <span>Send Code</span>}
+                  </button>
+                </form>
+              ) : (
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    setCorpEmailError("");
+                    setCorpEmailSending(true);
+                    try {
+                      const res = await fetch("/api/verify/corp-email", {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          email: corpEmail,
+                          code: corpEmailCode,
+                          milestoneId: targetMilestone.id
+                        })
+                      });
+                      const data = await res.json();
+                      if (res.ok) {
+                        // Success! Update the milestone verifications locally
+                        setMilestones((prev) =>
+                          prev.map((m) => {
+                            if (m.id === targetMilestone.id) {
+                              return {
+                                ...m,
+                                verifications: [
+                                  ...(m.verifications || []),
+                                  {
+                                    id: `ver-corp-${Date.now()}`,
+                                    name: "Corporate Email Verification",
+                                    role: "Automated System",
+                                    email: corpEmail,
+                                    verifiedAt: new Date().toISOString()
+                                  }
+                                ]
+                              };
+                            }
+                            return m;
+                          })
+                        );
+                        setChatMessages((prev) => [
+                          ...prev,
+                          {
+                            sender: "ally",
+                            text: `Corporate email verified for ${targetMilestone.company}.`
+                          }
+                        ]);
+                        setIsCorpEmailModalOpen(false);
+                      } else {
+                        setCorpEmailError(data.error || "Incorrect code.");
+                      }
+                    } catch {
+                      setCorpEmailError("Network error.");
+                    } finally {
+                      setCorpEmailSending(false);
+                    }
+                  }}
+                  className="space-y-3"
+                >
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-center space-y-1">
+                    <CheckCircle2 className="w-4 h-4 text-[#059669] mx-auto" />
+                    <p className="font-bold text-emerald-800">Code sent to {corpEmail}</p>
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    value={corpEmailCode}
+                    onChange={(e) => setCorpEmailCode(e.target.value)}
+                    placeholder="6-digit code"
+                    className="w-full p-2.5 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-mono tracking-widest text-center"
+                  />
+                  {corpEmailError && <p className="text-[10px] font-bold text-red-500 text-center">{corpEmailError}</p>}
+                  <button
+                    type="submit"
+                    disabled={corpEmailSending || !corpEmailCode}
+                    className="w-full py-2.5 bg-[#0F172A] hover:bg-slate-800 text-white font-bold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {corpEmailSending ? <Clock className="w-4 h-4 animate-spin" /> : <span>Verify</span>}
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {isArtifactModalOpen && targetMilestone && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-lg space-y-5">
