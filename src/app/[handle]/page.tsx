@@ -311,7 +311,7 @@ export default function CandidateDossierPage() {
                     <LinkedInIcon className="w-3 h-3" />
                   </div>
                   <span className={`font-medium truncate ${dossier.contact.linkedinVerified ? 'text-slate-900' : 'text-slate-500'}`}>{dossier.contact.linkedin}</span>
-                  {dossier.contact.linkedinVerified && <CheckCircle2 className="w-3.5 h-3.5 text-blue-500" />}
+                  {dossier.contact.linkedinVerified && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
                 </div>
               )}
               {dossier.contact.location && (

@@ -1671,7 +1671,7 @@ export default function StudioPage() {
                       />
                     </div>
                     {contact.linkedinVerified ? (
-                      <CheckCircle2 className="w-4 h-4 text-blue-500 shrink-0" />
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
                     ) : (
                       <button onClick={async () => {
                         requirePortfolioSaved(async () => {

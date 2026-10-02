@@ -10,11 +10,11 @@ export type VerificationStatus = {
 };
 
 export function getVerificationStatus(counts: VerificationCounts): VerificationStatus {
+  if (counts.peers >= 3 || (counts.peers >= 2 && counts.docs >= 1)) {
+    return { level: 3, label: "Highly Verified" };
+  }
   if (counts.peers >= 2 || (counts.peers >= 1 && counts.docs >= 1)) {
-    return {
-      level: 2,
-      label: counts.peers >= 3 ? "Highly Verified" : "Company Verified"
-    };
+    return { level: 2, label: "Company Verified" };
   }
   if (counts.peers === 1 || counts.docs >= 1) {
     return { level: 1, label: "Partially Verified" };
