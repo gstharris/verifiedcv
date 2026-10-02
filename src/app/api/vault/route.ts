@@ -161,25 +161,46 @@ export async function POST(req: NextRequest) {
         }
 
         if (!existingError || !missingOwnerColumn(existingError.message)) {
-          if (existing?.handle && existing.auth_user_id && user?.id !== existing.auth_user_id) {
-            return NextResponse.json({ error: "This handle is owned by another Google account.", code: "HANDLE_OWNED" }, { status: 403 });
-          }
-          if (!existing?.handle && user) {
-            // New claim via Google Auth
-            isNewClaim = true;
-          } else if (!user) {
-            // Fallback to cookie auth for backwards compatibility during transition
-            const decision = authorizeVaultWrite({
-              handle,
-              incomingEmail,
-              existing: existing?.handle ? existing : null,
-              cookie
-            });
-            if (!decision.ok) {
-              return NextResponse.json({ error: decision.error, code: "HANDLE_OWNED" }, { status: 403 });
+          if (existing?.handle) {
+            // If the handle exists, check ownership
+            if (existing.auth_user_id) {
+              // It's claimed by a Supabase Auth user
+              if (!user || user.id !== existing.auth_user_id) {
+                return NextResponse.json({ error: "This handle is owned by another Google account.", code: "HANDLE_OWNED" }, { status: 403 });
+              }
+              // If user.id matches, they own it, proceed.
+            } else {
+              // It's a legacy handle claimed via cookies/email before Supabase Auth.
+              // We need to verify their cookie/email to let them claim it with their new Google Auth.
+              const decision = authorizeVaultWrite({
+                handle,
+                incomingEmail,
+                existing: existing,
+                cookie
+              });
+              if (!decision.ok) {
+                return NextResponse.json({ error: decision.error, code: "HANDLE_OWNED" }, { status: 403 });
+              }
+              // If they proved ownership via cookie/email, we will attach their new user.id during upsert.
             }
-            tokenToSet = decision.tokenToSet;
-            isNewClaim = decision.isNewClaim;
+          } else {
+            // New handle claim
+            if (user) {
+              isNewClaim = true;
+            } else {
+              // Fallback for new claims if they somehow bypassed auth
+              const decision = authorizeVaultWrite({
+                handle,
+                incomingEmail,
+                existing: null,
+                cookie
+              });
+              if (!decision.ok) {
+                return NextResponse.json({ error: decision.error, code: "HANDLE_OWNED" }, { status: 403 });
+              }
+              tokenToSet = decision.tokenToSet;
+              isNewClaim = decision.isNewClaim;
+            }
           }
         }
 
