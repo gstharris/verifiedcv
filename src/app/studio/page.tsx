@@ -422,9 +422,32 @@ export default function StudioPage() {
     const urlParams = new URLSearchParams(window.location.search);
     const linkedInAuth = urlParams.get("linkedin_auth");
     const linkedInReason = urlParams.get("linkedin_reason");
+    const authError = urlParams.get("error");
     
     // Check if we just returned from an auth callback
     const justAuthenticated = urlParams.get("auth_success") === "true";
+    
+    // Check if Supabase returned an error in the hash (e.g. from LinkedIn login)
+    const hash = window.location.hash;
+    const hasHashError = hash.includes("error=");
+    const hasHashToken = hash.includes("access_token=");
+    
+    if (authError || hasHashError) {
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          sender: "ally",
+          text: "Authentication failed. Please try again or use a different login method."
+        }
+      ]);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (hasHashToken) {
+      // Supabase Implicit Grant Flow (used by some OAuth providers)
+      // We need to let the Supabase client process the hash, then clean up the URL
+      setTimeout(() => {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }, 500);
+    }
     
     const saved = readStudioRecord<any>(STUDIO_SAVED_KEY);
     const draft = readStudioRecord<any>(STUDIO_DRAFT_KEY);
