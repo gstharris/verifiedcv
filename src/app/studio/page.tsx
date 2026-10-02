@@ -442,61 +442,70 @@ export default function StudioPage() {
       ]);
       window.history.replaceState({}, document.title, window.location.pathname);
     } else if (hasHashToken) {
-      // Supabase Implicit Grant Flow (used by some OAuth providers)
-      // We need to let the Supabase client process the hash, then clean up the URL
+      // Supabase Implicit Grant Flow
+      
+      // 1. First, extract the token from the hash manually just in case the client misses it
+      const hashParams = new URLSearchParams(hash.substring(1));
+      const accessToken = hashParams.get("access_token");
+      const refreshToken = hashParams.get("refresh_token");
+      
       setTimeout(async () => {
-        window.history.replaceState({}, document.title, window.location.pathname);
-        
-        // If they were trying to verify LinkedIn, we need to manually update the state
-        // since Supabase Auth handles the session but doesn't trigger our old custom API
         const { createClient } = await import("@supabase/supabase-js");
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
         const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
         const supabase = createClient(supabaseUrl, supabaseAnonKey);
         
-        // Wait an extra moment for Supabase client to fully parse the hash into local storage
-        setTimeout(async () => {
-          const { data: { session } } = await supabase.auth.getSession();
-          const user = session?.user;
-          
-          if (user && user.app_metadata?.providers?.includes("linkedin_oidc")) {
-            setContact((prev) => {
-              const nextContact = {
-                ...prev,
-                linkedinVerified: true
-              };
-              const base = saved && hasPortfolioContent(saved) ? saved : draft;
-              if (base && hasPortfolioContent(base)) {
-                const synced = {
-                  ...base,
-                  contact: { ...base.contact, ...nextContact },
-                  linkedinSub: user.user_metadata?.sub || user.id
-                };
-                writeStudioRecord(STUDIO_DRAFT_KEY, synced);
-                if (saved) {
-                  skipNextAutosaveRef.current = true;
-                  writeStudioRecord(STUDIO_SAVED_KEY, synced);
-                  fetch("/api/vault", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    credentials: "include",
-                    body: JSON.stringify(synced)
-                  }).catch(() => {});
-                }
-              }
-              return nextContact;
-            });
-            
-            setChatMessages((prev) => [
+        // 2. Force the session if we have the tokens
+        if (accessToken && refreshToken) {
+          await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          });
+        }
+        
+        const { data: { session } } = await supabase.auth.getSession();
+        const user = session?.user;
+        
+        if (user && user.app_metadata?.providers?.includes("linkedin_oidc")) {
+          setContact((prev) => {
+            const nextContact = {
               ...prev,
-              {
-                sender: "ally",
-                text: `LinkedIn identity confirmed${user.user_metadata?.full_name ? ` for ${user.user_metadata.full_name}` : ""}. We will not post to your profile.`
+              linkedinVerified: true
+            };
+            const base = saved && hasPortfolioContent(saved) ? saved : draft;
+            if (base && hasPortfolioContent(base)) {
+              const synced = {
+                ...base,
+                contact: { ...base.contact, ...nextContact },
+                linkedinSub: user.user_metadata?.sub || user.id
+              };
+              writeStudioRecord(STUDIO_DRAFT_KEY, synced);
+              if (saved) {
+                skipNextAutosaveRef.current = true;
+                writeStudioRecord(STUDIO_SAVED_KEY, synced);
+                fetch("/api/vault", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  credentials: "include",
+                  body: JSON.stringify(synced)
+                }).catch(() => {});
               }
-            ]);
-            captureEvent("linkedin_verified");
-          }
-        }, 500);
+            }
+            return nextContact;
+          });
+          
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              sender: "ally",
+              text: `LinkedIn identity confirmed${user.user_metadata?.full_name ? ` for ${user.user_metadata.full_name}` : ""}. We will not post to your profile.`
+            }
+          ]);
+          captureEvent("linkedin_verified");
+        }
+        
+        // 3. Only clear the URL after we've completely finished processing
+        window.history.replaceState({}, document.title, window.location.pathname);
       }, 100);
     }
     
