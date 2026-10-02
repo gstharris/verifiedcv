@@ -32,6 +32,19 @@ export function corroborationHeadline(company: string, verifications: Corroborat
   const count = verifications.length;
   const place = String(company || "this company").trim() || "this company";
   if (count <= 0) return "";
+  
+  // Check if there is a corporate email verification
+  const corpVerify = verifications.find(v => v.name === "Corporate Email Verification");
+  const humanVerifications = verifications.filter(v => v.name !== "Corporate Email Verification");
+  
+  if (corpVerify && humanVerifications.length === 0) {
+    return `Verified via corporate email at ${place}`;
+  }
+  
+  if (corpVerify && humanVerifications.length > 0) {
+    return `Verified via corporate email and ${humanVerifications.length} colleague${humanVerifications.length > 1 ? 's' : ''} at ${place}`;
+  }
+
   if (count === 1) {
     const title = publicTitleFromVerification(verifications[0]);
     return `Confirmed by ${articleFor(title)} ${title} at ${place}`;
