@@ -35,7 +35,7 @@ async function extractEmployerFromText(text: string): Promise<{ employerName?: s
         {
           role: "system",
           content:
-            "Extract the employer legal name and any employment or tax years from this employment document text. Return JSON only with keys employerName and tenureDates."
+            "Extract the employer legal name, any employment or tax years, and the document type from this employment document text. Return JSON only with keys employerName, tenureDates, and documentType. documentType must be one of w2, offer, contract, paystub, or unknown."
         },
         {
           role: "user",

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   candidateNameInDocument,
   chapterYears,
+  classifyEmploymentDocument,
   companyMentioned,
   matchEmploymentDocument
 } from "./documentProof";
@@ -64,7 +65,7 @@ describe("document proof matching", () => {
 
   it("accepts Groq-extracted employer when the raw text is messy", () => {
     const match = matchEmploymentDocument({
-      text: "Tax year 2012 GRAHAM HARRIS",
+      text: "Form W-2 Wage and Tax Statement Tax year 2012 GRAHAM HARRIS",
       company: "Yahoo",
       period: "2010 — 2014",
       candidateName: "Graham Harris",
@@ -72,5 +73,18 @@ describe("document proof matching", () => {
     });
     expect(match.ok).toBe(true);
     expect(match.companyMatched).toBe(true);
+    expect(match.documentClass).toBe("w2");
+  });
+
+  it("rejects a homemade PDF that only drops in a name and company", () => {
+    const match = matchEmploymentDocument({
+      text: "Graham Harris worked at Yahoo in 2012. This is my proof.",
+      company: "Yahoo",
+      period: "2010 — 2014",
+      candidateName: "Graham Harris"
+    });
+    expect(match.ok).toBe(false);
+    expect(classifyEmploymentDocument(match.reason ? "Graham Harris worked at Yahoo in 2012." : "")).toBeNull();
+    expect(match.documentClass).toBeNull();
   });
 });

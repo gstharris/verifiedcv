@@ -1,13 +1,25 @@
 import { companiesMatch, parseTenureRange } from "@/lib/tenureOverlap";
 
+export type EmploymentDocumentClass = "w2" | "offer" | "contract" | "paystub" | null;
+
 export type DocumentMatch = {
   ok: boolean;
   companyMatched: boolean;
   yearMatched: boolean;
   nameMatched: boolean;
+  documentClass: EmploymentDocumentClass;
   extractedYears: number[];
   reason: string;
 };
+
+export function classifyEmploymentDocument(text: string): EmploymentDocumentClass {
+  const haystack = String(text || "").toLowerCase();
+  if (/\bform\s*w-?2\b|\bwage and tax statement\b/.test(haystack)) return "w2";
+  if (/\boffer of employment\b|\boffer letter\b/.test(haystack)) return "offer";
+  if (/\bemployment agreement\b|\bemployment contract\b/.test(haystack)) return "contract";
+  if (/\bpay\s*stub\b|\bearnings statement\b|\bpaycheck\b/.test(haystack)) return "paystub";
+  return null;
+}
 
 function lettersOnly(value: string) {
   return value.replace(/[^a-zA-Z]/g, "");
@@ -75,6 +87,7 @@ export function matchEmploymentDocument(opts: {
   const extractedYears = extractYears(text);
   const yearMatched = years.some((year) => extractedYears.includes(year));
   const nameMatched = candidateNameInDocument(opts.candidateName || "", text);
+  const documentClass = classifyEmploymentDocument(text);
 
   if (!companyMatched) {
     return {
@@ -82,19 +95,45 @@ export function matchEmploymentDocument(opts: {
       companyMatched,
       yearMatched,
       nameMatched,
+      documentClass,
       extractedYears,
       reason: `This file does not name ${opts.company || "that employer"}.`
     };
   }
 
-  if (!yearMatched && !nameMatched) {
+  if (!nameMatched) {
     return {
       ok: false,
       companyMatched,
       yearMatched,
       nameMatched,
+      documentClass,
       extractedYears,
-      reason: "Could not find your name or an overlapping year in this file."
+      reason: "This file does not include your name."
+    };
+  }
+
+  if (!yearMatched) {
+    return {
+      ok: false,
+      companyMatched,
+      yearMatched,
+      nameMatched,
+      documentClass,
+      extractedYears,
+      reason: "Could not find an overlapping year from this chapter in the file."
+    };
+  }
+
+  if (!documentClass) {
+    return {
+      ok: false,
+      companyMatched,
+      yearMatched,
+      nameMatched,
+      documentClass,
+      extractedYears,
+      reason: "This does not look like a W-2, offer letter, employment contract, or pay stub."
     };
   }
 
@@ -103,9 +142,8 @@ export function matchEmploymentDocument(opts: {
     companyMatched,
     yearMatched,
     nameMatched,
+    documentClass,
     extractedYears,
-    reason: yearMatched
-      ? "Employer and overlapping year matched."
-      : "Employer and your name matched."
+    reason: "Employer, your name, overlapping year, and document type matched."
   };
 }

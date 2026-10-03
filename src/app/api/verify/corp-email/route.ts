@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { getSupabase } from "@/lib/supabase";
+import { corporateEmailMatchesCompany } from "@/lib/corporateEmail";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +31,11 @@ export async function POST(req: NextRequest) {
 
   if (!milestoneId) {
     return NextResponse.json({ error: "Milestone ID is required." }, { status: 400 });
+  }
+
+  const domainCheck = corporateEmailMatchesCompany(companyName, email);
+  if (!domainCheck.ok) {
+    return NextResponse.json({ error: domainCheck.reason }, { status: 400 });
   }
 
   const code = sixDigitCode();
@@ -87,9 +93,17 @@ export async function PUT(req: NextRequest) {
   const email = String(body.email || "").toLowerCase().trim();
   const code = String(body.code || "").trim();
   const milestoneId = String(body.milestoneId || "").trim();
+  const companyName = String(body.companyName || "").trim();
 
   if (!email || !code || !milestoneId) {
     return NextResponse.json({ error: "Email, code, and milestone ID are required." }, { status: 400 });
+  }
+
+  if (companyName) {
+    const domainCheck = corporateEmailMatchesCompany(companyName, email);
+    if (!domainCheck.ok) {
+      return NextResponse.json({ error: domainCheck.reason }, { status: 400 });
+    }
   }
 
   const lookupKey = `${email}::${milestoneId}`;

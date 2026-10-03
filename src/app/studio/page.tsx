@@ -52,6 +52,7 @@ import {
 import { getVerificationStatus, previewVerificationStatus } from "@/lib/verificationLevel";
 import { corroborationHeadline } from "@/lib/corroborationDisplay";
 import { companyVerificationTooltip, endorsedClaimIndexes } from "@/lib/verificationSignals";
+import { corporateEmailMatchesCompany } from "@/lib/corporateEmail";
 import { captureEvent, identifyHandle } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 
@@ -300,6 +301,8 @@ export default function StudioPage() {
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const nextUnverifiedChapter = milestones.find((m) => getVerificationLevel(m).level === 0) || milestones[0] || null;
+
   const actionPrompts = React.useMemo(() => {
     if (!isPortfolioSaved) {
       return [
@@ -312,11 +315,17 @@ export default function StudioPage() {
         { label: "Verify Identity (Email, Phone, LinkedIn)", action: "verify_identity" }
       ];
     }
+    const chapter = nextUnverifiedChapter;
     return [
-      { label: "Invite Peers & Managers", action: "invite_peers" },
-      { label: "Attach Documents", action: "attach_docs" }
+      {
+        label: chapter && getVerificationLevel(chapter).level === 0
+          ? `Verify ${chapter.company}`
+          : "Continue verifying experiences",
+        action: "verify_next"
+      },
+      { label: chapter ? `Invite colleagues for ${chapter.company}` : "Invite colleagues", action: "invite_peers" }
     ];
-  }, [isPortfolioSaved, contact.linkedinVerified, contact.emailVerified]);
+  }, [isPortfolioSaved, contact.linkedinVerified, contact.emailVerified, nextUnverifiedChapter]);
 
   const buildPortfolioPayload = () => ({
     handle: handle.toLowerCase().trim(),
@@ -864,19 +873,57 @@ export default function StudioPage() {
     }
 
     requirePortfolioSaved(() => {
+      const chapter = nextUnverifiedChapter || milestones[0];
       if (actionType === "verify_identity") {
         setChatMessages((prev) => [
           ...prev,
           { sender: "user", text: "Verify Identity" },
-          { sender: "ally", text: "Use the 'Verify Identity' button at the top to confirm your email, phone, and LinkedIn profile." }
+          { sender: "ally", text: "Use the Verify buttons next to email, phone, and LinkedIn at the top of your profile." }
         ]);
         window.scrollTo({ top: 0, behavior: "smooth" });
-      } else if (actionType === "invite_peers" || actionType === "attach_docs") {
-        if (milestones.length > 0) {
-          setTargetMilestone(milestones[0]);
-          setIsVerifyHubOpen(true);
-        }
+        return;
       }
+
+      if (!chapter) {
+        setChatMessages((prev) => [
+          ...prev,
+          { sender: "ally", text: "Add a company chapter first, then we can verify it." }
+        ]);
+        return;
+      }
+
+      setTargetMilestone(chapter);
+      document.getElementById(chapter.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+
+      if (actionType === "invite_peers") {
+        returnToVerifyHubRef.current = false;
+        setIsInviteModalOpen(true);
+        setChatMessages((prev) => [
+          ...prev,
+          { sender: "user", text: `Invite colleagues for ${chapter.company}` },
+          { sender: "ally", text: `Invite a coworker, manager, or direct report who overlapped with you at ${chapter.company}. They confirm with LinkedIn. Their name stays private.` }
+        ]);
+        return;
+      }
+
+      if (actionType === "attach_docs") {
+        returnToVerifyHubRef.current = false;
+        setArtifactScanError(null);
+        setIsArtifactModalOpen(true);
+        setChatMessages((prev) => [
+          ...prev,
+          { sender: "user", text: `Attach a document for ${chapter.company}` },
+          { sender: "ally", text: `Scanning a document for ${chapter.company}. We look for your name, this employer, overlapping dates, and W-2 / offer / contract language, then delete the file.` }
+        ]);
+        return;
+      }
+
+      setIsVerifyHubOpen(true);
+      setChatMessages((prev) => [
+        ...prev,
+        { sender: "user", text: `Verify ${chapter.company}` },
+        { sender: "ally", text: `Let's verify ${chapter.company}. Use a matching work email, invite a colleague, or scan an employment document.` }
+      ]);
     });
   };
 
@@ -927,16 +974,13 @@ export default function StudioPage() {
     }
 
     if (normalized.includes("validate") || normalized.includes("achievement")) {
-      handleActionPrompt("validate_recent");
-    } else if (
-      normalized.includes("peer") ||
-      normalized.includes("corroborat") ||
-      normalized.includes("verify") ||
-      normalized.includes("artifact") ||
-      normalized.includes("proof") ||
-      normalized.includes("attach")
-    ) {
-      handleActionPrompt("verify_company");
+      handleActionPrompt("verify_next");
+    } else if (normalized.includes("attach") || normalized.includes("document") || normalized.includes("w-2") || normalized.includes("w2")) {
+      handleActionPrompt("attach_docs");
+    } else if (normalized.includes("peer") || normalized.includes("colleague") || normalized.includes("invite") || normalized.includes("corroborat")) {
+      handleActionPrompt("invite_peers");
+    } else if (normalized.includes("verify") || normalized.includes("artifact") || normalized.includes("proof")) {
+      handleActionPrompt("verify_next");
     } else {
       setTimeout(() => {
         setChatMessages((prev) => [
@@ -2183,11 +2227,11 @@ export default function StudioPage() {
                         <span className="text-xs font-black text-[#0F172A]">Corporate Email</span>
                       </div>
                       <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
-                        Becomes {peerNext.label}
+                        Marks Verified
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-500 leading-relaxed">
-                      If you still work here, we can send a 6-digit code to your corporate email address (e.g. @{live.company.toLowerCase().replace(/[^a-z0-9]/g, "")}.com). This instantly verifies your current employment status.
+                      Send a code to the work inbox this company issued you. Personal addresses like Gmail are rejected, and the domain has to match {live.company}.
                     </p>
                   </button>
 
@@ -2199,19 +2243,14 @@ export default function StudioPage() {
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
                         <Users className="w-4 h-4 text-indigo-600" />
-                        <span className="text-xs font-black text-[#0F172A]">Ask a colleague</span>
+                        <span className="text-xs font-black text-[#0F172A]">Invite colleagues</span>
                       </div>
                       <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
-                        {current.peers >= 1 ? "Adds another peer" : "Becomes " + peerNext.label}
+                        {current.peers >= 1 ? "Strengthens this chapter" : peerNext.label}
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-500 leading-relaxed">
-                      They sign in with LinkedIn, add their title, and the years they overlapped you there. Their name stays private. One person shows as a title at this company; several people roll up to a count.
-                      {current.peers === 0 && current.docs === 0
-                        ? " One confirmation marks this chapter Verified. A second person, or a document plus this person, reaches Verified+."
-                        : current.peers === 0
-                          ? " Combined with your document, this reaches Verified+."
-                          : " Two or more confirmations reach Verified+."}
+                      Invite coworkers, managers, or direct reports who overlapped with you here. They confirm with LinkedIn. Their name stays private.
                     </p>
                   </button>
 
@@ -2230,10 +2269,7 @@ export default function StudioPage() {
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-500 leading-relaxed">
-                      Offer letter, contract, or W-2. Scanned for employer and dates, then deleted.
-                      {current.peers >= 1 && current.docs === 0
-                        ? " With your existing peer, this reaches Verified+."
-                        : " Alone this is Verified. Pair it with one peer for Verified+."}
+                      Upload a W-2, offer letter, contract, or pay stub. We check your name, this employer, overlapping dates, and document language, then delete the file. This is not an IRS lookup — pair it with a colleague when you can.
                     </p>
                   </button>
 
@@ -2251,7 +2287,7 @@ export default function StudioPage() {
             <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
               <div className="flex items-center gap-2">
                 <Mail className="w-5 h-5 text-emerald-600" />
-                <h3 className="font-black text-sm text-[#0F172A]">Corporate Email Verification</h3>
+                <h3 className="font-black text-sm text-[#0F172A]">Verify with work email</h3>
               </div>
               <button
                 type="button"
@@ -2264,7 +2300,7 @@ export default function StudioPage() {
 
             <div className="space-y-4 text-xs antialiased">
               <p className="text-slate-500 leading-relaxed">
-                If you still work at <strong>{targetMilestone.company}</strong>, we can send a 6-digit code to your corporate email address to instantly verify this chapter.
+                Send a 6-digit code to the work email <strong>{targetMilestone.company}</strong> issued you. Gmail and other personal inboxes are blocked, and the domain has to match this company.
               </p>
 
               {!corpEmailSent ? (
@@ -2272,6 +2308,11 @@ export default function StudioPage() {
                   onSubmit={async (e) => {
                     e.preventDefault();
                     setCorpEmailError("");
+                    const domainCheck = corporateEmailMatchesCompany(targetMilestone.company, corpEmail);
+                    if (!domainCheck.ok) {
+                      setCorpEmailError(domainCheck.reason);
+                      return;
+                    }
                     setCorpEmailSending(true);
                     try {
                       const res = await fetch("/api/verify/corp-email", {
@@ -2327,7 +2368,8 @@ export default function StudioPage() {
                         body: JSON.stringify({
                           email: corpEmail,
                           code: corpEmailCode,
-                          milestoneId: targetMilestone.id
+                          milestoneId: targetMilestone.id,
+                          companyName: targetMilestone.company
                         })
                       });
                       const data = await res.json();
@@ -2405,7 +2447,7 @@ export default function StudioPage() {
             <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
               <div className="flex items-center gap-2">
                 <Paperclip className="w-5 h-5 text-indigo-600" />
-                <h3 className="font-black text-sm text-[#0F172A]">Attach Proof Artifact</h3>
+                <h3 className="font-black text-sm text-[#0F172A]">Scan employment document</h3>
               </div>
               <button
                 type="button"
@@ -2417,13 +2459,13 @@ export default function StudioPage() {
             </div>
 
             <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1 text-xs">
-              <span className="font-bold text-[#0F172A] block">Attaching to: {targetMilestone.company}</span>
-              <span className="text-slate-500 block">{targetMilestone.period}. Upload a PDF W-2, offer letter, or contract.</span>
+              <span className="font-bold text-[#0F172A] block">Document for {targetMilestone.company}</span>
+              <span className="text-slate-500 block">{targetMilestone.period}. PDF only: W-2, offer letter, contract, or pay stub.</span>
             </div>
 
             <div className="space-y-4 text-xs">
-              <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 text-indigo-800 leading-relaxed">
-                <strong>Privacy:</strong> We read employer and dates from the PDF, then discard the file. It is never shown on your public page.
+              <div className="bg-emerald-50/60 border border-emerald-100 rounded-xl p-4 text-emerald-900 leading-relaxed">
+                We check the PDF for your name, this employer, overlapping dates, and employment-document language. Then we delete the file. This is not an IRS or payroll lookup, so a mocked-up document can still slip through. A colleague confirmation is stronger.
               </div>
 
               {artifactScanError && (
@@ -2468,7 +2510,7 @@ export default function StudioPage() {
             <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
               <div className="flex items-center gap-2">
                 <Users className="w-5 h-5 text-[#059669]" />
-                <h3 className="font-black text-sm text-[#0F172A]">Request Peer Corroboration</h3>
+                <h3 className="font-black text-sm text-[#0F172A]">Invite colleagues</h3>
               </div>
               <button
                 type="button"
@@ -2483,7 +2525,7 @@ export default function StudioPage() {
               <span className="font-bold text-[#0F172A] block">{targetMilestone.company}</span>
               <span className="text-slate-500 block">{targetMilestone.role} ({targetMilestone.period})</span>
               <p className="text-slate-500 pt-1">
-                They sign in with LinkedIn and add their title plus the years they overlapped you. Their name stays private. Recruiters see a title at this company, or a count if several people confirm.
+                Invite coworkers, managers, or direct reports who overlapped with you here. They confirm with LinkedIn. Their name stays private on your dossier.
               </p>
             </div>
 
