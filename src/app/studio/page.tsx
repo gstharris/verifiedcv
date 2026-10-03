@@ -51,6 +51,7 @@ import {
 } from "@/lib/studioPortfolio";
 import { getVerificationStatus, previewVerificationStatus } from "@/lib/verificationLevel";
 import { corroborationHeadline } from "@/lib/corroborationDisplay";
+import { companyVerificationTooltip, endorsedClaimIndexes } from "@/lib/verificationSignals";
 import { captureEvent, identifyHandle } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 
@@ -78,6 +79,7 @@ interface Milestone {
   artifacts?: { id: string; name: string; type: string }[];
   registryLinks?: { id: string; type: "github" | "credly" | "uspto"; url: string; label: string }[];
   verifications?: { id: string; name: string; role: string; email: string; verifiedAt: string; linkedInUrl?: string }[];
+  endorsedClaimIds?: string[];
 }
 
 interface EducationRecord {
@@ -160,6 +162,7 @@ export default function StudioPage() {
   const [corpEmailSending, setCorpEmailSending] = useState(false);
   const [colleagueEmail, setColleagueEmail] = useState("");
   const [colleagueRole, setColleagueRole] = useState("Engineering Peer / Manager");
+  const [askForAchievements, setAskForAchievements] = useState(true);
   const [inviteSent, setInviteSent] = useState(false);
   const [waitingForPeer, setWaitingForPeer] = useState(false);
   const [emailCode, setEmailCode] = useState("");
@@ -214,20 +217,11 @@ export default function StudioPage() {
 
   const getVerificationLevel = (m: Milestone) => {
     const status = getVerificationStatus(milestoneCounts(m));
-    if (status.level === 3) {
+    if (status.level >= 2) {
       return { ...status, color: "text-emerald-800 bg-emerald-50 border-emerald-200", icon: <ShieldCheck className="w-3 h-3 text-[#059669]" /> };
     }
-    if (status.level === 2) {
-      const isHighlyVerified = status.label === "Highly Verified";
-      return {
-        ...status,
-        label: isHighlyVerified ? "Highly Verified ⭐" : status.label,
-        color: isHighlyVerified ? "text-amber-800 bg-amber-50 border-amber-200" : "text-indigo-800 bg-indigo-50 border-indigo-200",
-        icon: isHighlyVerified ? <Award className="w-3 h-3 text-amber-600" /> : <Users className="w-3 h-3 text-indigo-600" />
-      };
-    }
     if (status.level === 1) {
-      return { ...status, color: "text-blue-800 bg-blue-50 border-blue-200", icon: <FileCheck className="w-3 h-3 text-blue-600" /> };
+      return { ...status, color: "text-emerald-800 bg-emerald-50 border-emerald-200", icon: <CheckCircle2 className="w-3 h-3 text-[#059669]" /> };
     }
     return { ...status, color: "text-slate-600 bg-slate-100 border-slate-200", icon: <AlertCircle className="w-3 h-3 text-slate-500" /> };
   };
@@ -1216,7 +1210,9 @@ export default function StudioPage() {
           companyName: targetMilestone.company,
           roleTitle: targetMilestone.role,
           tenureDates: targetMilestone.period,
-          claims: targetMilestone.claims.map((c, i) => ({ id: `c${i}`, raw_bullet: c })),
+          claims: askForAchievements
+            ? targetMilestone.claims.map((c, i) => ({ id: `c${i}`, raw_bullet: c }))
+            : [],
           attestorEmail: colleagueEmail
         })
       });
@@ -1891,14 +1887,8 @@ export default function StudioPage() {
                     >
                       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3.5 border-b border-[#E2E8F0]/70">
                         <div className="flex-1 space-y-1">
-                          <div className="flex items-center gap-2 mb-1.5">
-                            {trustStatus.level > 0 && (
-                              <span className={`text-[9px] font-bold px-2 py-0.5 rounded flex items-center gap-1 border ${trustStatus.color}`}>
-                                {trustStatus.icon} {trustStatus.label}
-                              </span>
-                            )}
-                          </div>
-                          <input
+                          <div className="flex items-center gap-2">
+                            <input
                             type="text"
                             value={milestone.company}
                             readOnly={!isPortfolioSaved}
@@ -1910,8 +1900,32 @@ export default function StudioPage() {
                             }}
                             placeholder="Company Name (e.g. SCD Enterprises / PairedRight)"
                             spellCheck={true}
-                            className={`w-full font-black text-base text-[#0F172A] focus:outline-none border-b border-transparent ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
+                            className={`flex-1 font-black text-base text-[#0F172A] focus:outline-none border-b border-transparent ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
                           />
+                            {trustStatus.level > 0 && (
+                              <span
+                                className="group/proof relative inline-flex items-center cursor-help"
+                                title={companyVerificationTooltip(
+                                  milestone.company,
+                                  milestone.verifications || [],
+                                  milestone.artifacts?.length || 0
+                                )}
+                              >
+                                {trustStatus.level >= 2 ? (
+                                  <ShieldCheck className="w-4 h-4 text-[#059669]" />
+                                ) : (
+                                  <CheckCircle2 className="w-4 h-4 text-[#059669]" />
+                                )}
+                                <span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-56 rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-semibold leading-relaxed text-white shadow-xl group-hover/proof:block">
+                                  {companyVerificationTooltip(
+                                    milestone.company,
+                                    milestone.verifications || [],
+                                    milestone.artifacts?.length || 0
+                                  )}
+                                </span>
+                              </span>
+                            )}
+                          </div>
                           <input
                             type="text"
                             value={milestone.role}
@@ -2025,7 +2039,11 @@ export default function StudioPage() {
                               key={claimIdx}
                               className="group flex items-start gap-2.5 p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] focus-within:border-[#059669] focus-within:bg-white transition-all"
                             >
+                              {endorsedClaimIndexes(milestone.endorsedClaimIds).includes(claimIdx) ? (
+                                <CheckCircle2 className="mt-1 w-3.5 h-3.5 text-[#059669] shrink-0" />
+                              ) : (
                               <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-[#059669] shrink-0" />
+                              )}
                               <textarea
                                 rows={2}
                                 value={claimText}
@@ -2190,10 +2208,10 @@ export default function StudioPage() {
                     <p className="text-[11px] text-slate-500 leading-relaxed">
                       They sign in with LinkedIn, add their title, and the years they overlapped you there. Their name stays private. One person shows as a title at this company; several people roll up to a count.
                       {current.peers === 0 && current.docs === 0
-                        ? " One confirmation gets you to Partially Verified. A second person, or a document plus this person, reaches Company Verified."
+                        ? " One confirmation marks this chapter Verified. A second person, or a document plus this person, reaches Verified+."
                         : current.peers === 0
-                          ? " Combined with your document, this reaches Company Verified."
-                          : " Two or more confirmations reach Company Verified."}
+                          ? " Combined with your document, this reaches Verified+."
+                          : " Two or more confirmations reach Verified+."}
                     </p>
                   </button>
 
@@ -2214,8 +2232,8 @@ export default function StudioPage() {
                     <p className="text-[11px] text-slate-500 leading-relaxed">
                       Offer letter, contract, or W-2. Scanned for employer and dates, then deleted.
                       {current.peers >= 1 && current.docs === 0
-                        ? " With your existing peer, this reaches Company Verified."
-                        : " Alone this is Partial. Pair it with one peer for Company Verified."}
+                        ? " With your existing peer, this reaches Verified+."
+                        : " Alone this is Verified. Pair it with one peer for Verified+."}
                     </p>
                   </button>
 
@@ -2470,6 +2488,27 @@ export default function StudioPage() {
             </div>
 
             <form onSubmit={dispatchPeerInvite} className="space-y-4 text-xs">
+              <div className="space-y-2 p-3 rounded-xl border border-[#E2E8F0] bg-white">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input type="checkbox" checked readOnly className="mt-0.5 accent-[#059669]" />
+                  <span className="text-slate-700">
+                    <strong className="text-[#0F172A]">Confirm they worked here</strong>
+                    <span className="block text-[11px] text-slate-500">Always included. Corroborating an achievement also confirms the company.</span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={askForAchievements}
+                    onChange={(e) => setAskForAchievements(e.target.checked)}
+                    className="mt-0.5 accent-[#059669]"
+                  />
+                  <span className="text-slate-700">
+                    <strong className="text-[#0F172A]">Ask them to corroborate specific achievements</strong>
+                    <span className="block text-[11px] text-slate-500">They can check the bullets they personally observed.</span>
+                  </span>
+                </label>
+              </div>
               <div>
                 <label className="font-bold text-slate-700 block mb-1">Colleague or Manager Work Email</label>
                 <input

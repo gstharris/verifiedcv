@@ -6,15 +6,15 @@ export type VerificationCounts = {
 
 export type VerificationStatus = {
   level: 0 | 1 | 2 | 3;
-  label: "Self-Attested" | "Verified" | "Highly Verified" | "Gold Verified";
+  label: "Self-Attested" | "Verified" | "Verified+";
 };
 
 export function getVerificationStatus(counts: VerificationCounts): VerificationStatus {
   if (counts.peers >= 3 || (counts.peers >= 2 && counts.docs >= 1)) {
-    return { level: 3, label: "Gold Verified" };
+    return { level: 3, label: "Verified+" };
   }
   if (counts.peers >= 2 || (counts.peers >= 1 && counts.docs >= 1)) {
-    return { level: 2, label: "Highly Verified" };
+    return { level: 2, label: "Verified+" };
   }
   if (counts.peers === 1 || counts.docs >= 1) {
     return { level: 1, label: "Verified" };

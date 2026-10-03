@@ -45,11 +45,23 @@ export async function GET(req: NextRequest) {
         .single();
 
       if (candidate && !candidateError) {
-        const [milestonesRes, educationRes, skillsRes] = await Promise.all([
+        const [milestonesRes, educationRes, skillsRes, attestationsRes] = await Promise.all([
           supabase.from("milestones").select("*, artifacts(*), registry_links(*), verifications(*)").eq("candidate_handle", handle),
           supabase.from("education").select("*").eq("candidate_handle", handle),
-          supabase.from("skills").select("*").eq("candidate_handle", handle)
+          supabase.from("skills").select("*").eq("candidate_handle", handle),
+          supabase
+            .from("attestations")
+            .select("milestone_id, endorsed_claim_ids, status")
+            .eq("candidate_handle", handle)
+            .eq("status", "CONFIRMED")
         ]);
+
+        const endorsedByMilestone = new Map<string, string[]>();
+        for (const row of attestationsRes.data || []) {
+          const existing = endorsedByMilestone.get(row.milestone_id) || [];
+          const next = Array.isArray(row.endorsed_claim_ids) ? row.endorsed_claim_ids : [];
+          endorsedByMilestone.set(row.milestone_id, [...existing, ...next.map(String)]);
+        }
 
         const record = {
           handle: candidate.handle,
@@ -84,6 +96,7 @@ export async function GET(req: NextRequest) {
                 url: l.url,
                 label: l.label
               })),
+              endorsedClaimIds: endorsedByMilestone.get(m.id) || [],
               verifications: (m.verifications || []).map(
                 (v: {
                   id: string;

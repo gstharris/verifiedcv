@@ -70,7 +70,7 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
   const [attestorName, setAttestorName] = useState("");
   const [attestorTitle, setAttestorTitle] = useState("");
   const [endorsedClaimIds, setEndorsedClaimIds] = useState<string[]>([]);
-  const [isMilestonesOpen, setIsMilestonesOpen] = useState(false);
+  const [isMilestonesOpen, setIsMilestonesOpen] = useState(true);
   const [attestorStartYear, setAttestorStartYear] = useState("");
   const [attestorEndYear, setAttestorEndYear] = useState("");
   const [attestorStillThere, setAttestorStillThere] = useState(false);
@@ -472,10 +472,10 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
                     <Award className="w-4 h-4 text-emerald-700" />
                     <div>
                       <span className="font-bold text-slate-900 block">
-                        Optional: confirm specific work
+                        Corroborate specific achievements
                       </span>
                       <span className="text-[11px] text-slate-500">
-                        {endorsedClaimIds.length} of {data.claims.length} milestones selected
+                        {endorsedClaimIds.length} of {data.claims.length} selected · checking any also confirms the company
                       </span>
                     </div>
                   </div>
