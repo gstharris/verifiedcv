@@ -49,10 +49,13 @@ import {
   unverifiedContact,
   writeStudioRecord
 } from "@/lib/studioPortfolio";
-import { getVerificationStatus, previewVerificationStatus } from "@/lib/verificationLevel";
+import { getVerificationStatus } from "@/lib/verificationLevel";
 import { corroborationHeadline } from "@/lib/corroborationDisplay";
 import { companyVerificationTooltip, endorsedClaimIndexes } from "@/lib/verificationSignals";
 import { corporateEmailMatchesCompany } from "@/lib/corporateEmail";
+import { nextPortfolioVerificationStep } from "@/lib/verificationQueue";
+import { type PortfolioAsset, type RecruiterLayout } from "@/lib/portfolioAssets";
+import PortfolioStudioPanel from "@/components/PortfolioStudioPanel";
 import { captureEvent, identifyHandle } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 
@@ -119,6 +122,8 @@ export default function StudioPage() {
   const [summaryStatement, setSummaryStatement] = useState("");
   const [skills, setSkills] = useState<string[]>([]);
   const [education, setEducation] = useState<EducationRecord[]>([]);
+  const [portfolioAssets, setPortfolioAssets] = useState<PortfolioAsset[]>([]);
+  const [preferredLayout, setPreferredLayout] = useState<RecruiterLayout>("hybrid");
 
   const [contact, setContact] = useState<ContactInfo>({
     email: "",
@@ -161,6 +166,7 @@ export default function StudioPage() {
   const [corpEmailSent, setCorpEmailSent] = useState(false);
   const [corpEmailError, setCorpEmailError] = useState("");
   const [corpEmailSending, setCorpEmailSending] = useState(false);
+  const [corpEmailDirectory, setCorpEmailDirectory] = useState("");
   const [colleagueEmail, setColleagueEmail] = useState("");
   const [colleagueRole, setColleagueRole] = useState("Engineering Peer / Manager");
   const [askForAchievements, setAskForAchievements] = useState(true);
@@ -301,7 +307,21 @@ export default function StudioPage() {
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const nextUnverifiedChapter = milestones.find((m) => getVerificationLevel(m).level === 0) || milestones[0] || null;
+  const nextVerifyStep = nextPortfolioVerificationStep({
+    emailVerified: contact.emailVerified,
+    linkedinVerified: contact.linkedinVerified,
+    phoneVerified: contact.phoneVerified,
+    chapters: milestones.map((milestone) => ({
+      id: milestone.id,
+      company: milestone.company,
+      level: getVerificationLevel(milestone).level
+    }))
+  });
+  const verificationStarted =
+    contact.emailVerified ||
+    contact.linkedinVerified ||
+    contact.phoneVerified ||
+    milestones.some((milestone) => getVerificationLevel(milestone).level > 0);
 
   const actionPrompts = React.useMemo(() => {
     if (!isPortfolioSaved) {
@@ -310,22 +330,13 @@ export default function StudioPage() {
         { label: "Save Portfolio", action: "save_portfolio" }
       ];
     }
-    if (!contact.linkedinVerified || !contact.emailVerified) {
-      return [
-        { label: "Verify Identity (Email, Phone, LinkedIn)", action: "verify_identity" }
-      ];
-    }
-    const chapter = nextUnverifiedChapter;
     return [
       {
-        label: chapter && getVerificationLevel(chapter).level === 0
-          ? `Verify ${chapter.company}`
-          : "Continue verifying experiences",
-        action: "verify_next"
-      },
-      { label: chapter ? `Invite colleagues for ${chapter.company}` : "Invite colleagues", action: "invite_peers" }
+        label: verificationStarted ? "Continue verifying my portfolio" : "Verify my portfolio",
+        action: "verify_portfolio"
+      }
     ];
-  }, [isPortfolioSaved, contact.linkedinVerified, contact.emailVerified, nextUnverifiedChapter]);
+  }, [isPortfolioSaved, verificationStarted]);
 
   const buildPortfolioPayload = () => ({
     handle: handle.toLowerCase().trim(),
@@ -336,6 +347,8 @@ export default function StudioPage() {
     contact,
     skills,
     education,
+    preferredLayout,
+    portfolioAssets,
     milestones
   });
 
@@ -364,6 +377,10 @@ export default function StudioPage() {
     if (parsed.summaryStatement) setSummaryStatement(parsed.summaryStatement);
     if (parsed.skills) setSkills(parsed.skills);
     if (parsed.education) setEducation(parsed.education);
+    if (Array.isArray(parsed.portfolioAssets)) setPortfolioAssets(parsed.portfolioAssets);
+    if (parsed.preferredLayout === "traditional" || parsed.preferredLayout === "hybrid" || parsed.preferredLayout === "creative") {
+      setPreferredLayout(parsed.preferredLayout);
+    }
     if (parsed.contact) setContact((prev) => ({ ...prev, ...parsed.contact }));
     if (parsed.handle) setHandle(String(parsed.handle).toLowerCase().trim());
     setActiveTab("canvas");
@@ -413,6 +430,7 @@ export default function StudioPage() {
       setCorpEmailCode("");
       setCorpEmailSent(false);
       setCorpEmailError("");
+      setCorpEmailDirectory("");
       setIsCorpEmailModalOpen(true);
     }
   };
@@ -711,6 +729,8 @@ export default function StudioPage() {
       contact,
       skills,
       education,
+      preferredLayout,
+      portfolioAssets,
       milestones
     };
     if (!hasPortfolioContent(payload)) return;
@@ -739,7 +759,7 @@ export default function StudioPage() {
     }, 800);
 
     return () => clearTimeout(timeout);
-  }, [contact, education, fullName, handle, headline, isPortfolioSaved, milestones, skills, summaryStatement]);
+  }, [contact, education, fullName, handle, headline, isPortfolioSaved, milestones, portfolioAssets, preferredLayout, skills, summaryStatement]);
 
   useEffect(() => {
     if (!handle || handle.length < 2) {
@@ -873,40 +893,30 @@ export default function StudioPage() {
     }
 
     requirePortfolioSaved(() => {
-      const chapter = nextUnverifiedChapter || milestones[0];
-      if (actionType === "verify_identity") {
-        setChatMessages((prev) => [
-          ...prev,
-          { sender: "user", text: "Verify Identity" },
-          { sender: "ally", text: "Use the Verify buttons next to email, phone, and LinkedIn at the top of your profile." }
-        ]);
-        window.scrollTo({ top: 0, behavior: "smooth" });
-        return;
-      }
-
-      if (!chapter) {
-        setChatMessages((prev) => [
-          ...prev,
-          { sender: "ally", text: "Add a company chapter first, then we can verify it." }
-        ]);
-        return;
-      }
-
-      setTargetMilestone(chapter);
-      document.getElementById(chapter.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
-
-      if (actionType === "invite_peers") {
-        returnToVerifyHubRef.current = false;
-        setIsInviteModalOpen(true);
-        setChatMessages((prev) => [
-          ...prev,
-          { sender: "user", text: `Invite colleagues for ${chapter.company}` },
-          { sender: "ally", text: `Invite a coworker, manager, or direct report who overlapped with you at ${chapter.company}. They confirm with LinkedIn. Their name stays private.` }
-        ]);
-        return;
-      }
-
-      if (actionType === "attach_docs") {
+      if (actionType === "invite_peers" || actionType === "attach_docs") {
+        const chapter =
+          (nextVerifyStep.id === "chapter" && nextVerifyStep.milestoneId
+            ? milestones.find((milestone) => milestone.id === nextVerifyStep.milestoneId)
+            : null) || milestones[0];
+        if (!chapter) {
+          setChatMessages((prev) => [
+            ...prev,
+            { sender: "ally", text: "Add a company chapter first, then we can verify it." }
+          ]);
+          return;
+        }
+        setTargetMilestone(chapter);
+        document.getElementById(chapter.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        if (actionType === "invite_peers") {
+          returnToVerifyHubRef.current = false;
+          setIsInviteModalOpen(true);
+          setChatMessages((prev) => [
+            ...prev,
+            { sender: "user", text: `Invite a colleague for ${chapter.company}` },
+            { sender: "ally", text: `Invite a coworker, manager, or direct report who overlapped with you at ${chapter.company}. They confirm with LinkedIn. Their name stays private.` }
+          ]);
+          return;
+        }
         returnToVerifyHubRef.current = false;
         setArtifactScanError(null);
         setIsArtifactModalOpen(true);
@@ -918,11 +928,36 @@ export default function StudioPage() {
         return;
       }
 
-      setIsVerifyHubOpen(true);
+      const userLabel = verificationStarted ? "Continue verifying my portfolio" : "Verify my portfolio";
+      if (nextVerifyStep.id === "email" || nextVerifyStep.id === "linkedin" || nextVerifyStep.id === "phone") {
+        setChatMessages((prev) => [
+          ...prev,
+          { sender: "user", text: userLabel },
+          { sender: "ally", text: `${nextVerifyStep.title}. ${nextVerifyStep.detail} Use the Verify button next to that field.` }
+        ]);
+        document.getElementById("identity-card")?.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+
+      if (nextVerifyStep.id === "chapter" && nextVerifyStep.milestoneId) {
+        const chapter = milestones.find((milestone) => milestone.id === nextVerifyStep.milestoneId);
+        if (chapter) {
+          setTargetMilestone(chapter);
+          document.getElementById(chapter.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+          setIsVerifyHubOpen(true);
+          setChatMessages((prev) => [
+            ...prev,
+            { sender: "user", text: userLabel },
+            { sender: "ally", text: `${nextVerifyStep.title}. ${nextVerifyStep.detail}` }
+          ]);
+          return;
+        }
+      }
+
       setChatMessages((prev) => [
         ...prev,
-        { sender: "user", text: `Verify ${chapter.company}` },
-        { sender: "ally", text: `Let's verify ${chapter.company}. Use a matching work email, invite a colleague, or scan an employment document.` }
+        { sender: "user", text: userLabel },
+        { sender: "ally", text: nextVerifyStep.detail }
       ]);
     });
   };
@@ -973,14 +1008,18 @@ export default function StudioPage() {
       return;
     }
 
-    if (normalized.includes("validate") || normalized.includes("achievement")) {
-      handleActionPrompt("verify_next");
-    } else if (normalized.includes("attach") || normalized.includes("document") || normalized.includes("w-2") || normalized.includes("w2")) {
+    if (normalized.includes("attach") || normalized.includes("document") || normalized.includes("w-2") || normalized.includes("w2")) {
       handleActionPrompt("attach_docs");
     } else if (normalized.includes("peer") || normalized.includes("colleague") || normalized.includes("invite") || normalized.includes("corroborat")) {
       handleActionPrompt("invite_peers");
-    } else if (normalized.includes("verify") || normalized.includes("artifact") || normalized.includes("proof")) {
-      handleActionPrompt("verify_next");
+    } else if (
+      normalized.includes("verify") ||
+      normalized.includes("validate") ||
+      normalized.includes("achievement") ||
+      normalized.includes("artifact") ||
+      normalized.includes("proof")
+    ) {
+      handleActionPrompt("verify_portfolio");
     } else {
       setTimeout(() => {
         setChatMessages((prev) => [
@@ -988,8 +1027,8 @@ export default function StudioPage() {
           {
             sender: "ally",
             text: isPortfolioSaved
-              ? "I can help verify a chapter, request a peer, or attach proof. What should we do next?"
-              : "Save your portfolio first, then we can verify chapters and request corroboration."
+              ? "Use Verify my portfolio and I will prompt the next unchecked item: email, LinkedIn, then each company."
+              : "Save your portfolio first, then we can verify it in order."
           }
         ]);
       }, 400);
@@ -1032,6 +1071,8 @@ export default function StudioPage() {
       contact,
       skills,
       education,
+      preferredLayout,
+      portfolioAssets,
       milestones
     };
 
@@ -1056,7 +1097,7 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Portfolio saved. Live dossier is active at verifiedcv.app/${handle.toLowerCase().trim()}. You can now verify identity and request corroboration.`
+            text: `Portfolio saved. Live dossier is active at verifiedcv.app/${handle.toLowerCase().trim()}. Use Verify my portfolio and I will prompt the next item that still needs proof.`
           }
         ]);
       } else {
@@ -1085,6 +1126,8 @@ export default function StudioPage() {
       contact,
       skills,
       education,
+      preferredLayout,
+      portfolioAssets,
       milestones: updatedMilestones
     };
     try {
@@ -1157,6 +1200,8 @@ export default function StudioPage() {
         contact: record.contact,
         skills: record.skills,
         education: record.education,
+        preferredLayout: record.preferredLayout,
+        portfolioAssets: record.portfolioAssets,
         milestones: record.milestones
       });
       setIsPortfolioSaved(true);
@@ -1442,7 +1487,7 @@ export default function StudioPage() {
 
           <div className="p-2.5 border-t border-[#E2E8F0] bg-[#F8FAFC] space-y-1.5">
             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block px-1">
-              Recommended Next Actions
+              Next step
             </span>
             <div className="flex flex-wrap gap-1.5">
               {actionPrompts.map((p, idx) => (
@@ -1464,7 +1509,7 @@ export default function StudioPage() {
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Ask Ally to save or invite a colleague..."
+                placeholder="Ask Ally to verify your portfolio..."
                 className="w-full text-xs pl-3 pr-8 py-2 rounded-lg border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans bg-slate-50/50"
               />
               <button
@@ -1487,13 +1532,8 @@ export default function StudioPage() {
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
                   <h2 className="text-sm font-black text-[#0F172A] tracking-tight">You have {level0Count} unverified {level0Count === 1 ? 'claim' : 'claims'}</h2>
                 </div>
-                <button onClick={() => {
-                  const firstUnverified = milestones.find(m => getVerificationLevel(m).level === 0);
-                  if (firstUnverified) {
-                    document.getElementById(firstUnverified.id)?.scrollIntoView({ behavior: 'smooth' });
-                  }
-                }} className="font-bold text-[#059669] hover:text-emerald-700 transition-colors cursor-pointer text-xs flex items-center gap-1">
-                  Level Up Now <ArrowRight className="w-3.5 h-3.5" />
+                <button onClick={() => handleActionPrompt("verify_portfolio")} className="font-bold text-[#059669] hover:text-emerald-700 transition-colors cursor-pointer text-xs flex items-center gap-1">
+                  Continue verifying <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
@@ -1586,7 +1626,7 @@ export default function StudioPage() {
               }}
             >
               {/* Candidate Identity & Contact Verification Strip */}
-              <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 shadow-xs space-y-4">
+              <div id="identity-card" className="bg-white border border-[#E2E8F0] rounded-3xl p-6 shadow-xs space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-100">
                   <div className="space-y-1">
                     <input
@@ -1872,6 +1912,15 @@ export default function StudioPage() {
                   <p className="mt-2 text-xs font-bold text-red-600">{linkedinVerifyError}</p>
                 )}
               </div>
+
+              <PortfolioStudioPanel
+                assets={portfolioAssets}
+                layout={preferredLayout}
+                handle={handle}
+                saved={isPortfolioSaved}
+                onAssetsChange={setPortfolioAssets}
+                onLayoutChange={setPreferredLayout}
+              />
 
               {/* Summary */}
               {summaryStatement && (
@@ -2204,16 +2253,16 @@ export default function StudioPage() {
 
             {(() => {
               const live = milestones.find((m) => m.id === targetMilestone.id) || targetMilestone;
-              const current = milestoneCounts(live);
-              const currentStatus = getVerificationStatus(current);
-              const peerNext = previewVerificationStatus(current, { peers: 1 });
-              const docNext = previewVerificationStatus(current, { docs: 1 });
+              const currentStatus = getVerificationStatus(milestoneCounts(live));
 
               return (
                 <div className="space-y-3">
                   <div className="px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs">
                     <span className="text-slate-500">Current status: </span>
                     <span className="font-bold text-[#0F172A]">{currentStatus.label}</span>
+                    <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                      Self-Attested means only you said this. Verified means one independent source confirmed it. Verified+ means two independent sources did.
+                    </p>
                   </div>
 
                   <button
@@ -2221,17 +2270,12 @@ export default function StudioPage() {
                     onClick={() => openVerifyStep("corp")}
                     className="w-full text-left p-4 rounded-2xl border border-[#E2E8F0] hover:border-emerald-200 hover:bg-emerald-50/40 transition-colors cursor-pointer space-y-1.5"
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <Mail className="w-4 h-4 text-emerald-600" />
-                        <span className="text-xs font-black text-[#0F172A]">Corporate Email</span>
-                      </div>
-                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
-                        Marks Verified
-                      </span>
+                    <div className="flex items-center gap-2">
+                      <Mail className="w-4 h-4 text-emerald-600" />
+                      <span className="text-xs font-black text-[#0F172A]">Corporate Email</span>
                     </div>
                     <p className="text-[11px] text-slate-500 leading-relaxed">
-                      Send a code to the work inbox this company issued you. Personal addresses like Gmail are rejected, and the domain has to match {live.company}.
+                      Send a code to the work inbox {live.company} issued you. We reject personal inboxes, require the domain to match this company, check its mail servers, and look the mailbox up in a company directory before a code goes out.
                     </p>
                   </button>
 
@@ -2240,14 +2284,9 @@ export default function StudioPage() {
                     onClick={() => openVerifyStep("peer")}
                     className="w-full text-left p-4 rounded-2xl border border-[#E2E8F0] hover:border-indigo-200 hover:bg-indigo-50/40 transition-colors cursor-pointer space-y-1.5"
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 text-indigo-600" />
-                        <span className="text-xs font-black text-[#0F172A]">Invite colleagues</span>
-                      </div>
-                      <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
-                        {current.peers >= 1 ? "Strengthens this chapter" : peerNext.label}
-                      </span>
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-indigo-600" />
+                      <span className="text-xs font-black text-[#0F172A]">Invite colleagues</span>
                     </div>
                     <p className="text-[11px] text-slate-500 leading-relaxed">
                       Invite coworkers, managers, or direct reports who overlapped with you here. They confirm with LinkedIn. Their name stays private.
@@ -2259,14 +2298,9 @@ export default function StudioPage() {
                     onClick={() => openVerifyStep("doc")}
                     className="w-full text-left p-4 rounded-2xl border border-[#E2E8F0] hover:border-blue-200 hover:bg-blue-50/40 transition-colors cursor-pointer space-y-1.5"
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <Paperclip className="w-4 h-4 text-blue-600" />
-                        <span className="text-xs font-black text-[#0F172A]">Attach a document</span>
-                      </div>
-                      <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
-                        {current.docs >= 1 ? "Adds more proof" : "Becomes " + docNext.label}
-                      </span>
+                    <div className="flex items-center gap-2">
+                      <Paperclip className="w-4 h-4 text-blue-600" />
+                      <span className="text-xs font-black text-[#0F172A]">Attach a document</span>
                     </div>
                     <p className="text-[11px] text-slate-500 leading-relaxed">
                       Upload a W-2, offer letter, contract, or pay stub. We check your name, this employer, overlapping dates, and document language, then delete the file. This is not an IRS lookup — pair it with a colleague when you can.
@@ -2300,7 +2334,7 @@ export default function StudioPage() {
 
             <div className="space-y-4 text-xs antialiased">
               <p className="text-slate-500 leading-relaxed">
-                Send a 6-digit code to the work email <strong>{targetMilestone.company}</strong> issued you. Gmail and other personal inboxes are blocked, and the domain has to match this company.
+                Send a 6-digit code to the work email <strong>{targetMilestone.company}</strong> issued you. Personal inboxes are blocked. We match the domain to this company, confirm it has mail servers, look the mailbox up in Hunter, and reject disposable, webmail, or bounced addresses. The code is what proves you can open that inbox.
               </p>
 
               {!corpEmailSent ? (
@@ -2327,6 +2361,7 @@ export default function StudioPage() {
                       const data = await res.json();
                       if (res.ok) {
                         setCorpEmailSent(true);
+                        setCorpEmailDirectory(String(data.directory || ""));
                       } else {
                         setCorpEmailError(data.error || "Failed to send code.");
                       }
@@ -2385,7 +2420,7 @@ export default function StudioPage() {
                                   {
                                     id: `ver-corp-${Date.now()}`,
                                     name: "Corporate Email Verification",
-                                    role: "Automated System",
+                                    role: "Mailbox directory + inbox code",
                                     email: corpEmail,
                                     verifiedAt: new Date().toISOString()
                                   }
@@ -2417,6 +2452,7 @@ export default function StudioPage() {
                   <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-center space-y-1">
                     <CheckCircle2 className="w-4 h-4 text-[#059669] mx-auto" />
                     <p className="font-bold text-emerald-800">Code sent to {corpEmail}</p>
+                    {corpEmailDirectory && <p className="text-[11px] text-emerald-800/80 leading-relaxed">{corpEmailDirectory}</p>}
                   </div>
                   <input
                     type="text"

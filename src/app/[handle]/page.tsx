@@ -18,6 +18,8 @@ import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 import { getVerificationStatus } from "@/lib/verificationLevel";
 import { companyVerificationTooltip, endorsedClaimIndexes } from "@/lib/verificationSignals";
 import { captureEvent } from "@/lib/analytics";
+import PortfolioAssetsGallery from "@/components/PortfolioAssetsGallery";
+import { type PortfolioAsset, type RecruiterLayout } from "@/lib/portfolioAssets";
 
 function LinkedInIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
   return (
@@ -68,6 +70,8 @@ interface DossierData {
   fullName: string;
   headline: string;
   summaryStatement: string;
+  preferredLayout?: RecruiterLayout;
+  portfolioAssets?: PortfolioAsset[];
   contact?: ContactInfo;
   skills: string[];
   education: EducationRecord[];
@@ -308,8 +312,18 @@ export default function CandidateDossierPage() {
           )}
         </div>
 
-        {/* Milestones */}
-        <div className="space-y-4">
+        {(() => {
+          const layout =
+            dossier.preferredLayout === "traditional" || dossier.preferredLayout === "creative"
+              ? dossier.preferredLayout
+              : "hybrid";
+          const assets = dossier.portfolioAssets || [];
+          const gallery = <PortfolioAssetsGallery assets={assets} featured={layout === "creative"} />;
+          return (
+            <>
+              {(layout === "hybrid" || layout === "creative") && gallery}
+              {/* Milestones */}
+              <div className="space-y-4">
           <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
             <h2 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">
               Experience ({dossier.milestones.length})
@@ -441,6 +455,10 @@ export default function CandidateDossierPage() {
             </div>
           </div>
         )}
+              {layout === "traditional" && gallery}
+            </>
+          );
+        })()}
       </main>
 
       <footer className="border-t border-[#E2E8F0] bg-white py-6 text-xs text-slate-400">

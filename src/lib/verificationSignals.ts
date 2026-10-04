@@ -37,7 +37,11 @@ export function companyProofLines(
   const corp = verifications.find(isCorpEmailVerification);
   if (corp) {
     const domain = corpEmailDomain(corp.email);
-    lines.push(domain ? `Corporate email @${domain}` : `Corporate email at ${company}`);
+    lines.push(
+      domain
+        ? `Corporate email @${domain}${corp.role && /directory/i.test(corp.role) ? " via directory + inbox code" : ""}`
+        : `Corporate email at ${company}`
+    );
   }
 
   const humans = verifications.filter((record) => !isCorpEmailVerification(record));

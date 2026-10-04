@@ -78,6 +78,9 @@ export function companyTokens(company: string) {
   return [...tokens];
 }
 
+export type MailExchangeLookup = (domain: string) => Promise<boolean>;
+export type MailboxDirectoryStatus = "valid" | "accept_all" | "invalid" | "unknown" | "skipped";
+
 export function corporateEmailMatchesCompany(company: string, email: string) {
   const domain = emailDomain(email);
   if (!domain) {

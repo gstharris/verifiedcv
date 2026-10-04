@@ -11,6 +11,7 @@ import {
   hashOwnerToken
 } from "@/lib/handleOwner";
 import { issueRestoreCode } from "@/lib/handleRestore";
+import { normalizePortfolioAsset, type PortfolioAsset } from "@/lib/portfolioAssets";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,7 @@ export async function GET(req: NextRequest) {
 
   if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
     try {
-      const { data: candidate, error: candidateError } = await supabase
+      const { data: candidate, error: candidateError } = await rawSupabase
         .from("candidates")
         .select(CANDIDATE_PUBLIC_COLUMNS)
         .eq("handle", handle)
@@ -46,15 +47,16 @@ export async function GET(req: NextRequest) {
 
       if (candidate && !candidateError) {
         const [milestonesRes, educationRes, skillsRes, attestationsRes] = await Promise.all([
-          supabase.from("milestones").select("*, artifacts(*), registry_links(*), verifications(*)").eq("candidate_handle", handle),
-          supabase.from("education").select("*").eq("candidate_handle", handle),
-          supabase.from("skills").select("*").eq("candidate_handle", handle),
-          supabase
+          rawSupabase.from("milestones").select("*, artifacts(*), registry_links(*), verifications(*)").eq("candidate_handle", handle),
+          rawSupabase.from("education").select("*").eq("candidate_handle", handle),
+          rawSupabase.from("skills").select("*").eq("candidate_handle", handle),
+          rawSupabase
             .from("attestations")
             .select("milestone_id, endorsed_claim_ids, status")
             .eq("candidate_handle", handle)
             .eq("status", "CONFIRMED")
         ]);
+        const assetsRes = await rawSupabase.from("portfolio_assets").select("*").eq("candidate_handle", handle);
 
         const endorsedByMilestone = new Map<string, string[]>();
         for (const row of attestationsRes.data || []) {
@@ -69,6 +71,27 @@ export async function GET(req: NextRequest) {
           headline: candidate.headline,
           summaryStatement: candidate.summary_statement || candidate.bio_summary,
           preferredLayout: candidate.preferred_layout || "hybrid",
+          portfolioAssets: (assetsRes.error ? [] : assetsRes.data || [])
+            .map((asset: {
+              id: string;
+              title: string;
+              description?: string;
+              url?: string;
+              type: string;
+              issuer?: string;
+              issued_at?: string;
+            }) =>
+              normalizePortfolioAsset({
+                id: asset.id,
+                title: asset.title,
+                description: asset.description,
+                url: asset.url,
+                type: asset.type as PortfolioAsset["type"],
+                issuer: asset.issuer,
+                issuedAt: asset.issued_at
+              })
+            )
+            .filter(Boolean),
           contact: {
             email: candidate.email,
             phone: candidate.phone,
@@ -315,6 +338,32 @@ export async function POST(req: NextRequest) {
               year: edu.year
             }))
           );
+        }
+
+        const assetRows = (Array.isArray(payload.portfolioAssets) ? payload.portfolioAssets : [])
+          .map((asset: Partial<PortfolioAsset>) => normalizePortfolioAsset(asset))
+          .filter(Boolean) as PortfolioAsset[];
+        const { error: assetsDeleteError } = await rawSupabase.from("portfolio_assets").delete().eq("candidate_handle", handle);
+        if (assetsDeleteError && !/portfolio_assets/i.test(assetsDeleteError.message || "")) {
+          console.error("Could not clear portfolio assets:", assetsDeleteError.message);
+        } else if (!assetsDeleteError && assetRows.length > 0) {
+          const { error: assetsInsertError } = await rawSupabase.from("portfolio_assets").insert(
+            assetRows.map((asset) => ({
+              id: asset.id,
+              candidate_handle: handle,
+              title: asset.title,
+              description: asset.description || "",
+              url: asset.url || "",
+              type: asset.type,
+              issuer: asset.issuer || "",
+              issued_at: asset.issuedAt || "",
+              verification_status: asset.verificationStatus,
+              verification_note: asset.verificationNote || ""
+            }))
+          );
+          if (assetsInsertError) {
+            console.error("Could not save portfolio assets:", assetsInsertError.message);
+          }
         }
 
         const incomingMilestones = Array.isArray(payload.milestones) ? payload.milestones : [];

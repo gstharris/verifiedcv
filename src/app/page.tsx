@@ -214,10 +214,10 @@ export default function VerifiedCVLandingPage() {
             <span>Beta</span>
           </div>
           <h1 className="text-4xl sm:text-5xl font-black text-[#0F172A] tracking-tight leading-[1.12] max-w-3xl mx-auto">
-            Your resume, verified by your network.
+            Your resume, with proof attached.
           </h1>
           <p className="text-base sm:text-xl font-semibold text-slate-600 max-w-2xl mx-auto leading-snug">
-            Upload your resume. Invite colleagues to verify. Stand out to employers.
+            Upload your history. Prove it is you, then prove each chapter — work email, documents, and people who were there.
           </p>
 
           <div className="max-w-xl mx-auto pt-2 space-y-4">
@@ -308,10 +308,10 @@ export default function VerifiedCVLandingPage() {
               Why VerifiedCV
             </h2>
             <p className="text-2xl sm:text-3xl font-black text-[#0F172A]">
-              Your network is your strongest proof.
+              Proof that sits on the chapter.
             </p>
             <p className="text-xs sm:text-sm text-slate-500">
-              A free portfolio you own forever, powered by the colleagues who were actually there.
+              A page you own. Identity, a matching work inbox, documents, and colleagues — not a recommendation sticker on a PDF.
             </p>
           </div>
 
@@ -342,7 +342,7 @@ export default function VerifiedCVLandingPage() {
               </div>
               <h3 className="font-extrabold text-sm text-[#0F172A]">Proof that stays with you</h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Confirm it is you, attach a document, and ask people who were there. One colleague helps. Several with titles at that company is what starts to look verified.
+                Confirm it is you. Match a work email. Attach an employment document. Ask people who overlapped. Each source stays on that chapter when you change jobs.
               </p>
             </div>
           </div>
@@ -527,9 +527,9 @@ export default function VerifiedCVLandingPage() {
               <span className="w-8 h-8 rounded-xl bg-[#059669] text-white font-mono font-bold text-xs flex items-center justify-center">
                 2
               </span>
-              <h3 className="font-extrabold text-sm text-[#0F172A]">Verify</h3>
+              <h3 className="font-extrabold text-sm text-[#0F172A]">Add proof</h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Confirm your identity and invite former colleagues to back up your experience. One confirmation makes a chapter verified.
+                Confirm identity, match a work inbox, attach a document, and invite people who were there. One independent source verifies a chapter. Two makes it Verified+.
               </p>
             </div>
 

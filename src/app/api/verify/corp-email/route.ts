@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { getSupabase } from "@/lib/supabase";
-import { corporateEmailMatchesCompany } from "@/lib/corporateEmail";
+import { assessCorporateEmail } from "@/lib/corporateEmailServer";
+import { lookupMailboxDirectory } from "@/lib/mailboxDirectory";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,7 +34,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Milestone ID is required." }, { status: 400 });
   }
 
-  const domainCheck = corporateEmailMatchesCompany(companyName, email);
+  const directory = await lookupMailboxDirectory(email, companyName);
+  const domainCheck = await assessCorporateEmail(companyName, email, { mailbox: directory });
   if (!domainCheck.ok) {
     return NextResponse.json({ error: domainCheck.reason }, { status: 400 });
   }
@@ -80,7 +82,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, directory: directory.summary });
 }
 
 export async function PUT(req: NextRequest) {
@@ -100,7 +102,7 @@ export async function PUT(req: NextRequest) {
   }
 
   if (companyName) {
-    const domainCheck = corporateEmailMatchesCompany(companyName, email);
+    const domainCheck = await assessCorporateEmail(companyName, email);
     if (!domainCheck.ok) {
       return NextResponse.json({ error: domainCheck.reason }, { status: 400 });
     }
@@ -131,7 +133,7 @@ export async function PUT(req: NextRequest) {
     id: `ver-corp-${Date.now()}`,
     milestone_id: milestoneId,
     name: "Corporate Email Verification",
-    role: "Automated System",
+    role: "Mailbox directory + inbox code",
     email: email,
     linkedin_url: null,
     verified_at: new Date().toISOString()

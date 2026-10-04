@@ -23,6 +23,11 @@ describe("verification signals", () => {
         { name: "Engineering Peer" }
       ], 1)
     ).toEqual(["Corporate email @ge-on.com", "1 colleague confirmation", "Employment document"]);
+    expect(
+      companyProofLines("Ge-on", [
+        { name: "Corporate Email Verification", email: "graham@ge-on.com", role: "Mailbox directory + inbox code" }
+      ])
+    ).toEqual(["Corporate email @ge-on.com via directory + inbox code"]);
   });
 
   it("maps claim ids like c0 to indexes", () => {
