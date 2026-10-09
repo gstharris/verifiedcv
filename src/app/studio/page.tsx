@@ -179,6 +179,7 @@ export default function StudioPage() {
   const [phoneCodeSent, setPhoneCodeSent] = useState(false);
   const [phoneVerifyError, setPhoneVerifyError] = useState("");
   const [linkedinVerifyError, setLinkedinVerifyError] = useState("");
+  const [editingVerifiedField, setEditingVerifiedField] = useState<null | "email" | "phone" | "linkedin">(null);
 
   // Handle Availability State
   const [handleStatus, setHandleStatus] = useState<"checking" | "available" | "owned" | "taken" | "idle">("available");
@@ -499,6 +500,11 @@ export default function StudioPage() {
     if (typeof window === "undefined") return;
 
     const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get("fresh") === "1") {
+      clearStudioPortfolioStorage();
+      localStorage.removeItem("vcv_pending_payload");
+      window.history.replaceState({}, document.title, "/studio");
+    }
     const linkedInAuth = urlParams.get("linkedin_auth");
     const linkedInReason = urlParams.get("linkedin_reason");
     const authError = urlParams.get("error");
@@ -1625,8 +1631,33 @@ export default function StudioPage() {
                 }
               }}
             >
+              <nav
+                aria-label="Resume sections"
+                className="sticky top-0 z-20 -mx-8 px-8 py-2.5 bg-[#F8FAFC]/95 backdrop-blur-sm border-b border-[#E2E8F0] flex flex-wrap items-center gap-x-2 gap-y-1"
+              >
+                {[
+                  { id: "identity-card", label: "You" },
+                  ...(summaryStatement ? [{ id: "summary", label: "Summary" }] : []),
+                  { id: "experience", label: "Experience" },
+                  ...(skills.length > 0 ? [{ id: "skills", label: "Skills" }] : []),
+                  ...(education.length > 0 ? [{ id: "education", label: "Education" }] : []),
+                  { id: "work-samples", label: "Work" }
+                ].map((section, index) => (
+                  <span key={section.id} className="inline-flex items-center gap-2">
+                    {index > 0 && <span className="text-slate-300 text-[11px]">/</span>}
+                    <button
+                      type="button"
+                      onClick={() => document.getElementById(section.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                      className="text-[11px] font-bold text-slate-500 hover:text-[#0F172A] cursor-pointer"
+                    >
+                      {section.label}
+                    </button>
+                  </span>
+                ))}
+              </nav>
+
               {/* Candidate Identity & Contact Verification Strip */}
-              <div id="identity-card" className="bg-white border border-[#E2E8F0] rounded-3xl p-6 shadow-xs space-y-4">
+              <div id="identity-card" className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-3xl p-6 shadow-xs space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-100">
                   <div className="space-y-1">
                     <input
@@ -1664,16 +1695,35 @@ export default function StudioPage() {
                     <div className="flex items-center gap-2 flex-1">
                       <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                       <input
+                        id="contact-email"
                         type="email"
                         value={contact.email}
-                        readOnly={!isPortfolioSaved}
-                        onChange={(e) => setContact({ ...contact, email: e.target.value })}
+                        readOnly={!isPortfolioSaved || (contact.emailVerified && editingVerifiedField !== "email")}
+                        onChange={(e) => {
+                          setContact({ ...contact, email: e.target.value, emailVerified: false });
+                          setEmailCodeSent(false);
+                          setEditingVerifiedField(null);
+                        }}
                         placeholder="Work Email"
-                        className={`w-full text-xs bg-transparent focus:outline-none font-medium ${isPortfolioSaved ? "" : "cursor-pointer"}`}
+                        className={`w-full text-xs bg-transparent focus:outline-none font-medium ${isPortfolioSaved && !(contact.emailVerified && editingVerifiedField !== "email") ? "" : "cursor-default"}`}
                       />
                     </div>
                     {contact.emailVerified ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                        {editingVerifiedField !== "email" && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingVerifiedField("email");
+                              setTimeout(() => document.getElementById("contact-email")?.focus(), 0);
+                            }}
+                            className="text-[10px] font-bold text-slate-500 hover:text-[#0F172A] cursor-pointer shrink-0"
+                          >
+                            Edit
+                          </button>
+                        )}
+                      </>
                     ) : (
                       <button
                         type="button"
@@ -1712,16 +1762,35 @@ export default function StudioPage() {
                     <div className="flex items-center gap-2 flex-1 min-w-0">
                       <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                       <input
+                        id="contact-phone"
                         type="text"
                         value={contact.phone}
-                        readOnly={!isPortfolioSaved}
-                        onChange={(e) => setContact({ ...contact, phone: e.target.value, phoneVerified: false })}
+                        readOnly={!isPortfolioSaved || (contact.phoneVerified && editingVerifiedField !== "phone")}
+                        onChange={(e) => {
+                          setContact({ ...contact, phone: e.target.value, phoneVerified: false });
+                          setPhoneCodeSent(false);
+                          setEditingVerifiedField(null);
+                        }}
                         placeholder="Phone"
-                        className={`w-full text-xs bg-transparent focus:outline-none font-medium ${isPortfolioSaved ? "" : "cursor-pointer"}`}
+                        className={`w-full text-xs bg-transparent focus:outline-none font-medium ${isPortfolioSaved && !(contact.phoneVerified && editingVerifiedField !== "phone") ? "" : "cursor-default"}`}
                       />
                     </div>
                     {contact.phoneVerified ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                        {editingVerifiedField !== "phone" && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingVerifiedField("phone");
+                              setTimeout(() => document.getElementById("contact-phone")?.focus(), 0);
+                            }}
+                            className="text-[10px] font-bold text-slate-500 hover:text-[#0F172A] cursor-pointer shrink-0"
+                          >
+                            Edit
+                          </button>
+                        )}
+                      </>
                     ) : (
                       <button
                         type="button"
@@ -1757,16 +1826,34 @@ export default function StudioPage() {
                     <div className="flex items-center gap-2 flex-1">
                       <LinkedInIcon className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                       <input
+                        id="contact-linkedin"
                         type="text"
                         value={contact.linkedin}
-                        readOnly={!isPortfolioSaved}
-                        onChange={(e) => setContact({ ...contact, linkedin: e.target.value })}
+                        readOnly={!isPortfolioSaved || (contact.linkedinVerified && editingVerifiedField !== "linkedin")}
+                        onChange={(e) => {
+                          setContact({ ...contact, linkedin: e.target.value, linkedinVerified: false });
+                          setEditingVerifiedField(null);
+                        }}
                         placeholder="LinkedIn URL"
-                        className={`w-full text-xs bg-transparent focus:outline-none font-medium text-blue-700 ${isPortfolioSaved ? "" : "cursor-pointer"}`}
+                        className={`w-full text-xs bg-transparent focus:outline-none font-medium text-blue-700 ${isPortfolioSaved && !(contact.linkedinVerified && editingVerifiedField !== "linkedin") ? "" : "cursor-default"}`}
                       />
                     </div>
                     {contact.linkedinVerified ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                        {editingVerifiedField !== "linkedin" && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingVerifiedField("linkedin");
+                              setTimeout(() => document.getElementById("contact-linkedin")?.focus(), 0);
+                            }}
+                            className="text-[10px] font-bold text-slate-500 hover:text-[#0F172A] cursor-pointer shrink-0"
+                          >
+                            Edit
+                          </button>
+                        )}
+                      </>
                     ) : (
                       <button onClick={async () => {
                         requirePortfolioSaved(async () => {
@@ -1797,6 +1884,21 @@ export default function StudioPage() {
                     />
                   </div>
                 </div>
+                {editingVerifiedField === "email" && contact.emailVerified && (
+                  <p className="text-[11px] font-semibold text-slate-600">
+                    This email is verified. Change it and the check comes off until you verify the new address.
+                  </p>
+                )}
+                {editingVerifiedField === "phone" && contact.phoneVerified && (
+                  <p className="text-[11px] font-semibold text-slate-600">
+                    This phone is verified. Change it and the check comes off until you verify the new number.
+                  </p>
+                )}
+                {editingVerifiedField === "linkedin" && contact.linkedinVerified && (
+                  <p className="text-[11px] font-semibold text-slate-600">
+                    This LinkedIn is verified. Change the link and the check comes off until you verify again.
+                  </p>
+                )}
                 {emailCodeSent && !contact.emailVerified && (
                   <div className="mt-3 p-3 rounded-xl border border-emerald-200 bg-emerald-50/40 flex flex-col sm:flex-row sm:items-center gap-2">
                     <p className="text-xs text-slate-600 flex-1">
@@ -1915,7 +2017,7 @@ export default function StudioPage() {
 
               {/* Summary */}
               {summaryStatement && (
-                <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
+                <div id="summary" className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                     <div className="flex items-center gap-2">
                       <FileText className="w-4 h-4 text-[#059669]" />
@@ -1941,7 +2043,7 @@ export default function StudioPage() {
               )}
 
               {/* Milestones Card Stream */}
-              <div className="space-y-4">
+              <div id="experience" className="scroll-mt-14 space-y-4">
                 <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
                   <h3 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">
                     Experience ({milestones.length})
@@ -2162,7 +2264,7 @@ export default function StudioPage() {
 
               {/* Skills */}
               {skills.length > 0 && (
-                <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
+                <div id="skills" className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                     <h3 className="font-extrabold text-xs uppercase tracking-wider text-[#0F172A]">
                       Core Proficiencies & Technologies ({skills.length})
@@ -2190,7 +2292,7 @@ export default function StudioPage() {
 
               {/* Education */}
               {education.length > 0 && (
-                <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
+                <div id="education" className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                     <div className="flex items-center gap-2">
                       <GraduationCap className="w-4 h-4 text-[#059669]" />
@@ -2220,6 +2322,7 @@ export default function StudioPage() {
                 </div>
               )}
 
+              <div id="work-samples" className="scroll-mt-14">
               <PortfolioStudioPanel
                 assets={portfolioAssets}
                 layout={preferredLayout}
@@ -2228,6 +2331,7 @@ export default function StudioPage() {
                 onAssetsChange={setPortfolioAssets}
                 onLayoutChange={setPreferredLayout}
               />
+              </div>
             </div>
           )}
           </div>
