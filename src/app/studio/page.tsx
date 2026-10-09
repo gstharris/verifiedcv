@@ -123,7 +123,7 @@ export default function StudioPage() {
   const [skills, setSkills] = useState<string[]>([]);
   const [education, setEducation] = useState<EducationRecord[]>([]);
   const [portfolioAssets, setPortfolioAssets] = useState<PortfolioAsset[]>([]);
-  const [preferredLayout, setPreferredLayout] = useState<RecruiterLayout>("hybrid");
+  const [preferredLayout, setPreferredLayout] = useState<RecruiterLayout>("traditional");
 
   const [contact, setContact] = useState<ContactInfo>({
     email: "",
@@ -1913,15 +1913,6 @@ export default function StudioPage() {
                 )}
               </div>
 
-              <PortfolioStudioPanel
-                assets={portfolioAssets}
-                layout={preferredLayout}
-                handle={handle}
-                saved={isPortfolioSaved}
-                onAssetsChange={setPortfolioAssets}
-                onLayoutChange={setPreferredLayout}
-              />
-
               {/* Summary */}
               {summaryStatement && (
                 <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
@@ -2228,6 +2219,15 @@ export default function StudioPage() {
                   </div>
                 </div>
               )}
+
+              <PortfolioStudioPanel
+                assets={portfolioAssets}
+                layout={preferredLayout}
+                handle={handle}
+                saved={isPortfolioSaved}
+                onAssetsChange={setPortfolioAssets}
+                onLayoutChange={setPreferredLayout}
+              />
             </div>
           )}
           </div>

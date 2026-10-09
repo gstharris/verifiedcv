@@ -19,7 +19,7 @@ import { getVerificationStatus } from "@/lib/verificationLevel";
 import { companyVerificationTooltip, endorsedClaimIndexes } from "@/lib/verificationSignals";
 import { captureEvent } from "@/lib/analytics";
 import PortfolioAssetsGallery from "@/components/PortfolioAssetsGallery";
-import { type PortfolioAsset, type RecruiterLayout } from "@/lib/portfolioAssets";
+import { recruiterLayout, type PortfolioAsset, type RecruiterLayout } from "@/lib/portfolioAssets";
 
 function LinkedInIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
   return (
@@ -313,15 +313,13 @@ export default function CandidateDossierPage() {
         </div>
 
         {(() => {
-          const layout =
-            dossier.preferredLayout === "traditional" || dossier.preferredLayout === "creative"
-              ? dossier.preferredLayout
-              : "hybrid";
+          const layoutDef = recruiterLayout(dossier.preferredLayout);
           const assets = dossier.portfolioAssets || [];
-          const gallery = <PortfolioAssetsGallery assets={assets} featured={layout === "creative"} />;
+          const gallery = <PortfolioAssetsGallery assets={assets} featured={layoutDef.featured} />;
+          const workFirst = layoutDef.blocks[0] === "work";
           return (
             <>
-              {(layout === "hybrid" || layout === "creative") && gallery}
+              {workFirst && gallery}
               {/* Milestones */}
               <div className="space-y-4">
           <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
@@ -455,7 +453,7 @@ export default function CandidateDossierPage() {
             </div>
           </div>
         )}
-              {layout === "traditional" && gallery}
+              {!workFirst && gallery}
             </>
           );
         })()}

@@ -10,7 +10,112 @@ export const PORTFOLIO_ASSET_TYPES = [
 
 export type PortfolioAssetType = (typeof PORTFOLIO_ASSET_TYPES)[number];
 export type RecruiterLayout = "traditional" | "hybrid" | "creative";
+export type LayoutBlock = "experience" | "skills" | "education" | "work";
 export type AssetVerificationStatus = "unverified" | "link_checked" | "registry";
+
+export const RECRUITER_LAYOUTS: {
+  id: RecruiterLayout;
+  title: string;
+  summary: string;
+  featured: boolean;
+  blocks: LayoutBlock[];
+}[] = [
+  {
+    id: "traditional",
+    title: "Traditional",
+    summary: "Experience first. Work samples sit at the bottom.",
+    featured: false,
+    blocks: ["experience", "skills", "education", "work"]
+  },
+  {
+    id: "hybrid",
+    title: "Hybrid",
+    summary: "Work samples, then experience.",
+    featured: false,
+    blocks: ["work", "experience", "skills", "education"]
+  },
+  {
+    id: "creative",
+    title: "Creative",
+    summary: "Work samples in a two-column gallery, then experience.",
+    featured: true,
+    blocks: ["work", "experience", "skills", "education"]
+  }
+];
+
+export function recruiterLayout(id?: string | null) {
+  return RECRUITER_LAYOUTS.find((layout) => layout.id === id) || RECRUITER_LAYOUTS[0];
+}
+
+const PORTFOLIO_UPLOAD_EXTENSIONS = ["pdf", "png", "jpg", "jpeg", "webp", "ppt", "pptx", "key", "zip"];
+
+export function isAllowedPortfolioUpload(name: string) {
+  const ext = String(name || "").split(".").pop()?.toLowerCase() || "";
+  return PORTFOLIO_UPLOAD_EXTENSIONS.includes(ext);
+}
+
+export type AssetForm = {
+  hint: string;
+  title: string;
+  url?: string;
+  file?: string;
+  description?: string;
+  issuer?: string;
+  issuedAt?: string;
+};
+
+const ASSET_FORMS: Record<PortfolioAssetType, AssetForm> = {
+  project: {
+    hint: "Something you shipped. Add a link or a file.",
+    title: "Project name",
+    description: "What should a recruiter notice?",
+    url: "Link to the project",
+    file: "Or upload a PDF or image"
+  },
+  prototype: {
+    hint: "A prototype or demo.",
+    title: "Prototype name",
+    description: "What should a recruiter notice?",
+    url: "Link to the prototype",
+    file: "Or upload a file"
+  },
+  app: {
+    hint: "An app people can open.",
+    title: "App name",
+    description: "What should a recruiter notice?",
+    url: "App link"
+  },
+  presentation: {
+    hint: "A deck or a talk. Upload the file, or paste a link.",
+    title: "Presentation title",
+    file: "Upload the deck",
+    url: "Or paste a public link",
+    description: "What should a recruiter notice?"
+  },
+  certification: {
+    hint: "A credential. A public badge link is the useful part.",
+    title: "Certification name",
+    issuer: "Who issued it",
+    issuedAt: "Year",
+    url: "Public credential link"
+  },
+  patent: {
+    hint: "Paste the public filing page.",
+    title: "Patent title",
+    url: "Google Patents or USPTO link",
+    issuer: "Inventor",
+    issuedAt: "Year"
+  },
+  link: {
+    hint: "Any other public page.",
+    title: "Name",
+    url: "https://"
+  }
+};
+
+export function assetForm(type: PortfolioAssetType) {
+  return ASSET_FORMS[type];
+}
 
 export type PortfolioAsset = {
   id: string;

@@ -280,22 +280,6 @@ export default function VerifiedCVLandingPage() {
                 verifiedcv.app/<span className="text-[#059669] transition-all duration-300">{DEMO_HANDLES[nameIndex]}</span>
               </span>
             </div>
-
-            {/* Mini Preview Card */}
-            <div className="mt-8 max-w-md mx-auto bg-white border border-[#E2E8F0] rounded-2xl p-4 shadow-sm text-left flex items-start gap-4 transform rotate-1 hover:rotate-0 transition-transform cursor-default">
-              <div className="flex-1 space-y-2">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-extrabold text-sm text-[#0F172A]">Senior Software Engineer</h4>
-                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 text-[#059669]" /> Confirmed
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500">Netflix • 2019 — 2024</p>
-                <p className="text-[11px] text-slate-600 font-medium bg-slate-50 p-2 rounded border border-slate-100">
-                  "Confirmed by a Director of Engineering at Netflix"
-                </p>
-              </div>
-            </div>
           </div>
         </div>
       </section>

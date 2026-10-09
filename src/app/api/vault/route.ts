@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
           fullName: candidate.full_name,
           headline: candidate.headline,
           summaryStatement: candidate.summary_statement || candidate.bio_summary,
-          preferredLayout: candidate.preferred_layout || "hybrid",
+          preferredLayout: candidate.preferred_layout || "traditional",
           portfolioAssets: (assetsRes.error ? [] : assetsRes.data || [])
             .map((asset: {
               id: string;
@@ -273,7 +273,7 @@ export async function POST(req: NextRequest) {
             email_verified: payload.contact?.emailVerified || false,
             phone_verified: payload.contact?.phoneVerified || false,
             linkedin_verified: payload.contact?.linkedinVerified || false,
-            preferred_layout: payload.preferredLayout || "hybrid",
+            preferred_layout: payload.preferredLayout || "traditional",
             auth_user_id: user?.id || existing?.auth_user_id || null,
             updated_at: new Date().toISOString()
           },
