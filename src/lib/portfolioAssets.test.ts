@@ -48,10 +48,13 @@ describe("work sample forms", () => {
 });
 
 describe("recruiter layouts", () => {
-  it("keeps your name above every layout and puts work samples last in Traditional", () => {
+  it("puts sample work at the bottom by default and at the top for the other choices", () => {
+    expect(recruiterLayout("traditional").title).toBe("Bottom");
     expect(recruiterLayout("traditional").blocks.at(-1)).toBe("work");
     expect(recruiterLayout("traditional").blocks[0]).toBe("experience");
+    expect(recruiterLayout("hybrid").title).toBe("Top");
     expect(recruiterLayout("hybrid").blocks[0]).toBe("work");
+    expect(recruiterLayout("creative").title).toBe("Top grid");
     expect(recruiterLayout("creative").featured).toBe(true);
     expect(recruiterLayout("missing").id).toBe("traditional");
   });

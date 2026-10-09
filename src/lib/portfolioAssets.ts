@@ -22,22 +22,22 @@ export const RECRUITER_LAYOUTS: {
 }[] = [
   {
     id: "traditional",
-    title: "Traditional",
-    summary: "Experience first. Work samples sit at the bottom.",
+    title: "Bottom",
+    summary: "Sample work sits after experience.",
     featured: false,
     blocks: ["experience", "skills", "education", "work"]
   },
   {
     id: "hybrid",
-    title: "Hybrid",
-    summary: "Work samples, then experience.",
+    title: "Top",
+    summary: "Sample work sits before experience.",
     featured: false,
     blocks: ["work", "experience", "skills", "education"]
   },
   {
     id: "creative",
-    title: "Creative",
-    summary: "Work samples in a two-column gallery, then experience.",
+    title: "Top grid",
+    summary: "Sample work is a two-column grid before experience.",
     featured: true,
     blocks: ["work", "experience", "skills", "education"]
   }

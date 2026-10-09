@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { ChevronDown, ExternalLink, Plus, Trash2, UploadCloud } from "lucide-react";
+import { ExternalLink, Plus, Trash2, UploadCloud } from "lucide-react";
 import {
   PORTFOLIO_ASSET_TYPES,
   RECRUITER_LAYOUTS,
@@ -10,53 +10,47 @@ import {
   isAllowedPortfolioUpload,
   normalizePortfolioAsset,
   recruiterLayout,
-  type LayoutBlock,
   type PortfolioAsset,
   type PortfolioAssetType,
   type RecruiterLayout
 } from "@/lib/portfolioAssets";
 
-const BLOCK_LABEL: Record<LayoutBlock, string> = {
-  experience: "Experience",
-  skills: "Skills",
-  education: "Education",
-  work: "Work samples"
-};
-
-function LayoutSketch({
-  blocks,
-  featured,
-  active
+export function DossierLayoutControl({
+  layout,
+  saved,
+  assetCount,
+  onLayoutChange
 }: {
-  blocks: LayoutBlock[];
-  featured: boolean;
-  active: boolean;
+  layout: RecruiterLayout;
+  saved: boolean;
+  assetCount: number;
+  onLayoutChange: (layout: RecruiterLayout) => void;
 }) {
+  const current = recruiterLayout(layout);
   return (
-    <div
-      className={`w-full rounded-lg border p-1.5 space-y-1 ${
-        active ? "border-emerald-300 bg-white" : "border-[#E2E8F0] bg-white"
-      }`}
-      aria-hidden="true"
-    >
-      <div className="rounded-sm bg-[#0F172A] text-white text-[8px] font-bold px-1 py-0.5">Your name</div>
-      {blocks.map((block) =>
-        block === "work" && featured ? (
-          <div key={block} className="grid grid-cols-2 gap-0.5">
-            <div className="rounded-sm bg-emerald-500 text-white text-[8px] font-bold px-1 py-1">Work</div>
-            <div className="rounded-sm bg-emerald-400 text-white text-[8px] font-bold px-1 py-1">Work</div>
-          </div>
-        ) : (
-          <div
-            key={block}
-            className={`rounded-sm px-1 py-0.5 text-[8px] font-bold ${
-              block === "work" ? "bg-emerald-500 text-white" : "bg-slate-200 text-slate-600"
-            }`}
-          >
-            {BLOCK_LABEL[block]}
-          </div>
-        )
-      )}
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Sample work on the page</span>
+      <div className="inline-flex p-0.5 rounded-lg bg-white border border-[#E2E8F0]">
+        {RECRUITER_LAYOUTS.map((option) => {
+          const active = layout === option.id;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              disabled={!saved}
+              onClick={() => onLayoutChange(option.id)}
+              className={`px-2 py-1 rounded-md text-[11px] font-bold ${
+                active ? "bg-emerald-50 text-[#059669]" : "text-slate-500 hover:text-[#0F172A]"
+              } ${saved ? "cursor-pointer" : "opacity-70 cursor-pointer"}`}
+            >
+              {option.title}
+            </button>
+          );
+        })}
+      </div>
+      <span className="text-[11px] text-slate-500">
+        {assetCount === 0 ? "Nothing added, so this stays off the public page." : current.summary}
+      </span>
     </div>
   );
 }
@@ -67,18 +61,14 @@ function titleFromFile(name: string) {
 
 export default function PortfolioStudioPanel({
   assets,
-  layout,
   handle,
   saved,
-  onAssetsChange,
-  onLayoutChange
+  onAssetsChange
 }: {
   assets: PortfolioAsset[];
-  layout: RecruiterLayout;
   handle: string;
   saved: boolean;
   onAssetsChange: (assets: PortfolioAsset[]) => void;
-  onLayoutChange: (layout: RecruiterLayout) => void;
 }) {
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
@@ -89,9 +79,7 @@ export default function PortfolioStudioPanel({
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [attachedName, setAttachedName] = useState("");
-  const [layoutOpen, setLayoutOpen] = useState(false);
 
-  const current = recruiterLayout(layout);
   const form = assetForm(type);
   const linkAfterFile = Boolean(form.file);
 
@@ -202,60 +190,10 @@ export default function PortfolioStudioPanel({
 
   return (
     <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 shadow-xs space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">Work samples</h3>
-          <p className="text-[11px] text-slate-500 mt-0.5">{current.summary}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setLayoutOpen((open) => !open)}
-          className="shrink-0 inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-[#0F172A] cursor-pointer"
-        >
-          {layoutOpen ? "Hide layouts" : "Change layout"}
-          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${layoutOpen ? "rotate-180" : ""}`} />
-        </button>
+      <div>
+        <h3 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">Sample work</h3>
+        <p className="text-[11px] text-slate-500 mt-0.5">Projects, decks, apps, certifications, and patents.</p>
       </div>
-
-      {layoutOpen && (
-        <div className="rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-3 space-y-3">
-          <p className="text-[11px] text-slate-500">
-            Your name stays at the top. These sketches are the order underneath it.
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            {RECRUITER_LAYOUTS.map((option) => {
-              const active = layout === option.id;
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  disabled={!saved}
-                  onClick={() => onLayoutChange(option.id)}
-                  className={`text-left p-2 rounded-xl border transition-colors space-y-1.5 ${
-                    active ? "border-emerald-200 bg-white" : "border-transparent hover:border-[#E2E8F0] hover:bg-white"
-                  } ${saved ? "cursor-pointer" : "opacity-70 cursor-pointer"}`}
-                >
-                  <LayoutSketch blocks={option.blocks} featured={option.featured} active={active} />
-                  <div className={`text-[11px] font-bold ${active ? "text-[#059669]" : "text-[#0F172A]"}`}>
-                    {option.title}
-                  </div>
-                  <p className="text-[10px] text-slate-500 leading-relaxed">{option.summary}</p>
-                </button>
-              );
-            })}
-          </div>
-          {handle.trim() && (
-            <a
-              href={`/${handle.toLowerCase().trim()}`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-[11px] font-bold text-[#059669]"
-            >
-              Open your page <ExternalLink className="w-3 h-3" />
-            </a>
-          )}
-        </div>
-      )}
 
       <div className="space-y-2">
         <label className="block space-y-1">

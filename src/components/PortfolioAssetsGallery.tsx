@@ -14,7 +14,7 @@ export default function PortfolioAssetsGallery({
     <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-4">
       <div className="flex items-center justify-between pb-1">
         <h3 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">
-          Work samples & credentials ({assets.length})
+          Sample work ({assets.length})
         </h3>
       </div>
       <div className={`grid gap-3 ${featured ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>

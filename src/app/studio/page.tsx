@@ -55,7 +55,7 @@ import { companyVerificationTooltip, endorsedClaimIndexes } from "@/lib/verifica
 import { corporateEmailMatchesCompany } from "@/lib/corporateEmail";
 import { nextPortfolioVerificationStep } from "@/lib/verificationQueue";
 import { type PortfolioAsset, type RecruiterLayout } from "@/lib/portfolioAssets";
-import PortfolioStudioPanel from "@/components/PortfolioStudioPanel";
+import PortfolioStudioPanel, { DossierLayoutControl } from "@/components/PortfolioStudioPanel";
 import { captureEvent, identifyHandle } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 
@@ -1633,15 +1633,16 @@ export default function StudioPage() {
             >
               <nav
                 aria-label="Resume sections"
-                className="sticky top-0 z-20 -mx-8 px-8 py-2.5 bg-[#F8FAFC]/95 backdrop-blur-sm border-b border-[#E2E8F0] flex flex-wrap items-center gap-x-2 gap-y-1"
+                className="sticky top-0 z-20 -mx-8 px-8 py-2.5 bg-[#F8FAFC]/95 backdrop-blur-sm border-b border-[#E2E8F0] flex flex-col gap-2"
               >
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 {[
                   { id: "identity-card", label: "You" },
                   ...(summaryStatement ? [{ id: "summary", label: "Summary" }] : []),
                   { id: "experience", label: "Experience" },
                   ...(skills.length > 0 ? [{ id: "skills", label: "Skills" }] : []),
                   ...(education.length > 0 ? [{ id: "education", label: "Education" }] : []),
-                  { id: "work-samples", label: "Work" }
+                  { id: "work-samples", label: "Sample work" }
                 ].map((section, index) => (
                   <span key={section.id} className="inline-flex items-center gap-2">
                     {index > 0 && <span className="text-slate-300 text-[11px]">/</span>}
@@ -1654,6 +1655,13 @@ export default function StudioPage() {
                     </button>
                   </span>
                 ))}
+                </div>
+                <DossierLayoutControl
+                  layout={preferredLayout}
+                  saved={isPortfolioSaved}
+                  assetCount={portfolioAssets.length}
+                  onLayoutChange={setPreferredLayout}
+                />
               </nav>
 
               {/* Candidate Identity & Contact Verification Strip */}
@@ -2325,11 +2333,9 @@ export default function StudioPage() {
               <div id="work-samples" className="scroll-mt-14">
               <PortfolioStudioPanel
                 assets={portfolioAssets}
-                layout={preferredLayout}
                 handle={handle}
                 saved={isPortfolioSaved}
                 onAssetsChange={setPortfolioAssets}
-                onLayoutChange={setPreferredLayout}
               />
               </div>
             </div>
