@@ -214,10 +214,10 @@ export default function VerifiedCVLandingPage() {
             <span>Beta</span>
           </div>
           <h1 className="text-4xl sm:text-5xl font-black text-[#0F172A] tracking-tight leading-[1.12] max-w-3xl mx-auto">
-            Your resume, with proof attached.
+            Stand out as a real candidate.
           </h1>
           <p className="text-base sm:text-xl font-semibold text-slate-600 max-w-2xl mx-auto leading-snug">
-            Upload your history. Prove it is you, then prove each chapter — work email, documents, and people who were there.
+            Upload your resume. Add proof. Share one link.
           </p>
 
           <div className="max-w-xl mx-auto pt-2 space-y-4">
