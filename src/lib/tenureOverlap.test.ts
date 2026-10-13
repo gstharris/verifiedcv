@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { companiesMatch, overlapCaption, overlapMonths, parseTenureRange } from "./tenureOverlap";
+import { companiesMatch, overlapCaption, overlapMonths, parseTenureRange, sortChaptersByTenure } from "./tenureOverlap";
 
 describe("tenure overlap", () => {
   it("parses month-year ranges including Present", () => {
@@ -17,5 +17,16 @@ describe("tenure overlap", () => {
     expect(companiesMatch("Yahoo Inc.", "yahoo")).toBe(true);
     expect(companiesMatch("Yahoo", "Google")).toBe(false);
     expect(overlapCaption("2012 — 2018", 72)).toBe("Overlapped 2012 — 2018 · 72 months (stated)");
+  });
+
+  it("orders chapters with the most recent tenure first", () => {
+    expect(
+      sortChaptersByTenure([
+        { company: "Old", period: "2010 — 2014" },
+        { company: "Now", period: "May 2025 — Present" },
+        { company: "Mid", period: "2018 — Mar 2020" },
+        { company: "Newer current", period: "Jan 2026 — Present" }
+      ]).map((chapter) => chapter.company)
+    ).toEqual(["Newer current", "Now", "Mid", "Old"]);
   });
 });

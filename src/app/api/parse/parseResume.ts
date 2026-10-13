@@ -34,6 +34,7 @@ export interface ParsedDossierPayload {
   skills: string[];
   education: ExtractedEducation[];
   milestones: ExtractedMilestone[];
+  highlights: string[];
 }
 
 function cleanBodySentence(text: string): string {
@@ -53,6 +54,13 @@ function cleanEntityHeader(text: string): string {
     .replace(/^[●•\-\*–—◦‣⁃·\s]+/g, "")
     .replace(/\s{2,}/g, " ")
     .trim();
+}
+
+function isHighlightHeader(line: string) {
+  const compact = line.replace(/[:|–—-]/g, " ").replace(/\s+/g, " ").trim();
+  if (!compact || compact.length > 40) return false;
+  if (/^[●•\-*]/.test(line.trim())) return false;
+  return /^(?:career |selected |key |professional )?highlights$/i.test(compact);
 }
 
 function isValidAchievement(text: string): boolean {
@@ -192,12 +200,13 @@ export function parseComprehensiveResume(rawText: string): ParsedDossierPayload 
     fullName = nonBlank[0].replace(/[•,]/g, "").trim();
   }
 
-  type SectionType = "HEADER" | "SUMMARY" | "EXPERIENCE" | "SKILLS" | "EDUCATION" | "OTHER";
+  type SectionType = "HEADER" | "SUMMARY" | "HIGHLIGHTS" | "EXPERIENCE" | "SKILLS" | "EDUCATION" | "OTHER";
   let currentSection: SectionType = "HEADER";
 
   const sectionLines: Record<SectionType, string[]> = {
     HEADER: [],
     SUMMARY: [],
+    HIGHLIGHTS: [],
     EXPERIENCE: [],
     SKILLS: [],
     EDUCATION: [],
@@ -210,6 +219,10 @@ export function parseComprehensiveResume(rawText: string): ParsedDossierPayload 
 
     if (/(?:^|\s)(?:PROFESSIONAL SUMMARY|EXECUTIVE SUMMARY|SUMMARY|PROFILE|ABOUT ME)(?:$|\s)/i.test(line)) {
       currentSection = "SUMMARY";
+      continue;
+    }
+    if (isHighlightHeader(line) && currentSection !== "EXPERIENCE") {
+      currentSection = "HIGHLIGHTS";
       continue;
     }
     if (/(?:^|\s)(?:PROFESSIONAL EXPERIENCE|EXPERIENCE|WORK EXPERIENCE|EMPLOYMENT HISTORY)(?:$|\s)/i.test(line)) {
@@ -361,6 +374,7 @@ export function parseComprehensiveResume(rawText: string): ParsedDossierPayload 
     contact,
     skills,
     education,
-    milestones
+    milestones,
+    highlights: extractAtomicAchievements(sectionLines.HIGHLIGHTS)
   };
 }

@@ -59,7 +59,7 @@ export function reviewResume(input: {
   const repeated = openings.find((word, index) => openings.indexOf(word) !== index);
   if (repeated) notes.push(`Several lines start with "${repeated}". Vary the opening.`);
 
-  if (!summary && claims.length) notes.push("There is no summary. Add one, or choose the Highlights template.");
+  if (!summary && claims.length) notes.push("There is no summary. You can add one, or leave the page as experience only.");
   if (!notes.length) notes.push("The structure looks clear. I did not rewrite anything.");
 
   return { notes: notes.slice(0, 4), focusId };

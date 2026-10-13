@@ -54,10 +54,14 @@ import { corroborationHeadline } from "@/lib/corroborationDisplay";
 import { companyVerificationTooltip, endorsedClaimIndexes, firstChapterWithoutColleague, postSavePrompt } from "@/lib/verificationSignals";
 import { corporateEmailMatchesCompany } from "@/lib/corporateEmail";
 import { nextPortfolioVerificationStep, verificationStatusLine } from "@/lib/verificationQueue";
-import { dossierSectionRank, highlightLines, parseDossierLayout, publicRegistryLabel, type PortfolioAsset } from "@/lib/portfolioAssets";
+import { dossierSectionRank, parseDossierLayout, publicRegistryLabel, type PortfolioAsset } from "@/lib/portfolioAssets";
 import { LOOP_EVENTS, consumeCorroboratorRef } from "@/lib/corroborationLoop";
 import { confirmedLinkedInLabel, linkedInHandle, linkedInProfileUrl } from "@/lib/linkedin";
-import { countryOptions, formatLocation, locationError, parseLocation, flagEmoji } from "@/lib/locations";
+import { flagEmoji, parseLocation } from "@/lib/locations";
+import { resolvePlace, suggestPlaces } from "@/lib/places";
+import { hydrateChapter, packChapter } from "@/lib/chapterMeta";
+import { faviconUrl, publicHttpsUrl, siteLabel } from "@/lib/companySite";
+import { sortChaptersByTenure } from "@/lib/tenureOverlap";
 import { reviewResume } from "@/lib/resumeReview";
 import PortfolioStudioPanel, { DossierLayoutControl } from "@/components/PortfolioStudioPanel";
 import { captureEvent, identifyHandle } from "@/lib/analytics";
@@ -68,6 +72,11 @@ function linkedInFields(profile: { name?: string; vanityName?: string; profileUr
     linkedin: confirmedLinkedInLabel(profile),
     linkedinVerified: true as const
   };
+}
+
+function incomingChapters(milestones: unknown) {
+  if (!Array.isArray(milestones)) return [];
+  return sortChaptersByTenure(milestones.map((milestone) => hydrateChapter(milestone)));
 }
 
 function AutoText({
@@ -112,42 +121,168 @@ function LocationField({
   saved: boolean;
   onChange: (location: string) => void;
 }) {
-  const parsed = parseLocation(value);
-  const remote = /^remote$/i.test(String(value || "").trim());
-  const countries = countryOptions();
-  const notice = locationError(value);
+  const [draft, setDraft] = useState(value);
+  const [open, setOpen] = useState(false);
+  const [touched, setTouched] = useState(false);
+  useEffect(() => {
+    setDraft(parseLocation(value)?.label || value);
+  }, [value]);
+  const resolved = resolvePlace(draft);
+  const suggestions = open ? suggestPlaces(draft) : [];
+  const notice = touched && draft.trim() && !resolved ? "Choose a city, like Paris or Los Angeles, CA." : "";
   return (
-    <div className="p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] space-y-1.5 sm:col-span-2">
+    <div className="relative p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC]">
       <div className="flex items-center gap-2">
-        <span className="text-sm leading-none">{parsed?.countryCode ? flagEmoji(parsed.countryCode) : <MapPin className="w-3.5 h-3.5 text-slate-400" />}</span>
+        <span className="text-sm leading-none shrink-0">
+          {resolved?.countryCode ? flagEmoji(resolved.countryCode) : <MapPin className="w-3.5 h-3.5 text-slate-400" />}
+        </span>
         <input
           type="text"
-          value={remote ? "" : parsed?.city || (value.includes(",") ? value.split(",")[0].trim() : value)}
-          readOnly={!saved || remote}
-          onChange={(e) => onChange(formatLocation(e.target.value, parsed?.countryCode || "") || e.target.value)}
+          value={draft}
+          readOnly={!saved}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setOpen(true);
+            setTouched(false);
+          }}
+          onFocus={() => saved && setOpen(true)}
+          onBlur={() => {
+            window.setTimeout(() => setOpen(false), 150);
+            setTouched(true);
+            const place = resolvePlace(draft);
+            if (place) onChange(place.label);
+          }}
           placeholder="City"
           className="w-full text-xs bg-transparent focus:outline-none font-medium"
         />
-        <select
-          value={remote ? "REMOTE" : parsed?.countryCode || ""}
-          disabled={!saved}
-          onChange={(e) => {
-            const cityDraft = remote ? "" : parsed?.city || String(value || "").split(",")[0].trim();
-            if (e.target.value === "REMOTE") onChange("Remote");
-            else onChange(formatLocation(cityDraft, e.target.value) || cityDraft);
-          }}
-          className="max-w-[46%] text-xs bg-transparent focus:outline-none font-medium"
-        >
-          <option value="">Country</option>
-          <option value="REMOTE">Remote</option>
-          {countries.map((country) => (
-            <option key={country.code} value={country.code}>
-              {country.flag} {country.name}
-            </option>
-          ))}
-        </select>
       </div>
-      {notice && <p className="text-[11px] font-semibold text-amber-700">{notice}</p>}
+      {open && suggestions.length > 0 && (
+        <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-56 overflow-y-auto rounded-xl border border-[#E2E8F0] bg-white shadow-lg">
+          {suggestions.map((place) => (
+            <button
+              key={`${place.label}-${place.detail}`}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(place.label);
+                setDraft(place.label);
+                setOpen(false);
+                setTouched(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-[#F8FAFC] cursor-pointer"
+            >
+              <span className="text-sm leading-none">{place.countryCode ? flagEmoji(place.countryCode) : "🌐"}</span>
+              <span className="font-semibold text-[#0F172A]">{place.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {notice && <p className="text-[11px] font-semibold text-amber-700 mt-1">{notice}</p>}
+    </div>
+  );
+}
+
+function CompanySitePrompt({
+  company,
+  companyUrl,
+  saved,
+  onChange
+}: {
+  company: string;
+  companyUrl?: string;
+  saved: boolean;
+  onChange: (url: string) => void;
+}) {
+  const [suggestion, setSuggestion] = useState("");
+  const [custom, setCustom] = useState("");
+  const [looking, setLooking] = useState(false);
+  const [dismissed, setDismissed] = useState("");
+  const [showCustom, setShowCustom] = useState(false);
+
+  useEffect(() => {
+    const name = company.trim();
+    if (!saved || companyUrl || name.length < 2 || /^company or initiative$/i.test(name)) {
+      setSuggestion("");
+      setLooking(false);
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      setLooking(true);
+      try {
+        const res = await fetch(`/api/company/lookup?name=${encodeURIComponent(name)}`);
+        const data = await res.json();
+        setSuggestion(String(data.sites?.[0] || ""));
+      } catch {
+        setSuggestion("");
+      } finally {
+        setLooking(false);
+      }
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [company, companyUrl, saved]);
+
+  if (companyUrl) {
+    return (
+      <div className="flex items-center gap-2 text-[11px]">
+        <img src={faviconUrl(companyUrl)} alt="" className="w-3.5 h-3.5 rounded-sm" />
+        <a href={companyUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#059669]">
+          {siteLabel(companyUrl)}
+        </a>
+        <button type="button" onClick={() => onChange("")} className="font-bold text-slate-400 hover:text-[#0F172A] cursor-pointer">
+          Remove
+        </button>
+      </div>
+    );
+  }
+
+  const pending = suggestion && suggestion !== dismissed ? suggestion : "";
+  return (
+    <div className="space-y-1.5">
+      {looking && <p className="text-[11px] text-slate-400">Looking up a site for {company.trim()}…</p>}
+      {pending && (
+        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+          <img src={faviconUrl(pending)} alt="" className="w-3.5 h-3.5 rounded-sm" />
+          <span className="text-slate-600">Is {siteLabel(pending)} the right site?</span>
+          <button type="button" onClick={() => onChange(pending)} className="font-bold text-[#059669] cursor-pointer">
+            Yes
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setDismissed(pending);
+              setShowCustom(true);
+            }}
+            className="font-bold text-slate-400 cursor-pointer"
+          >
+            No
+          </button>
+        </div>
+      )}
+      {!pending && !looking && saved && (
+        <button type="button" onClick={() => setShowCustom(true)} className="text-[11px] font-bold text-slate-500 cursor-pointer">
+          Add company site
+        </button>
+      )}
+      {showCustom && (
+        <form
+          className="flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const url = publicHttpsUrl(custom);
+            if (url) onChange(url);
+          }}
+        >
+          <input
+            value={custom}
+            onChange={(e) => setCustom(e.target.value)}
+            placeholder="pairedright.com"
+            className="flex-1 text-[11px] px-2 py-1 rounded-lg border border-[#E2E8F0] bg-white focus:outline-none focus:border-[#059669]"
+          />
+          <button type="submit" className="text-[11px] font-bold text-[#059669] cursor-pointer">
+            Use
+          </button>
+        </form>
+      )}
     </div>
   );
 }
@@ -173,6 +308,8 @@ interface Milestone {
   location?: string;
   claims: string[];
   calibratedClaim?: string;
+  companyUrl?: string;
+  highlightIndexes?: number[];
   artifacts?: { id: string; name: string; type: string }[];
   registryLinks?: { id: string; type: "github" | "credly" | "uspto"; url: string; label: string }[];
   verifications?: { id: string; name: string; role: string; email: string; verifiedAt: string; linkedInUrl?: string }[];
@@ -217,6 +354,7 @@ export default function StudioPage() {
   const [education, setEducation] = useState<EducationRecord[]>([]);
   const [portfolioAssets, setPortfolioAssets] = useState<PortfolioAsset[]>([]);
   const [preferredLayout, setPreferredLayout] = useState("summary:bottom");
+  const [highlights, setHighlights] = useState<string[]>([]);
   const [skillDraft, setSkillDraft] = useState("");
 
   const [contact, setContact] = useState<ContactInfo>({
@@ -425,7 +563,6 @@ export default function StudioPage() {
     contact.phoneVerified ||
     milestones.some((milestone) => getVerificationLevel(milestone).level > 0);
 
-  const chapterToAsk = firstChapterWithoutColleague(milestones);
   const actionPrompts = React.useMemo(() => {
     if (!isPortfolioSaved) {
       if (!hasPortfolioContent({ milestones, summaryStatement })) {
@@ -446,8 +583,9 @@ export default function StudioPage() {
     skills,
     education,
     preferredLayout,
+    highlights,
     portfolioAssets,
-    milestones
+    milestones: sortChaptersByTenure(milestones).map((milestone) => packChapter(milestone))
   });
 
   const persistPortfolioLocally = (saved: boolean, payload = buildPortfolioPayload()) => {
@@ -460,16 +598,7 @@ export default function StudioPage() {
 
   const applyPortfolioRecord = (parsed: any) => {
     if (!parsed) return;
-    if (Array.isArray(parsed.milestones)) {
-      setMilestones(
-        parsed.milestones.map((m: any) => ({
-          ...m,
-          claims: (Array.isArray(m.claims) ? m.claims : m.calibratedClaim ? [m.calibratedClaim] : []).filter(
-            (c: string) => c.replace(/[^a-zA-Z]/g, "").length >= 12
-          )
-        }))
-      );
-    }
+    if (Array.isArray(parsed.milestones)) setMilestones(incomingChapters(parsed.milestones));
     if (parsed.fullName) setFullName(parsed.fullName);
     if (parsed.headline) setHeadline(parsed.headline);
     if (parsed.summaryStatement) setSummaryStatement(parsed.summaryStatement);
@@ -477,6 +606,7 @@ export default function StudioPage() {
     if (parsed.education) setEducation(parsed.education);
     if (Array.isArray(parsed.portfolioAssets)) setPortfolioAssets(parsed.portfolioAssets);
     if (parsed.preferredLayout) setPreferredLayout(parseDossierLayout(parsed.preferredLayout).id);
+    if (Array.isArray(parsed.highlights)) setHighlights(parsed.highlights.map((line: unknown) => String(line || "")));
     if (parsed.contact) setContact((prev) => ({ ...prev, ...parsed.contact }));
     if (parsed.handle) setHandle(String(parsed.handle).toLowerCase().trim());
     setActiveTab("canvas");
@@ -558,17 +688,11 @@ export default function StudioPage() {
 
       const data = await res.json();
       if (res.ok && data.milestones && data.milestones.length > 0) {
-        const formattedMilestones = data.milestones.map((m: any) => ({
-          ...m,
-          claims: (Array.isArray(m.claims) ? m.claims : (m.calibratedClaim ? [m.calibratedClaim] : [])).filter(
-            (c: string) => c.replace(/[^a-zA-Z]/g, "").length >= 12
-          )
-        }));
-
-        setMilestones(formattedMilestones);
+        setMilestones(incomingChapters(data.milestones));
         if (data.fullName) setFullName(data.fullName);
         if (data.headline) setHeadline(data.headline);
         if (data.summaryStatement) setSummaryStatement(data.summaryStatement);
+        if (Array.isArray(data.highlights)) setHighlights(data.highlights);
         if (data.skills) setSkills(data.skills);
         if (data.education) setEducation(data.education);
         if (data.contact) setContact((prev) => ({ ...prev, ...data.contact }));
@@ -835,8 +959,9 @@ export default function StudioPage() {
       skills,
       education,
       preferredLayout,
+      highlights,
       portfolioAssets,
-      milestones
+      milestones: sortChaptersByTenure(milestones).map((milestone) => packChapter(milestone))
     };
     if (!hasPortfolioContent(payload)) return;
     persistPortfolioLocally(isPortfolioSaved, payload);
@@ -864,7 +989,7 @@ export default function StudioPage() {
     }, 800);
 
     return () => clearTimeout(timeout);
-  }, [contact, education, fullName, handle, headline, isPortfolioSaved, milestones, portfolioAssets, preferredLayout, skills, summaryStatement]);
+  }, [contact, education, fullName, handle, headline, highlights, isPortfolioSaved, milestones, portfolioAssets, preferredLayout, skills, summaryStatement]);
 
   useEffect(() => {
     if (!handle || handle.length < 2) {
@@ -910,7 +1035,7 @@ export default function StudioPage() {
         );
         const currentCount = milestones.reduce((acc, m) => acc + (m.verifications?.length || 0), 0);
         if (nextCount > currentCount) {
-          setMilestones(data.milestones);
+          setMilestones(incomingChapters(data.milestones));
           setWaitingForPeer(false);
           setChatMessages((prev) => [
             ...prev,
@@ -949,17 +1074,11 @@ export default function StudioPage() {
 
       const data = await res.json();
       if (res.ok && data.milestones && data.milestones.length > 0) {
-        const formattedMilestones = data.milestones.map((m: any) => ({
-          ...m,
-          claims: (Array.isArray(m.claims) ? m.claims : (m.calibratedClaim ? [m.calibratedClaim] : [])).filter(
-            (c: string) => c.replace(/[^a-zA-Z]/g, "").length >= 12
-          )
-        }));
-
-        setMilestones(formattedMilestones);
+        setMilestones(incomingChapters(data.milestones));
         if (data.fullName) setFullName(data.fullName);
         if (data.headline) setHeadline(data.headline);
         if (data.summaryStatement) setSummaryStatement(data.summaryStatement);
+        if (Array.isArray(data.highlights)) setHighlights(data.highlights);
         if (data.skills) setSkills(data.skills);
         if (data.education) setEducation(data.education);
         if (data.contact) setContact((prev) => ({ ...prev, ...data.contact }));
@@ -1254,8 +1373,9 @@ export default function StudioPage() {
       skills,
       education,
       preferredLayout,
+      highlights,
       portfolioAssets,
-      milestones
+      milestones: sortChaptersByTenure(milestones).map((milestone) => packChapter(milestone))
     };
 
     try {
@@ -1318,8 +1438,9 @@ export default function StudioPage() {
       skills,
       education,
       preferredLayout,
+      highlights,
       portfolioAssets,
-      milestones: updatedMilestones
+      milestones: sortChaptersByTenure(updatedMilestones).map((milestone) => packChapter(milestone))
     };
     try {
       persistPortfolioLocally(true, dossierPayload);
@@ -1392,6 +1513,7 @@ export default function StudioPage() {
         skills: record.skills,
         education: record.education,
         preferredLayout: record.preferredLayout,
+        highlights: record.highlights || [],
         portfolioAssets: record.portfolioAssets,
         milestones: record.milestones
       });
@@ -1532,7 +1654,7 @@ export default function StudioPage() {
       location: "Remote",
       claims: ["Direct product strategy, platform execution, and quantifiable business outcomes..."],
     };
-    setMilestones((prev) => [newM, ...prev]);
+    setMilestones((prev) => sortChaptersByTenure([newM, ...prev]));
   };
 
   const updateMilestoneClaim = (milestoneId: string, claimIndex: number, newText: string) => {
@@ -1718,20 +1840,6 @@ export default function StudioPage() {
         {/* LIVE CANVAS */}
         <main className="flex-1 overflow-y-auto w-full">
           <div className="p-8 max-w-5xl mx-auto space-y-8 antialiased">
-            {milestones.length > 0 && isPortfolioSaved && chapterToAsk && (
-            <div className="bg-white border border-[#E2E8F0] rounded-3xl p-5 shadow-xs">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <h2 className="text-sm font-black text-[#0F172A] tracking-tight">Make one chapter more believable</h2>
-                  <p className="text-xs text-slate-500">Ask someone who worked with you at {chapterToAsk.company}.</p>
-                </div>
-                <button onClick={() => handleActionPrompt("ask_colleague")} className="font-bold text-[#059669] hover:text-emerald-700 transition-colors cursor-pointer text-xs flex items-center gap-1 shrink-0">
-                  Ask a colleague <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          )}
-
           {milestones.length === 0 && !summaryStatement ? (
             <div className="bg-white border border-[#E2E8F0] rounded-3xl p-8 sm:p-10 text-center space-y-6 shadow-xs max-w-2xl mx-auto mt-4">
               <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#059669] mx-auto">
@@ -1826,6 +1934,7 @@ export default function StudioPage() {
                 {[
                   { id: "identity-card", label: "You" },
                   ...(summaryStatement ? [{ id: "summary", label: "Summary" }] : []),
+                  ...(highlights.some((line) => line.trim()) ? [{ id: "highlights", label: "Highlights" }] : []),
                   { id: "experience", label: "Experience" },
                   ...(skills.length > 0 ? [{ id: "skills", label: "Skills" }] : []),
                   ...(education.length > 0 ? [{ id: "education", label: "Education" }] : []),
@@ -2194,7 +2303,7 @@ export default function StudioPage() {
                         Summary
                       </h3>
                     </div>
-                    {!parseDossierLayout(preferredLayout).template.includes("summary") && (
+                    {parseDossierLayout(preferredLayout).template !== "summary" && (
                       <span className="text-[10px] font-semibold text-slate-400">Not on this page template</span>
                     )}
                   </div>
@@ -2212,20 +2321,53 @@ export default function StudioPage() {
               )}
 
               {/* Milestones Card Stream */}
-              {(parseDossierLayout(preferredLayout).template === "highlights" || parseDossierLayout(preferredLayout).template === "summary-highlights") && (
+              {highlights.length > 0 ? (
                 <div id="highlights" style={{ order: dossierSectionRank(preferredLayout).highlights }} className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
-                  <h3 className="font-extrabold text-xs uppercase tracking-wider text-[#0F172A]">Highlights</h3>
-                  <div className="space-y-2">
-                    {highlightLines(milestones).map((item) => (
-                      <p key={item.company} className="text-xs text-slate-700 leading-relaxed">
-                        <span className="font-bold text-[#0F172A]">{item.company}. </span>
-                        {item.line}
-                      </p>
-                    ))}
-                    {highlightLines(milestones).length === 0 && (
-                      <p className="text-xs text-slate-500">The first line of each chapter shows up here.</p>
-                    )}
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-extrabold text-xs uppercase tracking-wider text-[#0F172A]">Highlights</h3>
+                      <p className="text-[11px] text-slate-500 mt-1">Optional. Use lines from the resume, or write your own. A line can stand on its own or combine more than one chapter.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setHighlights((prev) => [...prev, ""])}
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-[#059669] cursor-pointer shrink-0"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Add
+                    </button>
                   </div>
+                  <div className="space-y-2">
+                    {highlights.map((line, index) => (
+                      <div key={index} className="flex items-start gap-2 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-2.5">
+                        <AutoText
+                          value={line}
+                          readOnly={!isPortfolioSaved}
+                          onChange={(next) =>
+                            setHighlights((prev) => prev.map((item, itemIndex) => (itemIndex === index ? next : item)))
+                          }
+                          className="flex-1 text-xs text-slate-700 leading-relaxed focus:outline-none font-sans bg-transparent"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setHighlights((prev) => prev.filter((_, itemIndex) => itemIndex !== index))}
+                          className="text-[10px] font-bold text-slate-400 hover:text-red-500 cursor-pointer"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ order: dossierSectionRank(preferredLayout).highlights }}>
+                  <button
+                    type="button"
+                    onClick={() => setHighlights([""])}
+                    className="text-[11px] font-bold text-slate-500 hover:text-[#0F172A] cursor-pointer"
+                  >
+                    Add highlights
+                  </button>
                 </div>
               )}
 
@@ -2260,6 +2402,11 @@ export default function StudioPage() {
                       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3.5 border-b border-[#E2E8F0]/70">
                         <div className="flex-1 space-y-1">
                           <div className="flex items-center gap-2">
+                            {milestone.companyUrl && (
+                              <a href={milestone.companyUrl} target="_blank" rel="noreferrer" className="shrink-0" aria-label={`Open ${siteLabel(milestone.companyUrl)}`}>
+                                <img src={faviconUrl(milestone.companyUrl)} alt="" className="w-4 h-4 rounded-sm" />
+                              </a>
+                            )}
                             <input
                             type="text"
                             value={milestone.company}
@@ -2274,6 +2421,11 @@ export default function StudioPage() {
                             spellCheck={true}
                             className={`flex-1 font-black text-base text-[#0F172A] focus:outline-none border-b border-transparent ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
                           />
+                            {milestone.companyUrl && (
+                              <a href={milestone.companyUrl} target="_blank" rel="noreferrer" className="text-[#059669] shrink-0" aria-label={`Open ${milestone.company}`}>
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </a>
+                            )}
                             {trustStatus.level > 0 && (
                               <span
                                 className="group/proof relative inline-flex items-center cursor-help shrink-0"
@@ -2310,6 +2462,16 @@ export default function StudioPage() {
                             spellCheck={true}
                             className={`w-full text-xs font-semibold text-slate-600 focus:outline-none border-b border-transparent ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
                           />
+                          <CompanySitePrompt
+                            company={milestone.company}
+                            companyUrl={milestone.companyUrl}
+                            saved={isPortfolioSaved}
+                            onChange={(url) =>
+                              setMilestones((prev) =>
+                                prev.map((item) => (item.id === milestone.id ? { ...item, companyUrl: url } : item))
+                              )
+                            }
+                          />
                         </div>
 
                         <div className="flex items-center gap-2.5 shrink-0 self-start lg:self-center">
@@ -2325,6 +2487,7 @@ export default function StudioPage() {
                                   prev.map((m) => (m.id === milestone.id ? { ...m, period: val } : m))
                                 );
                               }}
+                              onBlur={() => setMilestones((prev) => sortChaptersByTenure(prev))}
                               placeholder="e.g. May 2025 — Present"
                               className="text-[11px] font-mono font-medium text-slate-600 focus:outline-none text-right w-44 bg-transparent"
                             />
@@ -2533,7 +2696,10 @@ export default function StudioPage() {
                 </div>
               )}
 
-              <div id="work-samples" style={{ order: dossierSectionRank(preferredLayout).work }} className="scroll-mt-14">
+              <div id="work-samples" style={{ order: dossierSectionRank(preferredLayout).work }} className="scroll-mt-14 space-y-2">
+              {parseDossierLayout(preferredLayout).placement === "hidden" && (
+                <p className="text-[11px] font-semibold text-slate-400">Not on the public page.</p>
+              )}
               <PortfolioStudioPanel
                 assets={portfolioAssets}
                 handle={handle}

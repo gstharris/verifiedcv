@@ -43,7 +43,7 @@ describe("verification signals", () => {
         corroboratedChapters: 2,
         workSamples: 1
       })
-    ).toEqual(["Identity confirmed: email, LinkedIn", "2 chapters corroborated", "1 work sample"]);
+    ).toEqual(["Email confirmed", "LinkedIn confirmed", "2 chapters corroborated", "1 work sample"]);
   });
 
   it("suggests the first chapter that has no colleague", () => {

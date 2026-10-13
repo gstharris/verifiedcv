@@ -9,17 +9,15 @@ export const PORTFOLIO_ASSET_TYPES = [
 ] as const;
 
 export type PortfolioAssetType = (typeof PORTFOLIO_ASSET_TYPES)[number];
-export type ResumeTemplate = "summary" | "experience" | "summary-highlights" | "highlights";
-export type SamplePlacement = "top" | "bottom";
+export type ResumeTemplate = "summary" | "experience";
+export type SamplePlacement = "top" | "bottom" | "hidden";
 export type RecruiterLayout = string;
 export type LayoutBlock = "summary" | "highlights" | "experience" | "skills" | "education" | "work";
 export type AssetVerificationStatus = "unverified" | "link_checked" | "registry";
 
 export const RESUME_TEMPLATES: { id: ResumeTemplate; title: string; summary: string }[] = [
   { id: "summary", title: "Summary", summary: "Summary, then experience, skills, and education." },
-  { id: "experience", title: "No summary", summary: "Experience first. The summary stays off the public page." },
-  { id: "summary-highlights", title: "Summary and highlights", summary: "Summary, a few highlight lines, then experience." },
-  { id: "highlights", title: "Highlights", summary: "Highlight lines, then experience. Skills stay at the bottom." }
+  { id: "experience", title: "No summary", summary: "Experience first. The summary stays off the public page." }
 ];
 
 export function encodeDossierLayout(template: ResumeTemplate, placement: SamplePlacement) {
@@ -35,10 +33,10 @@ export function parseDossierLayout(id?: string | null) {
     return { template: "summary" as ResumeTemplate, placement: "bottom" as SamplePlacement, id: "summary:bottom" };
   }
   const [templateRaw, placementRaw] = raw.split(":");
-  const template = RESUME_TEMPLATES.some((option) => option.id === templateRaw)
-    ? (templateRaw as ResumeTemplate)
-    : "summary";
-  const placement: SamplePlacement = placementRaw === "top" ? "top" : "bottom";
+  const template: ResumeTemplate =
+    templateRaw === "experience" || templateRaw === "highlights" ? "experience" : "summary";
+  const placement: SamplePlacement =
+    placementRaw === "top" ? "top" : placementRaw === "hidden" || placementRaw === "off" ? "hidden" : "bottom";
   return { template, placement, id: encodeDossierLayout(template, placement) };
 }
 
@@ -46,9 +44,8 @@ export function dossierSectionOrder(id?: string | null): LayoutBlock[] {
   const parsed = parseDossierLayout(id);
   const blocks: LayoutBlock[] = [];
   if (parsed.placement === "top") blocks.push("work");
-  if (parsed.template === "highlights" || parsed.template === "summary-highlights") blocks.push("highlights");
-  if (parsed.template === "summary" || parsed.template === "summary-highlights") blocks.push("summary");
-  blocks.push("experience", "skills", "education");
+  if (parsed.template === "summary") blocks.push("summary");
+  blocks.push("highlights", "experience", "skills", "education");
   if (parsed.placement === "bottom") blocks.push("work");
   return blocks;
 }
@@ -64,23 +61,70 @@ export function dossierSectionRank(id?: string | null) {
   return rank;
 }
 
-export function highlightLines<T extends { company?: string; claims?: string[] }>(chapters: T[]) {
-  return chapters
-    .map((chapter) => ({
-      company: String(chapter.company || "").trim(),
-      line: (chapter.claims || []).map((claim) => String(claim || "").trim()).find(Boolean) || ""
-    }))
-    .filter((item) => item.line)
-    .slice(0, 4);
+const HIGHLIGHT_MARK = "vcv-highlights:";
+
+export function normalizeHighlights(value: unknown) {
+  const source = Array.isArray(value) ? value : [];
+  const lines: string[] = [];
+  for (const item of source) {
+    const line = String(item || "").replace(/\s+/g, " ").trim();
+    if (line.replace(/[^a-zA-Z]/g, "").length < 12) continue;
+    if (lines.includes(line)) continue;
+    lines.push(line);
+    if (lines.length >= 8) break;
+  }
+  return lines;
+}
+
+export function encodeStoredHighlights(lines: unknown) {
+  const clean = normalizeHighlights(lines);
+  return clean.length ? `${HIGHLIGHT_MARK}${JSON.stringify(clean)}` : "";
+}
+
+export function decodeStoredHighlights(value?: string | null) {
+  const raw = String(value || "");
+  if (!raw.startsWith(HIGHLIGHT_MARK)) return [];
+  try {
+    return normalizeHighlights(JSON.parse(raw.slice(HIGHLIGHT_MARK.length)));
+  } catch {
+    return [];
+  }
+}
+
+export function candidateSummary(summaryStatement?: string | null, bioSummary?: string | null) {
+  const summary = String(summaryStatement || "").trim();
+  if (summary) return summary;
+  const bio = String(bioSummary || "");
+  if (bio.startsWith(HIGHLIGHT_MARK)) return "";
+  return bio.trim();
+}
+
+export function workPreviewUrl(url?: string) {
+  const trimmed = String(url || "").trim();
+  if (!trimmed) return "";
+  if (/\.(png|jpe?g|gif|webp)(\?|#|$)/i.test(trimmed)) return trimmed;
+  if (/\.(pdf|ppt|pptx|key|zip)(\?|#|$)/i.test(trimmed)) return "";
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+    return `https://s.wordpress.com/mshots/v1/${encodeURIComponent(trimmed)}?w=480`;
+  } catch {
+    return "";
+  }
 }
 
 export function recruiterLayout(id?: string | null) {
   const parsed = parseDossierLayout(id);
   const template = RESUME_TEMPLATES.find((option) => option.id === parsed.template) || RESUME_TEMPLATES[0];
-  const placementLabel = parsed.placement === "top" ? "Sample work sits at the top." : "Sample work sits at the bottom.";
+  const placementLabel =
+    parsed.placement === "top"
+      ? "Sample work sits at the top."
+      : parsed.placement === "hidden"
+        ? "Sample work stays off the public page."
+        : "Sample work sits at the bottom.";
   return {
     id: parsed.id,
-    title: parsed.placement === "top" ? "Top" : "Bottom",
+    title: parsed.placement === "top" ? "Top" : parsed.placement === "hidden" ? "Hidden" : "Bottom",
     summary: `${template.summary} ${placementLabel}`,
     featured: parsed.placement === "top",
     blocks: dossierSectionOrder(id),

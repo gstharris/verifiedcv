@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
       fullName: result.fullName,
       headline: result.headline,
       summaryStatement: result.summaryStatement,
+      highlights: result.highlights,
       contact: result.contact,
       skills: result.skills,
       education: result.education,

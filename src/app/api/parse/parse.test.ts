@@ -108,6 +108,25 @@ describe("parseComprehensiveResume", () => {
     expect(educationBlob).toMatch(/university of southern california/);
     expect(educationBlob).toMatch(/b\.s\.\s*computer science|bachelor of science/);
     expect(parsed.education.length).toBeGreaterThan(0);
+    expect(parsed.highlights).toEqual([]);
+  });
+
+  it("keeps a highlights section when the resume has one", () => {
+    const withHighlights = `
+Ada Preview
+CAREER HIGHLIGHTS
+● Took a product from founding through the first enterprise contracts.
+● Scaled the same system across a later role at a public company.
+PROFESSIONAL EXPERIENCE
+PairedRight | Founder | May 2025 — Present
+● Directed the pairing flow for new members of the team.
+`.trim();
+    const parsed = parseComprehensiveResume(withHighlights);
+    expect(parsed.highlights).toEqual([
+      "Took a product from founding through the first enterprise contracts.",
+      "Scaled the same system across a later role at a public company."
+    ]);
+    expect(parsed.milestones.map((milestone) => milestone.company)).toEqual(["PairedRight"]);
   });
 
   it("routes degree tokens that leak into skills into education instead", () => {

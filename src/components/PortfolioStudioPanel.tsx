@@ -11,7 +11,7 @@ import {
   isAllowedPortfolioUpload,
   normalizePortfolioAsset,
   parseDossierLayout,
-  recruiterLayout,
+  workPreviewUrl,
   type PortfolioAsset,
   type PortfolioAssetType,
   type ResumeTemplate,
@@ -30,22 +30,25 @@ export function DossierLayoutControl({
   onLayoutChange: (layout: string) => void;
 }) {
   const current = parseDossierLayout(layout);
-  const description = recruiterLayout(layout).summary;
   const choiceClass = (active: boolean) =>
     `px-2 py-1 rounded-md text-[11px] font-bold ${
       active ? "bg-emerald-50 text-[#059669]" : "text-slate-500 hover:text-[#0F172A]"
-    } ${saved ? "cursor-pointer" : "cursor-pointer"}`;
+    } cursor-pointer`;
 
   return (
     <div className="flex flex-col gap-1.5">
+      <p className="text-[11px] text-slate-500">
+        This studio is a preview of your public dossier. These choices change how that page reads.
+      </p>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Page</span>
+        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Dossier layout</span>
         <div className="inline-flex flex-wrap p-0.5 rounded-lg bg-white border border-[#E2E8F0]">
           {RESUME_TEMPLATES.map((option) => (
             <button
               key={option.id}
               type="button"
               disabled={!saved}
+              title={option.summary}
               onClick={() => onLayoutChange(encodeDossierLayout(option.id, current.placement))}
               className={choiceClass(current.template === option.id)}
             >
@@ -57,7 +60,7 @@ export function DossierLayoutControl({
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Sample work</span>
         <div className="inline-flex p-0.5 rounded-lg bg-white border border-[#E2E8F0]">
-          {(["top", "bottom"] as SamplePlacement[]).map((placement) => (
+          {(["top", "bottom", "hidden"] as SamplePlacement[]).map((placement) => (
             <button
               key={placement}
               type="button"
@@ -65,12 +68,16 @@ export function DossierLayoutControl({
               onClick={() => onLayoutChange(encodeDossierLayout(current.template as ResumeTemplate, placement))}
               className={choiceClass(current.placement === placement)}
             >
-              {placement === "top" ? "Top" : "Bottom"}
+              {placement === "top" ? "Top of page" : placement === "bottom" ? "Bottom of page" : "Don't show"}
             </button>
           ))}
         </div>
         <span className="text-[11px] text-slate-500">
-          {assetCount === 0 ? "Nothing added yet, so this stays off the public page." : description}
+          {current.placement === "hidden"
+            ? "Sample work stays off the public page."
+            : assetCount === 0
+              ? "Nothing added yet, so this stays off the public page."
+              : "Moves the sample-work previews on the public page."}
         </span>
       </div>
     </div>
@@ -300,7 +307,17 @@ export default function PortfolioStudioPanel({
         <div className="space-y-2">
           {assets.map((asset) => (
             <div key={asset.id} className="flex items-start justify-between gap-3 p-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC]">
-              <div className="space-y-1 min-w-0">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="w-16 h-12 shrink-0 overflow-hidden rounded-lg border border-[#E2E8F0] bg-white">
+                  {workPreviewUrl(asset.url) ? (
+                    <img src={workPreviewUrl(asset.url)} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center text-[9px] font-bold uppercase text-slate-400">
+                      {assetTypeLabel(asset.type)}
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-1 min-w-0">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   {assetTypeLabel(asset.type)}
                 </div>
@@ -316,6 +333,7 @@ export default function PortfolioStudioPanel({
                     Open <ExternalLink className="w-3 h-3" />
                   </a>
                 )}
+                </div>
               </div>
               <button
                 type="button"

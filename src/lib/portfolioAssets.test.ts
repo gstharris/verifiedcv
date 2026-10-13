@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetForm, assessPortfolioAssetLink, dossierSectionOrder, highlightLines, isAllowedPortfolioUpload, normalizePortfolioAsset, parseDossierLayout, publicRegistryLabel, recruiterLayout } from "./portfolioAssets";
+import { assetForm, assessPortfolioAssetLink, candidateSummary, decodeStoredHighlights, dossierSectionOrder, encodeStoredHighlights, isAllowedPortfolioUpload, normalizeHighlights, normalizePortfolioAsset, parseDossierLayout, publicRegistryLabel, recruiterLayout, workPreviewUrl } from "./portfolioAssets";
 
 describe("portfolio asset link checks", () => {
   it("marks Credly certification URLs as registry links", () => {
@@ -46,6 +46,12 @@ describe("work sample forms", () => {
     expect(form.issuer).toBeUndefined();
   });
 
+  it("uses the image itself and a page thumbnail for other public links", () => {
+    expect(workPreviewUrl("https://cdn.example.com/shot.PNG")).toBe("https://cdn.example.com/shot.PNG");
+    expect(workPreviewUrl("https://files.example.com/deck.pdf")).toBe("");
+    expect(workPreviewUrl("https://pairedright.com")).toContain("mshots");
+  });
+
   it("accepts decks and images and rejects other files", () => {
     expect(isAllowedPortfolioUpload("Talk.pptx")).toBe(true);
     expect(isAllowedPortfolioUpload("shot.PNG")).toBe(true);
@@ -59,17 +65,24 @@ describe("recruiter layouts", () => {
     expect(parseDossierLayout("hybrid").placement).toBe("top");
     expect(parseDossierLayout("creative").placement).toBe("top");
     expect(recruiterLayout("summary:top").blocks[0]).toBe("work");
-    expect(dossierSectionOrder("experience:bottom")).toEqual(["experience", "skills", "education", "work"]);
-    expect(dossierSectionOrder("summary-highlights:top").slice(0, 3)).toEqual(["work", "highlights", "summary"]);
+    expect(dossierSectionOrder("experience:bottom")).toEqual(["highlights", "experience", "skills", "education", "work"]);
+    expect(dossierSectionOrder("summary-highlights:top").slice(0, 3)).toEqual(["work", "summary", "highlights"]);
+    expect(dossierSectionOrder("summary:hidden")).not.toContain("work");
+    expect(parseDossierLayout("highlights:off")).toMatchObject({ template: "experience", placement: "hidden" });
     expect(dossierSectionOrder("highlights:bottom")).not.toContain("summary");
   });
 
-  it("pulls one highlight line from each chapter", () => {
+  it("keeps highlight lines the candidate wrote, separate from chapter bullets", () => {
     expect(
-      highlightLines([
-        { company: "Ge-on", claims: ["Built the onboarding flow for new operators."] },
-        { company: "Yahoo", claims: [] }
+      normalizeHighlights([
+        "Built the pairing product and later scaled it at Yahoo.",
+        "too short",
+        "Built the pairing product and later scaled it at Yahoo."
       ])
-    ).toEqual([{ company: "Ge-on", line: "Built the onboarding flow for new operators." }]);
+    ).toEqual(["Built the pairing product and later scaled it at Yahoo."]);
+    const stored = encodeStoredHighlights(["Led Ge-on from founding through the first enterprise contracts."]);
+    expect(decodeStoredHighlights(stored)).toEqual(["Led Ge-on from founding through the first enterprise contracts."]);
+    expect(candidateSummary("", stored)).toBe("");
+    expect(candidateSummary("Operator and product lead.", stored)).toBe("Operator and product lead.");
   });
 });

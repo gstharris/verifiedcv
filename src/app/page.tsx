@@ -52,6 +52,7 @@ export default function VerifiedCVLandingPage() {
     fullName?: string;
     headline?: string;
     summaryStatement?: string;
+    highlights?: string[];
     skills?: unknown[];
     education?: unknown[];
   }) => {
@@ -63,6 +64,7 @@ export default function VerifiedCVLandingPage() {
           fullName: data.fullName || "Graham Harris",
           headline: data.headline || "Head of Product Management • AI Platforms",
           summaryStatement: data.summaryStatement || "",
+          highlights: data.highlights || [],
           skills: data.skills || [],
           education: data.education || []
         })

@@ -106,6 +106,19 @@ export function overlapMonths(
   };
 }
 
+export function sortChaptersByTenure<T extends { period?: string }>(chapters: T[]) {
+  return chapters
+    .map((chapter, index) => ({ chapter, index, rank: tenureRank(chapter.period || "") }))
+    .sort((a, b) => b.rank - a.rank || a.index - b.index)
+    .map((item) => item.chapter);
+}
+
+function tenureRank(period: string) {
+  const range = parseTenureRange(period);
+  if (!range) return -1;
+  return range.end.year * 12 + range.end.month + (range.start.year * 12 + range.start.month) / 100000;
+}
+
 export function companiesMatch(left: string, right: string) {
   const normalize = (value: string) =>
     value

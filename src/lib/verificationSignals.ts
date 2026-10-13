@@ -72,12 +72,9 @@ export function publicTrustSummary(input: {
   workSamples?: number;
 }) {
   const lines: string[] = [];
-  const identity = [
-    input.emailVerified ? "email" : "",
-    input.linkedinVerified ? "LinkedIn" : "",
-    input.phoneVerified ? "phone" : ""
-  ].filter(Boolean);
-  if (identity.length) lines.push(`Identity confirmed: ${identity.join(", ")}`);
+  if (input.emailVerified) lines.push("Email confirmed");
+  if (input.linkedinVerified) lines.push("LinkedIn confirmed");
+  if (input.phoneVerified) lines.push("Phone confirmed");
 
   const chapters = input.corroboratedChapters || 0;
   if (chapters === 1) lines.push("1 chapter corroborated");

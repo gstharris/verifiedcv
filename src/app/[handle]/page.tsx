@@ -19,8 +19,24 @@ import { getVerificationStatus, publicChapterLabel } from "@/lib/verificationLev
 import { companyVerificationTooltip, endorsedClaimIndexes, publicTrustSummary } from "@/lib/verificationSignals";
 import { captureEvent } from "@/lib/analytics";
 import PortfolioAssetsGallery from "@/components/PortfolioAssetsGallery";
-import { highlightLines, parseDossierLayout, publicRegistryLabel, recruiterLayout, type PortfolioAsset, type RecruiterLayout } from "@/lib/portfolioAssets";
+import { parseDossierLayout, publicRegistryLabel, type PortfolioAsset, type RecruiterLayout } from "@/lib/portfolioAssets";
 import { flagEmoji, parseLocation } from "@/lib/locations";
+import { resolvePlace } from "@/lib/places";
+import { linkedInHandle, linkedInProfileUrl } from "@/lib/linkedin";
+import { faviconUrl } from "@/lib/companySite";
+import { hydrateChapter } from "@/lib/chapterMeta";
+import { sortChaptersByTenure } from "@/lib/tenureOverlap";
+
+function ProofMark({ label }: { label: string }) {
+  return (
+    <span className="group/mark relative inline-flex shrink-0">
+      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+      <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 hidden w-max -translate-x-1/2 rounded-lg bg-slate-900 px-2.5 py-1.5 text-[10px] font-semibold text-white shadow-xl group-hover/mark:block group-focus-within/mark:block">
+        {label}
+      </span>
+    </span>
+  );
+}
 
 function LinkedInIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
   return (
@@ -43,6 +59,8 @@ interface Milestone {
   location?: string;
   claims: string[];
   calibratedClaim?: string;
+  companyUrl?: string;
+  highlightIndexes?: number[];
   artifacts?: { id: string; name: string; type: string }[];
   registryLinks?: { id: string; type: "github" | "credly" | "uspto"; url: string; label: string }[];
   verifications?: { id: string; name: string; role: string; email: string; verifiedAt: string; linkedInUrl?: string }[];
@@ -71,6 +89,7 @@ interface DossierData {
   fullName: string;
   headline: string;
   summaryStatement: string;
+  highlights?: string[];
   preferredLayout?: RecruiterLayout;
   portfolioAssets?: PortfolioAsset[];
   contact?: ContactInfo;
@@ -200,6 +219,19 @@ export default function CandidateDossierPage() {
     );
   }
 
+  const chapters = sortChaptersByTenure(dossier.milestones.map((milestone) => hydrateChapter(milestone)));
+  const trustLines = publicTrustSummary({
+    emailVerified: dossier.contact?.emailVerified,
+    phoneVerified: dossier.contact?.phoneVerified,
+    linkedinVerified: dossier.contact?.linkedinVerified,
+    corroboratedChapters: chapters.filter((milestone) => getVerificationLevel(milestone) > 0).length,
+    workSamples: dossier.portfolioAssets?.length || 0
+  });
+  const linkedInHref = dossier.contact?.linkedin
+    ? linkedInProfileUrl(dossier.contact.linkedin) || (/^https?:\/\//i.test(dossier.contact.linkedin) ? dossier.contact.linkedin : "")
+    : "";
+  const linkedInLabel = dossier.contact?.linkedin ? linkedInHandle(dossier.contact.linkedin) || dossier.contact.linkedin : "";
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans antialiased selection:bg-emerald-100 flex flex-col justify-between">
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
@@ -244,23 +276,22 @@ export default function CandidateDossierPage() {
               </div>
             </div>
 
-            {(() => {
-              const summary = publicTrustSummary({
-                emailVerified: dossier.contact?.emailVerified,
-                phoneVerified: dossier.contact?.phoneVerified,
-                linkedinVerified: dossier.contact?.linkedinVerified,
-                corroboratedChapters: dossier.milestones.filter((milestone) => getVerificationLevel(milestone) > 0).length,
-                workSamples: dossier.portfolioAssets?.length || 0
-              });
-              if (summary.length === 0) return null;
-              return (
-                <div className="shrink-0 flex flex-col items-start sm:items-end gap-1 text-[11px] text-slate-600 sm:max-w-xs sm:text-right">
-                  {summary.map((line) => (
-                    <span key={line} className="font-semibold">{line}</span>
+            {trustLines.length > 0 && (
+              <div className="group/trust relative shrink-0">
+                <button
+                  type="button"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-[#059669]"
+                  aria-label="Verification overview"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                </button>
+                <div className="pointer-events-none absolute right-0 top-full z-20 mt-1 hidden w-52 rounded-lg bg-slate-900 px-3 py-2 text-left text-[10px] font-semibold leading-relaxed text-white shadow-xl group-hover/trust:block group-focus-within/trust:block">
+                  {trustLines.map((line) => (
+                    <div key={line}>{line}</div>
                   ))}
                 </div>
-              );
-            })()}
+              </div>
+            )}
           </div>
 
           {dossier.contact && (
@@ -271,7 +302,7 @@ export default function CandidateDossierPage() {
                     <Mail className="w-3 h-3" />
                   </div>
                   <span className={`font-medium truncate ${dossier.contact.emailVerified ? 'text-slate-900' : 'text-slate-500'}`}>{dossier.contact.email}</span>
-                  {dossier.contact.emailVerified && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
+                  {dossier.contact.emailVerified && <ProofMark label="Email confirmed" />}
                 </div>
               )}
               {dossier.contact.phone && (
@@ -280,7 +311,7 @@ export default function CandidateDossierPage() {
                     <Phone className="w-3 h-3" />
                   </div>
                   <span className={`font-medium ${dossier.contact.phoneVerified ? 'text-slate-900' : 'text-slate-500'}`}>{dossier.contact.phone}</span>
-                  {dossier.contact.phoneVerified && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
+                  {dossier.contact.phoneVerified && <ProofMark label="Phone confirmed" />}
                 </div>
               )}
               {dossier.contact.linkedin && (
@@ -288,26 +319,32 @@ export default function CandidateDossierPage() {
                   <div className={`flex items-center justify-center w-6 h-6 rounded-full ${dossier.contact.linkedinVerified ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
                     <LinkedInIcon className="w-3 h-3" />
                   </div>
-                  <span className={`font-medium truncate ${dossier.contact.linkedinVerified ? 'text-slate-900' : 'text-slate-500'}`}>{dossier.contact.linkedin}</span>
-                  {dossier.contact.linkedinVerified && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
+                  {linkedInHref ? (
+                    <a href={linkedInHref} target="_blank" rel="noreferrer" className="font-medium truncate text-blue-700">
+                      {linkedInLabel}
+                    </a>
+                  ) : (
+                    <span className={`font-medium truncate ${dossier.contact.linkedinVerified ? 'text-slate-900' : 'text-slate-500'}`}>{linkedInLabel}</span>
+                  )}
+                  {dossier.contact.linkedinVerified && <ProofMark label="LinkedIn confirmed" />}
                 </div>
               )}
               {dossier.contact.location && (
                 <div className="flex items-center gap-2">
                   <div className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-50 text-slate-400">
-                    {parseLocation(dossier.contact.location)?.countryCode ? (
-                      <span className="text-sm leading-none">{flagEmoji(parseLocation(dossier.contact.location)?.countryCode || "")}</span>
+                    {resolvePlace(dossier.contact.location)?.countryCode ? (
+                      <span className="text-sm leading-none">{flagEmoji(resolvePlace(dossier.contact.location)?.countryCode || "")}</span>
                     ) : (
                       <MapPin className="w-3 h-3" />
                     )}
                   </div>
-                  <span className="font-medium text-slate-500">{parseLocation(dossier.contact.location)?.label || dossier.contact.location}</span>
+                  <span className="font-medium text-slate-500">{resolvePlace(dossier.contact.location)?.label || parseLocation(dossier.contact.location)?.label || dossier.contact.location}</span>
                 </div>
               )}
             </div>
           )}
 
-          {dossier.summaryStatement && (parseDossierLayout(dossier.preferredLayout).template === "summary" || parseDossierLayout(dossier.preferredLayout).template === "summary-highlights") && (
+          {dossier.summaryStatement && parseDossierLayout(dossier.preferredLayout).template === "summary" && (
             <div className="pt-3 border-t border-slate-100">
               <p className="text-xs sm:text-sm text-slate-700 leading-relaxed">
                 {dossier.summaryStatement}
@@ -317,23 +354,22 @@ export default function CandidateDossierPage() {
         </div>
 
         {(() => {
-          const layoutDef = recruiterLayout(dossier.preferredLayout);
           const pageTemplate = parseDossierLayout(dossier.preferredLayout);
           const assets = dossier.portfolioAssets || [];
-          const gallery = <PortfolioAssetsGallery assets={assets} featured={pageTemplate.placement === "top" && assets.length > 1} />;
-          const workFirst = layoutDef.blocks[0] === "work";
-          const highlights = highlightLines(dossier.milestones);
+          const showWork = pageTemplate.placement !== "hidden" && assets.length > 0;
+          const gallery = showWork ? <PortfolioAssetsGallery assets={assets} /> : null;
+          const workFirst = showWork && pageTemplate.placement === "top";
+          const highlights = (dossier.highlights || []).map((line) => String(line || "").trim()).filter(Boolean);
           return (
             <>
               {workFirst && gallery}
-              {(pageTemplate.template === "highlights" || pageTemplate.template === "summary-highlights") && highlights.length > 0 && (
+              {highlights.length > 0 && (
                 <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <h2 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">Highlights</h2>
                   <div className="space-y-2">
-                    {highlights.map((item) => (
-                      <p key={`${item.company}-${item.line}`} className="text-xs text-slate-700 leading-relaxed">
-                        <span className="font-bold text-[#0F172A]">{item.company}. </span>
-                        {item.line}
+                    {highlights.map((line) => (
+                      <p key={line} className="text-xs text-slate-700 leading-relaxed">
+                        {line}
                       </p>
                     ))}
                   </div>
@@ -343,9 +379,9 @@ export default function CandidateDossierPage() {
               <div className="space-y-4">
           <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
             <h2 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">
-              Experience ({dossier.milestones.length})
+              Experience ({chapters.length})
             </h2>
-            {dossier.milestones.some((milestone) => publicChapterLabel(getVerificationLevel(milestone))) && (
+            {chapters.some((milestone) => publicChapterLabel(getVerificationLevel(milestone))) && (
               <span className="text-[11px] font-semibold text-slate-400">
                 Open a chapter mark to see what was checked
               </span>
@@ -353,7 +389,7 @@ export default function CandidateDossierPage() {
           </div>
 
           <div className="space-y-5">
-            {dossier.milestones.map((m) => {
+            {chapters.map((m) => {
               const level = getVerificationLevel(m);
               const chapterLabel = publicChapterLabel(level);
               const proofDetail = companyVerificationTooltip(m.company, m.verifications || [], m.artifacts?.length || 0);
@@ -365,7 +401,14 @@ export default function CandidateDossierPage() {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
                   <div className="space-y-0.5">
                     <div className="flex items-center gap-2">
-                      <span className="font-black text-base text-[#0F172A]">{m.company}</span>
+                      {m.companyUrl ? (
+                        <a href={m.companyUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 font-black text-base text-[#0F172A] hover:text-[#059669]">
+                          <img src={faviconUrl(m.companyUrl)} alt="" className="w-4 h-4 rounded-sm" />
+                          {m.company}
+                        </a>
+                      ) : (
+                        <span className="font-black text-base text-[#0F172A]">{m.company}</span>
+                      )}
                       {chapterLabel && (
                         <button
                           type="button"

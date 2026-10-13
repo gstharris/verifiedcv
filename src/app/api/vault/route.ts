@@ -11,7 +11,7 @@ import {
   hashOwnerToken
 } from "@/lib/handleOwner";
 import { issueRestoreCode } from "@/lib/handleRestore";
-import { normalizePortfolioAsset, type PortfolioAsset } from "@/lib/portfolioAssets";
+import { candidateSummary, decodeStoredHighlights, encodeStoredHighlights, normalizePortfolioAsset, type PortfolioAsset } from "@/lib/portfolioAssets";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +69,8 @@ export async function GET(req: NextRequest) {
           handle: candidate.handle,
           fullName: candidate.full_name,
           headline: candidate.headline,
-          summaryStatement: candidate.summary_statement || candidate.bio_summary,
+          summaryStatement: candidateSummary(candidate.summary_statement, candidate.bio_summary),
+          highlights: decodeStoredHighlights(candidate.bio_summary),
           preferredLayout: candidate.preferred_layout || "traditional",
           portfolioAssets: (assetsRes.error ? [] : assetsRes.data || [])
             .map((asset: {
@@ -265,7 +266,7 @@ export async function POST(req: NextRequest) {
             full_name: payload.fullName,
             headline: payload.headline,
             summary_statement: payload.summaryStatement,
-            bio_summary: payload.summaryStatement,
+            bio_summary: encodeStoredHighlights(payload.highlights) || payload.summaryStatement,
             email: payload.contact?.email || "",
             phone: payload.contact?.phone,
             linkedin: payload.contact?.linkedin,
