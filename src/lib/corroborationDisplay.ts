@@ -38,11 +38,11 @@ export function corroborationHeadline(company: string, verifications: Corroborat
   const humanVerifications = verifications.filter(v => v.name !== "Corporate Email Verification");
   
   if (corpVerify && humanVerifications.length === 0) {
-    return `Verified via corporate email at ${place}`;
+    return `Work email confirmed at ${place}`;
   }
   
   if (corpVerify && humanVerifications.length > 0) {
-    return `Verified via corporate email and ${humanVerifications.length} colleague${humanVerifications.length > 1 ? 's' : ''} at ${place}`;
+    return `Work email and ${humanVerifications.length} colleague${humanVerifications.length > 1 ? "s" : ""} at ${place}`;
   }
 
   if (count === 1) {

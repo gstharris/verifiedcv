@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 import { captureEvent } from "@/lib/analytics";
+import { corroboratorRefFromSearch, writeCorroboratorRef } from "@/lib/corroborationLoop";
 
 export default function VerifiedCVLandingPage() {
   const router = useRouter();
@@ -32,6 +33,11 @@ export default function VerifiedCVLandingPage() {
 
   const DEMO_HANDLES = ["arashmobayen", "kevinrenfro", "peterkim", "priyanair", "mateoalvarez"];
   const [nameIndex, setNameIndex] = useState(0);
+
+  React.useEffect(() => {
+    const ref = corroboratorRefFromSearch(new URLSearchParams(window.location.search));
+    if (ref) writeCorroboratorRef(ref);
+  }, []);
 
   React.useEffect(() => {
     const handleCount = DEMO_HANDLES.length;
@@ -148,7 +154,7 @@ export default function VerifiedCVLandingPage() {
       company: "Bazaarvoice",
       role: "Group Product Manager",
       badgeText: "Document attached",
-      proofDetail: "Offer letter checked for employer name and dates. One colleague confirmation makes this Company Verified."
+      proofDetail: "Offer letter checked for employer name and dates. A colleague confirmation marks this chapter Corroborated."
     },
     {
       id: 2,
@@ -513,7 +519,7 @@ export default function VerifiedCVLandingPage() {
               </span>
               <h3 className="font-extrabold text-sm text-[#0F172A]">Add proof</h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Confirm identity, match a work inbox, attach a document, and invite people who were there. One independent source verifies a chapter. Two makes it Verified+.
+                Confirm identity, match a work inbox, attach a document, or ask someone who was there. One source marks the chapter Corroborated. A second source marks it Multi-source.
               </p>
             </div>
 

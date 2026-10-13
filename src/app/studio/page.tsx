@@ -51,13 +51,106 @@ import {
 } from "@/lib/studioPortfolio";
 import { getVerificationStatus } from "@/lib/verificationLevel";
 import { corroborationHeadline } from "@/lib/corroborationDisplay";
-import { companyVerificationTooltip, endorsedClaimIndexes } from "@/lib/verificationSignals";
+import { companyVerificationTooltip, endorsedClaimIndexes, firstChapterWithoutColleague, postSavePrompt } from "@/lib/verificationSignals";
 import { corporateEmailMatchesCompany } from "@/lib/corporateEmail";
-import { nextPortfolioVerificationStep } from "@/lib/verificationQueue";
-import { type PortfolioAsset, type RecruiterLayout } from "@/lib/portfolioAssets";
+import { nextPortfolioVerificationStep, verificationStatusLine } from "@/lib/verificationQueue";
+import { dossierSectionRank, highlightLines, parseDossierLayout, publicRegistryLabel, type PortfolioAsset } from "@/lib/portfolioAssets";
+import { LOOP_EVENTS, consumeCorroboratorRef } from "@/lib/corroborationLoop";
+import { confirmedLinkedInLabel, linkedInHandle, linkedInProfileUrl } from "@/lib/linkedin";
+import { countryOptions, formatLocation, locationError, parseLocation, flagEmoji } from "@/lib/locations";
+import { reviewResume } from "@/lib/resumeReview";
 import PortfolioStudioPanel, { DossierLayoutControl } from "@/components/PortfolioStudioPanel";
 import { captureEvent, identifyHandle } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
+
+function linkedInFields(profile: { name?: string; vanityName?: string; profileUrl?: string }) {
+  return {
+    linkedin: confirmedLinkedInLabel(profile),
+    linkedinVerified: true as const
+  };
+}
+
+function AutoText({
+  value,
+  readOnly,
+  onChange,
+  className
+}: {
+  value: string;
+  readOnly?: boolean;
+  onChange: (value: string) => void;
+  className?: string;
+}) {
+  const ref = React.useRef<HTMLTextAreaElement>(null);
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      value={value}
+      readOnly={readOnly}
+      onChange={(e) => onChange(e.target.value)}
+      spellCheck
+      autoCorrect="on"
+      lang="en"
+      className={`resize-none overflow-hidden ${className || ""}`}
+    />
+  );
+}
+
+function LocationField({
+  value,
+  saved,
+  onChange
+}: {
+  value: string;
+  saved: boolean;
+  onChange: (location: string) => void;
+}) {
+  const parsed = parseLocation(value);
+  const remote = /^remote$/i.test(String(value || "").trim());
+  const countries = countryOptions();
+  const notice = locationError(value);
+  return (
+    <div className="p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] space-y-1.5 sm:col-span-2">
+      <div className="flex items-center gap-2">
+        <span className="text-sm leading-none">{parsed?.countryCode ? flagEmoji(parsed.countryCode) : <MapPin className="w-3.5 h-3.5 text-slate-400" />}</span>
+        <input
+          type="text"
+          value={remote ? "" : parsed?.city || (value.includes(",") ? value.split(",")[0].trim() : value)}
+          readOnly={!saved || remote}
+          onChange={(e) => onChange(formatLocation(e.target.value, parsed?.countryCode || "") || e.target.value)}
+          placeholder="City"
+          className="w-full text-xs bg-transparent focus:outline-none font-medium"
+        />
+        <select
+          value={remote ? "REMOTE" : parsed?.countryCode || ""}
+          disabled={!saved}
+          onChange={(e) => {
+            const cityDraft = remote ? "" : parsed?.city || String(value || "").split(",")[0].trim();
+            if (e.target.value === "REMOTE") onChange("Remote");
+            else onChange(formatLocation(cityDraft, e.target.value) || cityDraft);
+          }}
+          className="max-w-[46%] text-xs bg-transparent focus:outline-none font-medium"
+        >
+          <option value="">Country</option>
+          <option value="REMOTE">Remote</option>
+          {countries.map((country) => (
+            <option key={country.code} value={country.code}>
+              {country.flag} {country.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      {notice && <p className="text-[11px] font-semibold text-amber-700">{notice}</p>}
+    </div>
+  );
+}
 
 function LinkedInIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
   return (
@@ -123,7 +216,8 @@ export default function StudioPage() {
   const [skills, setSkills] = useState<string[]>([]);
   const [education, setEducation] = useState<EducationRecord[]>([]);
   const [portfolioAssets, setPortfolioAssets] = useState<PortfolioAsset[]>([]);
-  const [preferredLayout, setPreferredLayout] = useState<RecruiterLayout>("traditional");
+  const [preferredLayout, setPreferredLayout] = useState("summary:bottom");
+  const [skillDraft, setSkillDraft] = useState("");
 
   const [contact, setContact] = useState<ContactInfo>({
     email: "",
@@ -248,7 +342,11 @@ export default function StudioPage() {
           };
           
           if (user.app_metadata?.providers?.includes("linkedin_oidc")) {
-            nextContact.linkedinVerified = true;
+            Object.assign(nextContact, linkedInFields({
+              name: user.user_metadata?.full_name || user.user_metadata?.name,
+              vanityName: user.user_metadata?.preferred_username,
+              profileUrl: user.user_metadata?.url
+            }));
             
             if (!prev.linkedinVerified && isPortfolioSaved) {
               const savedRec = readStudioRecord<any>(STUDIO_SAVED_KEY);
@@ -287,8 +385,11 @@ export default function StudioPage() {
             email: user.email || prev.email 
           };
           if (user.app_metadata?.providers?.includes("linkedin_oidc")) {
-            nextContact.linkedinVerified = true;
-            nextContact.linkedin = prev.linkedin || user.user_metadata?.email || "";
+            Object.assign(nextContact, linkedInFields({
+              name: user.user_metadata?.full_name || user.user_metadata?.name,
+              vanityName: user.user_metadata?.preferred_username,
+              profileUrl: user.user_metadata?.url
+            }));
           }
           return nextContact;
         });
@@ -324,20 +425,16 @@ export default function StudioPage() {
     contact.phoneVerified ||
     milestones.some((milestone) => getVerificationLevel(milestone).level > 0);
 
+  const chapterToAsk = firstChapterWithoutColleague(milestones);
   const actionPrompts = React.useMemo(() => {
     if (!isPortfolioSaved) {
-      return [
-        { label: "Review & Edit Resume", action: "review_resume" },
-        { label: "Save Portfolio", action: "save_portfolio" }
-      ];
-    }
-    return [
-      {
-        label: verificationStarted ? "Continue verifying my portfolio" : "Verify my portfolio",
-        action: "verify_portfolio"
+      if (!hasPortfolioContent({ milestones, summaryStatement })) {
+        return [{ label: "Upload a resume", action: "upload_resume" }];
       }
-    ];
-  }, [isPortfolioSaved, verificationStarted]);
+      return [{ label: "Save and publish", action: "save_portfolio" }];
+    }
+    return [{ label: "Continue", action: "continue_verification" }];
+  }, [isPortfolioSaved, milestones, summaryStatement]);
 
   const buildPortfolioPayload = () => ({
     handle: handle.toLowerCase().trim(),
@@ -379,9 +476,7 @@ export default function StudioPage() {
     if (parsed.skills) setSkills(parsed.skills);
     if (parsed.education) setEducation(parsed.education);
     if (Array.isArray(parsed.portfolioAssets)) setPortfolioAssets(parsed.portfolioAssets);
-    if (parsed.preferredLayout === "traditional" || parsed.preferredLayout === "hybrid" || parsed.preferredLayout === "creative") {
-      setPreferredLayout(parsed.preferredLayout);
-    }
+    if (parsed.preferredLayout) setPreferredLayout(parseDossierLayout(parsed.preferredLayout).id);
     if (parsed.contact) setContact((prev) => ({ ...prev, ...parsed.contact }));
     if (parsed.handle) setHandle(String(parsed.handle).toLowerCase().trim());
     setActiveTab("canvas");
@@ -550,7 +645,11 @@ export default function StudioPage() {
           setContact((prev) => {
             const nextContact = {
               ...prev,
-              linkedinVerified: true
+              ...linkedInFields({
+                name: user.user_metadata?.full_name || user.user_metadata?.name,
+                vanityName: user.user_metadata?.preferred_username,
+                profileUrl: user.user_metadata?.url
+              })
             };
             const base = saved && hasPortfolioContent(saved) ? saved : draft;
             if (base && hasPortfolioContent(base)) {
@@ -664,7 +763,7 @@ export default function StudioPage() {
             const nextContact = {
               ...prev,
               email: prev.email || data.profile.email || prev.email,
-              linkedinVerified: true
+              ...linkedInFields(data.profile)
             };
             const base = saved && hasPortfolioContent(saved) ? saved : draft;
             if (base && hasPortfolioContent(base)) {
@@ -871,7 +970,7 @@ export default function StudioPage() {
           ...prev,
           {
             sender: "ally",
-            text: `Parsed ${data.milestones.length} career chapters from ${file.name}. Save your portfolio to unlock verification.`
+            text: `Parsed ${data.milestones.length} career chapters from ${file.name}. Review them, then save to publish your page.`
           }
         ]);
       } else {
@@ -885,6 +984,10 @@ export default function StudioPage() {
   };
 
   const handleActionPrompt = (actionType: string) => {
+    if (actionType === "upload_resume") {
+      fileInputRef.current?.click();
+      return;
+    }
     if (actionType === "review_resume") {
       setChatMessages((prev) => [
         ...prev,
@@ -899,6 +1002,64 @@ export default function StudioPage() {
     }
 
     requirePortfolioSaved(() => {
+      if (actionType === "continue_verification") {
+        const line = verificationStatusLine({
+          emailVerified: contact.emailVerified,
+          linkedinVerified: contact.linkedinVerified,
+          phoneVerified: contact.phoneVerified,
+          chapters: milestones.map((milestone) => ({
+            company: milestone.company,
+            level: getVerificationLevel(milestone).level
+          }))
+        });
+        setChatMessages((prev) => [...prev, { sender: "ally", text: line }]);
+        if (nextVerifyStep.id === "email") {
+          document.getElementById("identity-card")?.scrollIntoView({ behavior: "smooth", block: "center" });
+          document.getElementById("contact-email")?.focus();
+          return;
+        }
+        if (nextVerifyStep.id === "linkedin") {
+          window.location.href = "/api/auth/linkedin?next=/studio";
+          return;
+        }
+        if (nextVerifyStep.id === "phone") {
+          document.getElementById("identity-card")?.scrollIntoView({ behavior: "smooth", block: "center" });
+          document.getElementById("contact-phone")?.focus();
+          return;
+        }
+        if (nextVerifyStep.id === "chapter" && nextVerifyStep.milestoneId) {
+          const chapter = milestones.find((milestone) => milestone.id === nextVerifyStep.milestoneId);
+          if (chapter) {
+            setTargetMilestone(chapter);
+            setHighlightedMilestoneId(chapter.id);
+            document.getElementById(chapter.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+            setIsVerifyHubOpen(true);
+          }
+        }
+        return;
+      }
+
+      if (actionType === "ask_colleague") {
+        const chapter = firstChapterWithoutColleague(milestones) || milestones[0];
+        if (!chapter) {
+          setChatMessages((prev) => [
+            ...prev,
+            { sender: "ally", text: "Add a company chapter first, then you can ask someone who worked with you there." }
+          ]);
+          return;
+        }
+        setTargetMilestone(chapter);
+        document.getElementById(chapter.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        returnToVerifyHubRef.current = false;
+        setIsInviteModalOpen(true);
+        setChatMessages((prev) => [
+          ...prev,
+          { sender: "user", text: "Ask a colleague" },
+          { sender: "ally", text: `Ask someone who worked with you at ${chapter.company}. They sign in with LinkedIn. Their name stays off the public page.` }
+        ]);
+        return;
+      }
+
       if (actionType === "invite_peers" || actionType === "attach_docs") {
         const chapter =
           (nextVerifyStep.id === "chapter" && nextVerifyStep.milestoneId
@@ -1008,9 +1169,24 @@ export default function StudioPage() {
         ...prev,
         {
           sender: "ally",
-          text: "Opening save now. After this, you can edit fields and start verification."
+            text: "Opening save now. Your page goes live after this."
         }
       ]);
+      return;
+    }
+
+    if (normalized.includes("review") || normalized.includes("grammar") || normalized.includes("spelling") || normalized.includes("buzzword")) {
+      const review = reviewResume({
+        summary: summaryStatement,
+        chapters: milestones.map((milestone) => ({ id: milestone.id, company: milestone.company, claims: milestone.claims }))
+      });
+      setChatMessages((prev) => [...prev, { sender: "ally", text: review.notes.join(" ") }]);
+      if (review.focusId === "summary") {
+        document.getElementById("summary")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      } else {
+        setHighlightedMilestoneId(review.focusId);
+        document.getElementById(review.focusId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
       return;
     }
 
@@ -1033,8 +1209,8 @@ export default function StudioPage() {
           {
             sender: "ally",
             text: isPortfolioSaved
-              ? "Use Verify my portfolio and I will prompt the next unchecked item: email, LinkedIn, then each company."
-              : "Save your portfolio first, then we can verify it in order."
+              ? "Ask a colleague about one chapter. That is the most useful next step."
+              : "Review the chapters, then save to publish your page."
           }
         ]);
       }, 400);
@@ -1098,12 +1274,21 @@ export default function StudioPage() {
         setSaveStatus("saved");
         setIsClaimModalOpen(false);
         identifyHandle(handle.toLowerCase().trim());
-        captureEvent("portfolio_saved", { handle: handle.toLowerCase().trim(), restoreEmailed: Boolean(data.restoreEmailed) });
+        const savedHandle = handle.toLowerCase().trim();
+        captureEvent("portfolio_saved", { handle: savedHandle, restoreEmailed: Boolean(data.restoreEmailed) });
+        const invitedBy = consumeCorroboratorRef();
+        if (invitedBy) {
+          captureEvent(LOOP_EVENTS.corroboratorProfileCreated, {
+            handle: savedHandle,
+            invitedBy: invitedBy.handle,
+            company: invitedBy.company
+          });
+        }
         setChatMessages((prev) => [
           ...prev,
           {
             sender: "ally",
-            text: `Portfolio saved. Live dossier is active at verifiedcv.app/${handle.toLowerCase().trim()}. Use Verify my portfolio and I will prompt the next item that still needs proof.`
+            text: postSavePrompt(handle, firstChapterWithoutColleague(milestones)?.company)
           }
         ]);
       } else {
@@ -1292,6 +1477,10 @@ export default function StudioPage() {
   const dispatchPeerInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!colleagueEmail || !targetMilestone) return;
+    if (contact.email && colleagueEmail.trim().toLowerCase() === contact.email.trim().toLowerCase()) {
+      alert("You cannot ask your own email to confirm this chapter.");
+      return;
+    }
 
     setInviteSent(true);
     try {
@@ -1388,8 +1577,6 @@ export default function StudioPage() {
     (contact.phoneVerified ? 1 : 0) +
     corroboratedCount;
 
-  // Portfolio Verification Stats
-  const level0Count = milestones.filter(m => getVerificationLevel(m).level === 0).length;
   const level1Count = milestones.filter(m => getVerificationLevel(m).level === 1).length;
   const level2Count = milestones.filter(m => getVerificationLevel(m).level === 2).length;
   const level3Count = milestones.filter(m => getVerificationLevel(m).level === 3).length;
@@ -1486,7 +1673,7 @@ export default function StudioPage() {
             {isProcessing && (
               <div className="bg-[#F8FAFC] border border-[#E2E8F0] text-slate-500 text-xs p-3 rounded-xl flex items-center gap-2">
                 <Clock className="w-3.5 h-3.5 animate-spin text-[#059669]" />
-                <span>Auditing claims & contact channels...</span>
+                <span>Reading your resume...</span>
               </div>
             )}
           </div>
@@ -1515,7 +1702,7 @@ export default function StudioPage() {
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Ask Ally to verify your portfolio..."
+                placeholder="Ask Ally what to do next..."
                 className="w-full text-xs pl-3 pr-8 py-2 rounded-lg border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans bg-slate-50/50"
               />
               <button
@@ -1531,15 +1718,15 @@ export default function StudioPage() {
         {/* LIVE CANVAS */}
         <main className="flex-1 overflow-y-auto w-full">
           <div className="p-8 max-w-5xl mx-auto space-y-8 antialiased">
-            {milestones.length > 0 && isPortfolioSaved && level0Count > 0 && (
-            <div className="bg-white border border-[#E2E8F0] rounded-3xl p-5 shadow-xs space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <h2 className="text-sm font-black text-[#0F172A] tracking-tight">You have {level0Count} unverified {level0Count === 1 ? 'claim' : 'claims'}</h2>
+            {milestones.length > 0 && isPortfolioSaved && chapterToAsk && (
+            <div className="bg-white border border-[#E2E8F0] rounded-3xl p-5 shadow-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <h2 className="text-sm font-black text-[#0F172A] tracking-tight">Make one chapter more believable</h2>
+                  <p className="text-xs text-slate-500">Ask someone who worked with you at {chapterToAsk.company}.</p>
                 </div>
-                <button onClick={() => handleActionPrompt("verify_portfolio")} className="font-bold text-[#059669] hover:text-emerald-700 transition-colors cursor-pointer text-xs flex items-center gap-1">
-                  Continue verifying <ArrowRight className="w-3.5 h-3.5" />
+                <button onClick={() => handleActionPrompt("ask_colleague")} className="font-bold text-[#059669] hover:text-emerald-700 transition-colors cursor-pointer text-xs flex items-center gap-1 shrink-0">
+                  Ask a colleague <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
@@ -1552,7 +1739,7 @@ export default function StudioPage() {
               </div>
 
               <div className="space-y-2">
-                <h2 className="text-xl font-black text-[#0F172A]">Ingest Your Career Track Record</h2>
+                <h2 className="text-xl font-black text-[#0F172A]">Start with your resume</h2>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
                   Upload your resume or paste below. We keep dates, titles, and company names intact.
                 </p>
@@ -1622,7 +1809,7 @@ export default function StudioPage() {
             </div>
           ) : (
             <div
-              className="space-y-8"
+              className="flex flex-col gap-8"
               onFocusCapture={lockIfUnsaved}
               onClickCapture={(e) => {
                 const target = e.target as HTMLElement;
@@ -1831,66 +2018,45 @@ export default function StudioPage() {
                   </div>
 
                   <div className="p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 flex-1">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
                       <LinkedInIcon className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                      <input
-                        id="contact-linkedin"
-                        type="text"
-                        value={contact.linkedin}
-                        readOnly={!isPortfolioSaved || (contact.linkedinVerified && editingVerifiedField !== "linkedin")}
-                        onChange={(e) => {
-                          setContact({ ...contact, linkedin: e.target.value, linkedinVerified: false });
-                          setEditingVerifiedField(null);
-                        }}
-                        placeholder="LinkedIn URL"
-                        className={`w-full text-xs bg-transparent focus:outline-none font-medium text-blue-700 ${isPortfolioSaved && !(contact.linkedinVerified && editingVerifiedField !== "linkedin") ? "" : "cursor-default"}`}
-                      />
+                      {contact.linkedinVerified && linkedInHandle(contact.linkedin) ? (
+                        <a
+                          href={linkedInProfileUrl(contact.linkedin)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs font-semibold text-blue-700 truncate"
+                        >
+                          {linkedInHandle(contact.linkedin)}
+                        </a>
+                      ) : (
+                        <span className={`text-xs font-medium truncate ${contact.linkedinVerified ? "text-slate-800" : "text-slate-400"}`}>
+                          {contact.linkedinVerified ? contact.linkedin : "Not confirmed"}
+                        </span>
+                      )}
                     </div>
-                    {contact.linkedinVerified ? (
-                      <>
-                        <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                        {editingVerifiedField !== "linkedin" && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingVerifiedField("linkedin");
-                              setTimeout(() => document.getElementById("contact-linkedin")?.focus(), 0);
-                            }}
-                            className="text-[10px] font-bold text-slate-500 hover:text-[#0F172A] cursor-pointer shrink-0"
-                          >
-                            Edit
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      <button onClick={async () => {
-                        requirePortfolioSaved(async () => {
+                    {contact.linkedinVerified && <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        requirePortfolioSaved(() => {
                           setLinkedinVerifyError("");
                           persistPortfolioLocally(true);
                           captureEvent("linkedin_verify_clicked", { handle: handle.toLowerCase().trim() });
-                          
-                          await supabase.auth.signInWithOAuth({
-                            provider: "linkedin_oidc",
-                            options: {
-                              redirectTo: `${window.location.origin}/auth/callback?next=/studio`,
-                            },
-                          });
+                          window.location.href = "/api/auth/linkedin?next=/studio";
                         });
-                      }} className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer shrink-0">Verify</button>
-                    )}
+                      }}
+                      className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer shrink-0"
+                    >
+                      {contact.linkedinVerified ? "Change" : "Verify"}
+                    </button>
                   </div>
 
-                  <div className="p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center gap-2">
-                    <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <input
-                      type="text"
-                      value={contact.location}
-                      readOnly={!isPortfolioSaved}
-                      onChange={(e) => setContact({ ...contact, location: e.target.value })}
-                      placeholder="Location / Remote"
-                      className={`w-full text-xs bg-transparent focus:outline-none font-medium ${isPortfolioSaved ? "" : "cursor-pointer"}`}
-                    />
-                  </div>
+                  <LocationField
+                    value={contact.location}
+                    saved={isPortfolioSaved}
+                    onChange={(location) => setContact({ ...contact, location })}
+                  />
                 </div>
                 {editingVerifiedField === "email" && contact.emailVerified && (
                   <p className="text-[11px] font-semibold text-slate-600">
@@ -1900,11 +2066,6 @@ export default function StudioPage() {
                 {editingVerifiedField === "phone" && contact.phoneVerified && (
                   <p className="text-[11px] font-semibold text-slate-600">
                     This phone is verified. Change it and the check comes off until you verify the new number.
-                  </p>
-                )}
-                {editingVerifiedField === "linkedin" && contact.linkedinVerified && (
-                  <p className="text-[11px] font-semibold text-slate-600">
-                    This LinkedIn is verified. Change the link and the check comes off until you verify again.
                   </p>
                 )}
                 {emailCodeSent && !contact.emailVerified && (
@@ -2025,7 +2186,7 @@ export default function StudioPage() {
 
               {/* Summary */}
               {summaryStatement && (
-                <div id="summary" className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
+                <div id="summary" style={{ order: dossierSectionRank(preferredLayout).summary }} className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                     <div className="flex items-center gap-2">
                       <FileText className="w-4 h-4 text-[#059669]" />
@@ -2033,9 +2194,9 @@ export default function StudioPage() {
                         Summary
                       </h3>
                     </div>
-                    <span className="text-[10px] font-bold text-slate-500 bg-slate-50 border border-[#E2E8F0] px-2 py-0.5 rounded">
-                      Public
-                    </span>
+                    {!parseDossierLayout(preferredLayout).template.includes("summary") && (
+                      <span className="text-[10px] font-semibold text-slate-400">Not on this page template</span>
+                    )}
                   </div>
                   <textarea
                     rows={4}
@@ -2051,7 +2212,24 @@ export default function StudioPage() {
               )}
 
               {/* Milestones Card Stream */}
-              <div id="experience" className="scroll-mt-14 space-y-4">
+              {(parseDossierLayout(preferredLayout).template === "highlights" || parseDossierLayout(preferredLayout).template === "summary-highlights") && (
+                <div id="highlights" style={{ order: dossierSectionRank(preferredLayout).highlights }} className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
+                  <h3 className="font-extrabold text-xs uppercase tracking-wider text-[#0F172A]">Highlights</h3>
+                  <div className="space-y-2">
+                    {highlightLines(milestones).map((item) => (
+                      <p key={item.company} className="text-xs text-slate-700 leading-relaxed">
+                        <span className="font-bold text-[#0F172A]">{item.company}. </span>
+                        {item.line}
+                      </p>
+                    ))}
+                    {highlightLines(milestones).length === 0 && (
+                      <p className="text-xs text-slate-500">The first line of each chapter shows up here.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div id="experience" style={{ order: dossierSectionRank(preferredLayout).experience }} className="scroll-mt-14 space-y-4">
                 <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
                   <h3 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">
                     Experience ({milestones.length})
@@ -2098,18 +2276,16 @@ export default function StudioPage() {
                           />
                             {trustStatus.level > 0 && (
                               <span
-                                className="group/proof relative inline-flex items-center cursor-help"
+                                className="group/proof relative inline-flex items-center cursor-help shrink-0"
                                 title={companyVerificationTooltip(
                                   milestone.company,
                                   milestone.verifications || [],
                                   milestone.artifacts?.length || 0
                                 )}
                               >
-                                {trustStatus.level >= 2 ? (
-                                  <ShieldCheck className="w-4 h-4 text-[#059669]" />
-                                ) : (
-                                  <CheckCircle2 className="w-4 h-4 text-[#059669]" />
-                                )}
+                                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                                  {trustStatus.label}
+                                </span>
                                 <span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-56 rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-semibold leading-relaxed text-white shadow-xl group-hover/proof:block">
                                   {companyVerificationTooltip(
                                     milestone.company,
@@ -2162,10 +2338,10 @@ export default function StudioPage() {
                                 ? "text-[#059669] bg-emerald-50 hover:bg-emerald-100 border border-emerald-200"
                                 : "text-slate-400 bg-slate-50 border border-slate-200"
                             }`}
-                            title={!isPortfolioSaved ? "Save your portfolio to verify this company" : "Verify this company"}
+                            title={!isPortfolioSaved ? "Save your portfolio to add proof for this company" : "Add proof for this company"}
                           >
                             <ShieldCheck className="w-3 h-3" />
-                            <span>{trustStatus.level > 0 ? "Add proof" : "Verify"}</span>
+                            <span>Add proof</span>
                           </button>
 
                           <button
@@ -2188,6 +2364,22 @@ export default function StudioPage() {
                               <div key={art.id} className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-100 border border-slate-200 text-[10px] font-medium text-slate-600">
                                 <FileBadge className="w-3 h-3 text-indigo-500" />
                                 <span className="truncate max-w-[150px]">{art.name}</span>
+                                <span className="text-slate-400">Scanned, file not kept</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = milestones.map((item) =>
+                                      item.id === milestone.id
+                                        ? { ...item, artifacts: (item.artifacts || []).filter((artifact) => artifact.id !== art.id) }
+                                        : item
+                                    );
+                                    setMilestones(updated);
+                                    void updateVaultStore(updated);
+                                  }}
+                                  className="text-slate-400 hover:text-red-500 cursor-pointer"
+                                >
+                                  Remove
+                                </button>
                               </div>
                             ))}
                           </div>
@@ -2196,9 +2388,9 @@ export default function StudioPage() {
                         {milestone.registryLinks && milestone.registryLinks.length > 0 && (
                           <div className="flex flex-wrap gap-2 pb-2 border-b border-slate-100">
                             {milestone.registryLinks.map((link) => (
-                              <a key={link.id} href={link.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-emerald-50 border border-emerald-200 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100 transition-colors">
-                                <ShieldCheck className="w-3 h-3" />
+                              <a key={link.id} href={link.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#F8FAFC] border border-[#E2E8F0] text-[10px] font-semibold text-slate-600 hover:text-slate-900 transition-colors">
                                 <span>{link.label}</span>
+                                <span className="text-slate-400">{publicRegistryLabel(link.type)}</span>
                               </a>
                             ))}
                           </div>
@@ -2215,7 +2407,7 @@ export default function StudioPage() {
 
                         <div className="flex items-center justify-between">
                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                            Atomic Achievement Claims ({milestone.claims.length})
+                            Achievements ({milestone.claims.length})
                           </label>
                           <button
                             type="button"
@@ -2238,17 +2430,11 @@ export default function StudioPage() {
                               ) : (
                               <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-[#059669] shrink-0" />
                               )}
-                              <textarea
-                                rows={2}
+                              <AutoText
                                 value={claimText}
                                 readOnly={!isPortfolioSaved}
-                                onChange={(e) =>
-                                  updateMilestoneClaim(milestone.id, claimIdx, e.target.value)
-                                }
-                                spellCheck={true}
-                                autoCorrect="on"
-                                lang="en"
-                                className="flex-1 text-xs text-slate-700 leading-relaxed focus:outline-none font-sans resize-y bg-transparent"
+                                onChange={(next) => updateMilestoneClaim(milestone.id, claimIdx, next)}
+                                className="flex-1 text-xs text-slate-700 leading-relaxed focus:outline-none font-sans bg-transparent"
                               />
                               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
                                 <button
@@ -2271,13 +2457,31 @@ export default function StudioPage() {
               </div>
 
               {/* Skills */}
-              {skills.length > 0 && (
-                <div id="skills" className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
+              <div id="skills" style={{ order: dossierSectionRank(preferredLayout).skills }} className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                     <h3 className="font-extrabold text-xs uppercase tracking-wider text-[#0F172A]">
-                      Core Proficiencies & Technologies ({skills.length})
+                        Core Proficiencies & Technologies ({skills.length})
                     </h3>
                   </div>
+                  <form
+                    className="flex gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const next = skillDraft.trim();
+                      if (!next || skills.some((skill) => skill.toLowerCase() === next.toLowerCase())) return;
+                      setSkills((prev) => [...prev, next]);
+                      setSkillDraft("");
+                    }}
+                  >
+                    <input
+                      type="text"
+                      value={skillDraft}
+                      onChange={(e) => setSkillDraft(e.target.value)}
+                      placeholder="Add a skill"
+                      className="flex-1 text-xs p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] focus:outline-none focus:border-[#059669]"
+                    />
+                    <button type="submit" className="text-xs font-bold text-[#059669] px-3 cursor-pointer">Add</button>
+                  </form>
                   <div className="flex flex-wrap gap-2 pt-1">
                     {skills.map((skill, idx) => (
                       <span
@@ -2296,11 +2500,10 @@ export default function StudioPage() {
                     ))}
                   </div>
                 </div>
-              )}
 
               {/* Education */}
               {education.length > 0 && (
-                <div id="education" className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
+                <div id="education" style={{ order: dossierSectionRank(preferredLayout).education }} className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                     <div className="flex items-center gap-2">
                       <GraduationCap className="w-4 h-4 text-[#059669]" />
@@ -2330,7 +2533,7 @@ export default function StudioPage() {
                 </div>
               )}
 
-              <div id="work-samples" className="scroll-mt-14">
+              <div id="work-samples" style={{ order: dossierSectionRank(preferredLayout).work }} className="scroll-mt-14">
               <PortfolioStudioPanel
                 assets={portfolioAssets}
                 handle={handle}
@@ -2349,7 +2552,7 @@ export default function StudioPage() {
           <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-lg space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
               <div>
-                <h3 className="font-black text-sm text-[#0F172A]">Verify {targetMilestone.company}</h3>
+                <h3 className="font-black text-sm text-[#0F172A]">Add proof for {targetMilestone.company}</h3>
                 <p className="text-[11px] text-slate-500 mt-0.5">{targetMilestone.role}</p>
               </div>
               <button
@@ -2371,7 +2574,7 @@ export default function StudioPage() {
                     <span className="text-slate-500">Current status: </span>
                     <span className="font-bold text-[#0F172A]">{currentStatus.label}</span>
                     <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                      Self-Attested means only you said this. Verified means one independent source confirmed it. Verified+ means two independent sources did.
+                      A work email, an employment document, and a colleague are different kinds of proof. One of them marks this chapter Corroborated. Two mark it Multi-source.
                     </p>
                   </div>
 
@@ -2382,7 +2585,7 @@ export default function StudioPage() {
                   >
                     <div className="flex items-center gap-2">
                       <Mail className="w-4 h-4 text-emerald-600" />
-                      <span className="text-xs font-black text-[#0F172A]">Corporate Email</span>
+                      <span className="text-xs font-black text-[#0F172A]">Work email</span>
                     </div>
                     <p className="text-[11px] text-slate-500 leading-relaxed">
                       Send a code to the work inbox {live.company} issued you. We reject personal inboxes, require the domain to match this company, check its mail servers, and look the mailbox up in a company directory before a code goes out.
@@ -2733,7 +2936,7 @@ export default function StudioPage() {
                     <Clock className="w-4 h-4 animate-spin" />
                   ) : (
                     <>
-                      <span>Send Verification Request</span>
+                      <span>Send confirmation request</span>
                       <ArrowRight className="w-4 h-4 text-emerald-400" />
                     </>
                   )}

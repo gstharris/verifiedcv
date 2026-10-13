@@ -1,5 +1,7 @@
 # VerifiedCV Project Context & Architecture
 
+Product direction is in `docs/strategy.md` and `docs/product-teardown.md`. This note is a route map and a list of old parser bugs. Prefer those docs when they disagree with the description below.
+
 ## 1. Route Map
 - `src/app/page.tsx` (`/`): Landing page with conversational ingress, candidate vs. recruiter perspective switcher, strategic resume placement strip, and multi-line safe textarea that passes payload to `/studio` via `sessionStorage`.
 - `src/app/studio/page.tsx` (`/studio`):

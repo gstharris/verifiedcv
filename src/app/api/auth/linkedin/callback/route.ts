@@ -5,6 +5,8 @@ import {
   clearOAuthStateCookie,
   getLinkedInRedirectUri,
   LINKEDIN_OAUTH_STATE_COOKIE,
+  linkedInHandle,
+  linkedInProfileUrl,
   mapUserInfoToIdentity,
   parseOAuthState,
   sanitizeNextPath
@@ -68,6 +70,25 @@ export async function GET(req: NextRequest) {
     });
     const userInfo = await userInfoRes.json();
     const identity = mapUserInfoToIdentity(userInfo);
+
+    if (identity && !identity.vanityName) {
+      try {
+        const meRes = await fetch("https://api.linkedin.com/v2/me?projection=(vanityName)", {
+          headers: { Authorization: `Bearer ${tokenPayload.access_token}` },
+          cache: "no-store"
+        });
+        if (meRes.ok) {
+          const me = await meRes.json();
+          const vanity = linkedInHandle(typeof me.vanityName === "string" ? me.vanityName : "");
+          if (vanity) {
+            identity.vanityName = vanity;
+            identity.profileUrl = linkedInProfileUrl(vanity);
+          }
+        }
+      } catch {
+        // OpenID sign-in does not always include the public handle.
+      }
+    }
 
     if (!userInfoRes.ok || !identity) {
       console.error("LinkedIn userinfo failed:", userInfo);

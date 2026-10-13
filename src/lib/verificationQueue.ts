@@ -49,7 +49,7 @@ export function nextPortfolioVerificationStep(input: {
     return {
       id: "chapter",
       title: `Add more proof for ${strengthen.company}`,
-      detail: "A second colleague or a matching work email turns this chapter into Verified+.",
+      detail: "A second source, such as a colleague or a work email, marks this chapter Multi-source.",
       company: strengthen.company,
       milestoneId: strengthen.id
     };
@@ -68,4 +68,37 @@ export function nextPortfolioVerificationStep(input: {
     title: "Portfolio verification is in good shape",
     detail: "Identity is confirmed and every chapter has proof. You can still invite more colleagues."
   };
+}
+
+function joinList(items: string[]) {
+  if (items.length <= 1) return items[0] || "";
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
+}
+
+export function verificationStatusLine(input: {
+  emailVerified?: boolean;
+  linkedinVerified?: boolean;
+  phoneVerified?: boolean;
+  chapters?: Array<{ company: string; level: number }>;
+}) {
+  const chapters = input.chapters || [];
+  const done = [
+    input.emailVerified ? "email" : "",
+    input.phoneVerified ? "phone" : "",
+    input.linkedinVerified ? "LinkedIn" : "",
+    ...chapters.filter((chapter) => chapter.level > 0).map((chapter) => `work at ${chapter.company}`)
+  ].filter(Boolean);
+  const next = [
+    !input.emailVerified ? "email" : "",
+    !input.linkedinVerified ? "LinkedIn" : "",
+    ...chapters.filter((chapter) => chapter.level === 0).map((chapter) => `your work at ${chapter.company}`),
+    !input.phoneVerified ? "phone" : ""
+  ].filter(Boolean);
+
+  const doneText = done.length ? `${joinList(done)} ${done.length === 1 ? "is" : "are"} confirmed.` : "Nothing is confirmed yet.";
+  const lead = doneText.charAt(0).toUpperCase() + doneText.slice(1);
+  if (!next.length) return `${lead} You can still ask another colleague.`;
+  const nextText = next.length === 1 ? `Verify ${next[0]} next.` : `Verify ${next[0]}, or ${next[1]}, next.`;
+  return `${lead} ${nextText}`;
 }

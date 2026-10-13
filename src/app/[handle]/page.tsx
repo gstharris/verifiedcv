@@ -15,11 +15,12 @@ import {
   MapPin
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
-import { getVerificationStatus } from "@/lib/verificationLevel";
-import { companyVerificationTooltip, endorsedClaimIndexes } from "@/lib/verificationSignals";
+import { getVerificationStatus, publicChapterLabel } from "@/lib/verificationLevel";
+import { companyVerificationTooltip, endorsedClaimIndexes, publicTrustSummary } from "@/lib/verificationSignals";
 import { captureEvent } from "@/lib/analytics";
 import PortfolioAssetsGallery from "@/components/PortfolioAssetsGallery";
-import { recruiterLayout, type PortfolioAsset, type RecruiterLayout } from "@/lib/portfolioAssets";
+import { highlightLines, parseDossierLayout, publicRegistryLabel, recruiterLayout, type PortfolioAsset, type RecruiterLayout } from "@/lib/portfolioAssets";
+import { flagEmoji, parseLocation } from "@/lib/locations";
 
 function LinkedInIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
   return (
@@ -93,6 +94,7 @@ export default function CandidateDossierPage() {
   const [dossier, setDossier] = useState<DossierData | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [openProofId, setOpenProofId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!requestedHandle) return;
@@ -192,7 +194,7 @@ export default function CandidateDossierPage() {
         </main>
 
         <footer className="h-14 border-t border-[#E2E8F0] bg-white px-6 flex items-center justify-center text-xs text-slate-400">
-          <span>VerifiedCV • Candidate-Enablement Trust Platform</span>
+          <span>VerifiedCV • A portfolio people can confirm</span>
         </footer>
       </div>
     );
@@ -242,25 +244,23 @@ export default function CandidateDossierPage() {
               </div>
             </div>
 
-            <div className="shrink-0 flex flex-col items-end gap-1.5 text-[10px] text-slate-500">
-              <span className="font-bold uppercase tracking-wider text-slate-400">Proof key</span>
-              <div className="flex items-center gap-3">
-                <span className="group/key relative inline-flex items-center gap-1 cursor-help">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-[#059669]" />
-                  <span className="font-semibold text-slate-600">Verified</span>
-                  <span className="pointer-events-none absolute right-0 top-full z-20 mt-1 hidden w-52 rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-semibold leading-relaxed text-white shadow-xl group-hover/key:block">
-                    A green check means this item has independent proof: corporate email, a colleague, or a document.
-                  </span>
-                </span>
-                <span className="group/key relative inline-flex items-center gap-1 cursor-help">
-                  <ShieldCheck className="w-3.5 h-3.5 text-[#059669]" />
-                  <span className="font-semibold text-slate-600">Verified+</span>
-                  <span className="pointer-events-none absolute right-0 top-full z-20 mt-1 hidden w-52 rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-semibold leading-relaxed text-white shadow-xl group-hover/key:block">
-                    Multiple independent sources confirmed this chapter — two colleagues, or a colleague plus a document.
-                  </span>
-                </span>
-              </div>
-            </div>
+            {(() => {
+              const summary = publicTrustSummary({
+                emailVerified: dossier.contact?.emailVerified,
+                phoneVerified: dossier.contact?.phoneVerified,
+                linkedinVerified: dossier.contact?.linkedinVerified,
+                corroboratedChapters: dossier.milestones.filter((milestone) => getVerificationLevel(milestone) > 0).length,
+                workSamples: dossier.portfolioAssets?.length || 0
+              });
+              if (summary.length === 0) return null;
+              return (
+                <div className="shrink-0 flex flex-col items-start sm:items-end gap-1 text-[11px] text-slate-600 sm:max-w-xs sm:text-right">
+                  {summary.map((line) => (
+                    <span key={line} className="font-semibold">{line}</span>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
 
           {dossier.contact && (
@@ -295,15 +295,19 @@ export default function CandidateDossierPage() {
               {dossier.contact.location && (
                 <div className="flex items-center gap-2">
                   <div className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-50 text-slate-400">
-                    <MapPin className="w-3 h-3" />
+                    {parseLocation(dossier.contact.location)?.countryCode ? (
+                      <span className="text-sm leading-none">{flagEmoji(parseLocation(dossier.contact.location)?.countryCode || "")}</span>
+                    ) : (
+                      <MapPin className="w-3 h-3" />
+                    )}
                   </div>
-                  <span className="font-medium text-slate-500">{dossier.contact.location}</span>
+                  <span className="font-medium text-slate-500">{parseLocation(dossier.contact.location)?.label || dossier.contact.location}</span>
                 </div>
               )}
             </div>
           )}
 
-          {dossier.summaryStatement && (
+          {dossier.summaryStatement && (parseDossierLayout(dossier.preferredLayout).template === "summary" || parseDossierLayout(dossier.preferredLayout).template === "summary-highlights") && (
             <div className="pt-3 border-t border-slate-100">
               <p className="text-xs sm:text-sm text-slate-700 leading-relaxed">
                 {dossier.summaryStatement}
@@ -314,26 +318,45 @@ export default function CandidateDossierPage() {
 
         {(() => {
           const layoutDef = recruiterLayout(dossier.preferredLayout);
+          const pageTemplate = parseDossierLayout(dossier.preferredLayout);
           const assets = dossier.portfolioAssets || [];
-          const gallery = <PortfolioAssetsGallery assets={assets} featured={layoutDef.featured} />;
+          const gallery = <PortfolioAssetsGallery assets={assets} featured={pageTemplate.placement === "top" && assets.length > 1} />;
           const workFirst = layoutDef.blocks[0] === "work";
+          const highlights = highlightLines(dossier.milestones);
           return (
             <>
               {workFirst && gallery}
+              {(pageTemplate.template === "highlights" || pageTemplate.template === "summary-highlights") && highlights.length > 0 && (
+                <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
+                  <h2 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">Highlights</h2>
+                  <div className="space-y-2">
+                    {highlights.map((item) => (
+                      <p key={`${item.company}-${item.line}`} className="text-xs text-slate-700 leading-relaxed">
+                        <span className="font-bold text-[#0F172A]">{item.company}. </span>
+                        {item.line}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
               {/* Milestones */}
               <div className="space-y-4">
           <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
             <h2 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">
               Experience ({dossier.milestones.length})
             </h2>
-            <span className="text-[11px] font-semibold text-slate-400">
-              Hover any checkmark to see how it was proven
-            </span>
+            {dossier.milestones.some((milestone) => publicChapterLabel(getVerificationLevel(milestone))) && (
+              <span className="text-[11px] font-semibold text-slate-400">
+                Open a chapter mark to see what was checked
+              </span>
+            )}
           </div>
 
           <div className="space-y-5">
             {dossier.milestones.map((m) => {
               const level = getVerificationLevel(m);
+              const chapterLabel = publicChapterLabel(level);
+              const proofDetail = companyVerificationTooltip(m.company, m.verifications || [], m.artifacts?.length || 0);
               return (
               <div
                 key={m.id}
@@ -343,20 +366,21 @@ export default function CandidateDossierPage() {
                   <div className="space-y-0.5">
                     <div className="flex items-center gap-2">
                       <span className="font-black text-base text-[#0F172A]">{m.company}</span>
-                      {level > 0 && (
-                        <span className="group/proof relative inline-flex items-center cursor-help">
-                          {level >= 2 ? (
-                            <ShieldCheck className="w-4 h-4 text-[#059669]" />
-                          ) : (
-                            <CheckCircle2 className="w-4 h-4 text-[#059669]" />
-                          )}
-                          <span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-56 rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-semibold leading-relaxed text-white shadow-xl group-hover/proof:block">
-                            {companyVerificationTooltip(m.company, m.verifications || [], m.artifacts?.length || 0)}
-                          </span>
-                        </span>
+                      {chapterLabel && (
+                        <button
+                          type="button"
+                          onClick={() => setOpenProofId((current) => (current === m.id ? null : m.id))}
+                          className="shrink-0 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded cursor-pointer"
+                          aria-expanded={openProofId === m.id}
+                        >
+                          {chapterLabel}
+                        </button>
                       )}
                     </div>
                     <span className="text-xs font-semibold text-slate-600 block">{m.role}</span>
+                    {openProofId === m.id && proofDetail && (
+                      <p className="text-[11px] text-slate-500 leading-relaxed pt-1">{proofDetail}</p>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-mono font-medium text-slate-500 bg-slate-50 border border-[#E2E8F0] px-2.5 py-1 rounded-lg">
@@ -368,9 +392,9 @@ export default function CandidateDossierPage() {
                 {m.registryLinks && m.registryLinks.length > 0 && (
                   <div className="flex flex-wrap gap-2 pb-2 border-b border-slate-100">
                     {m.registryLinks.map((link) => (
-                      <a key={link.id} href={link.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-emerald-50 border border-emerald-200 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100 transition-colors">
-                        <ShieldCheck className="w-3 h-3" />
+                      <a key={link.id} href={link.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#F8FAFC] border border-[#E2E8F0] text-[10px] font-semibold text-slate-600 hover:text-slate-900 transition-colors">
                         <span>{link.label}</span>
+                        <span className="text-slate-400">{publicRegistryLabel(link.type)}</span>
                       </a>
                     ))}
                   </div>
@@ -386,11 +410,11 @@ export default function CandidateDossierPage() {
                           <span className="group/claim relative mt-0.5 shrink-0 cursor-help">
                             <CheckCircle2 className="w-3.5 h-3.5 text-[#059669]" />
                             <span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-48 rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-semibold leading-relaxed text-white shadow-xl group-hover/claim:block">
-                              A colleague corroborated this achievement.
+                              A colleague confirmed this line.
                             </span>
                           </span>
                         ) : (
-                        <div className="w-1.5 h-1.5 rounded-full bg-[#059669] shrink-0 mt-1.5" />
+                        <div className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0 mt-1.5" />
                         )}
                         <span>{claim}</span>
                       </div>
@@ -464,9 +488,9 @@ export default function CandidateDossierPage() {
           <div className="flex items-center gap-2">
             <VerifiedCVLogo className="w-4 h-4" />
             <span className="font-bold text-[#0F172A]">VerifiedCV</span>
-            <span>• Forensic proof layer for careers</span>
+            <span>• A portfolio with proof on the work</span>
           </div>
-          <span className="text-[11px]">Dossier timestamped via Vault ground truth</span>
+          <span className="text-[11px]">verifiedcv.app/{dossier.handle}</span>
         </div>
       </footer>
     </div>

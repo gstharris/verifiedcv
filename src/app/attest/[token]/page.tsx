@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, use, useRef } from "react";
+import { useEffect, useState, use } from "react";
 import {
   ShieldCheck,
   CheckCircle2,
@@ -9,8 +9,6 @@ import {
   Loader2,
   AlertCircle,
   Lock,
-  UploadCloud,
-  RotateCcw,
   ChevronDown,
   ChevronUp,
   Award,
@@ -20,6 +18,8 @@ import {
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 import { overlapMonths, parseTenureRange } from "@/lib/tenureOverlap";
 import { corroborationHeadline } from "@/lib/corroborationDisplay";
+import { captureEvent } from "@/lib/analytics";
+import { LOOP_EVENTS, writeCorroboratorRef } from "@/lib/corroborationLoop";
 
 const YEAR_OPTIONS = Array.from({ length: 50 }, (_, i) => String(new Date().getUTCFullYear() + 1 - i));
 
@@ -65,6 +65,8 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
   const [submitting, setSubmitting] = useState(false);
   const [data, setData] = useState<ChapterAttestationData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [blockedReason, setBlockedReason] = useState<string | null>(null);
 
   // Form State
   const [attestorName, setAttestorName] = useState("");
@@ -87,16 +89,7 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
   } | null>(null);
   const [linkedInError, setLinkedInError] = useState("");
 
-  // Success State
   const [isSuccess, setIsSuccess] = useState(false);
-  const [confirmedSig, setConfirmedSig] = useState<string | null>(null);
-
-  // Reciprocal PLG State
-  const [activeTab, setActiveTab] = useState<"PDF" | "MANUAL">("PDF");
-  const [manualStartYear, setManualStartYear] = useState("2014");
-  const [manualEndYear, setManualEndYear] = useState("2019");
-  const [isUploadingResume, setIsUploadingResume] = useState(false);
-  const resumeInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     async function fetchAttestation() {
@@ -106,6 +99,7 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
 
         if (json.success && json.data) {
           setData(json.data);
+          setBlockedReason(json.blockedReason || null);
           const parsed = parseTenureRange(String(json.data.tenureDates || ""));
           if (parsed) {
             setAttestorStartYear(String(parsed.start.year));
@@ -212,21 +206,10 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
     );
   };
 
-  const handleLinkedInAuth = async () => {
+  const handleLinkedInAuth = () => {
     setIsAuthenticatingLinkedIn(true);
     setLinkedInError("");
-    
-    const { createClient } = await import("@supabase/supabase-js");
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-    const supabase = createClient(supabaseUrl, supabaseAnonKey);
-    
-    await supabase.auth.signInWithOAuth({
-      provider: "linkedin_oidc",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(`/attest/${token}`)}`,
-      },
-    });
+    window.location.href = `/api/auth/linkedin?next=${encodeURIComponent(`/attest/${token}`)}`;
   };
 
   const attestorPeriod = attestorStartYear
@@ -239,7 +222,7 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
 
   const handleConfirm = async () => {
     setSubmitting(true);
-    setError(null);
+    setSubmitError(null);
 
     try {
       const { createClient } = await import("@supabase/supabase-js");
@@ -274,38 +257,39 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
       const json = await res.json();
       if (res.ok && json.success) {
         setIsSuccess(true);
-        setConfirmedSig(json.signature || "SIG_CHAP_VERIFIED");
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        captureEvent(LOOP_EVENTS.corroborationCompleted, {
+          company: data?.companyName || "",
+          candidateHandle: data?.candidateHandle || ""
+        });
+        window.scrollTo({ top: 0, behavior: "smooth" });
       } else {
-        setError(json.error || "Failed to confirm chapter milestone.");
+        setSubmitError(json.error || "Failed to confirm chapter milestone.");
       }
     } catch {
-      setError("Network interruption confirming attestation.");
+      setSubmitError("Network interruption confirming attestation.");
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleReciprocalResumeUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || !e.target.files[0] || !data) return;
-    setIsUploadingResume(true);
-
-    const targetUrl = `/?ref=${encodeURIComponent(data.candidateHandle)}&refName=${encodeURIComponent(
-      data.candidateName
-    )}&company=${encodeURIComponent(data.companyName)}&autoUpload=true`;
-
-    window.location.href = targetUrl;
-  };
-
-  const handleManualShellCreate = () => {
+  const startOwnPage = () => {
     if (!data) return;
-    const targetUrl = `/?ref=${encodeURIComponent(data.candidateHandle)}&refName=${encodeURIComponent(
-      data.candidateName
-    )}&company=${encodeURIComponent(data.companyName)}&title=${encodeURIComponent(
-      attestorTitle
-    )}&startYear=${manualStartYear}&endYear=${manualEndYear}`;
-
-    window.location.href = targetUrl;
+    const ref = {
+      handle: data.candidateHandle,
+      name: data.candidateName,
+      company: data.companyName
+    };
+    writeCorroboratorRef(ref);
+    captureEvent(LOOP_EVENTS.corroboratorProfileStarted, {
+      invitedBy: ref.handle,
+      company: ref.company
+    });
+    const params = new URLSearchParams({
+      ref: ref.handle,
+      refName: ref.name,
+      company: ref.company
+    });
+    window.location.href = `/?${params.toString()}`;
   };
 
   if (loading) {
@@ -313,7 +297,7 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
       <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center p-6">
         <div className="flex items-center gap-2.5 text-xs font-bold text-slate-500">
           <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
-          <span>Verifying secure attestation token...</span>
+          <span>Opening this confirmation...</span>
         </div>
       </div>
     );
@@ -323,9 +307,9 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-6 text-center">
         <VerifiedCVLogo className="w-10 h-10 mb-4" />
-        <h1 className="text-xl font-black text-slate-900">Attestation Link Unavailable</h1>
+        <h1 className="text-xl font-black text-slate-900">This link is unavailable</h1>
         <p className="text-xs text-slate-500 max-w-sm mt-1 mb-6">
-          {error || "This single-use chapter verification link has expired or has already been completed."}
+          {error || "This confirmation link has expired or was already used."}
         </p>
         <a
           href="/"
@@ -346,13 +330,13 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
           <VerifiedCVLogo />
           <span className="font-black text-xl tracking-tight text-slate-950">VerifiedCV</span>
           <span className="text-[11px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md hidden sm:inline-block">
-            Peer Attestation Network
+            Colleague confirmation
           </span>
         </div>
 
         <div className="flex items-center gap-1.5 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg font-medium">
           <Lock className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Encrypted Single-Use Link</span>
+          <span>Private link</span>
         </div>
       </header>
 
@@ -565,16 +549,23 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
                 </div>
               )}
 
-              {error && (
+              {blockedReason && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{blockedReason}</span>
+                </div>
+              )}
+              {submitError && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{error}</span>
+                  <span>{submitError}</span>
                 </div>
               )}
 
+              {linkedInProfile && !blockedReason && (
               <button
                 onClick={handleConfirm}
-                disabled={submitting || !linkedInProfile || !overlapPreview.ok || !attestorTitle.trim()}
+                disabled={submitting || !overlapPreview.ok || !attestorTitle.trim()}
                 className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs transition-all disabled:opacity-50"
               >
                 {submitting ? (
@@ -589,148 +580,40 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
                   </>
                 )}
               </button>
+              )}
             </div>
 
           </div>
         ) : (
-          /* HIGH-CONVERTING RECIPROCAL PLG SUCCESS CARD */
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-xs space-y-6 text-center animate-in fade-in zoom-in-95 duration-200">
-            <div className="w-14 h-14 bg-emerald-50 border border-emerald-200 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto shadow-2xs">
+          <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 sm:p-8 shadow-xs space-y-6 text-center">
+            <div className="w-14 h-14 bg-emerald-50 border border-emerald-200 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto">
               <CheckCircle2 className="w-7 h-7 stroke-[2.5]" />
             </div>
 
             <div className="space-y-1.5">
-              <h2 className="text-2xl font-black text-slate-950 tracking-tight">
-                Chapter Corroboration Anchored
+              <h2 className="text-2xl font-black text-[#0F172A] tracking-tight">
+                Confirmation saved
               </h2>
               <p className="text-xs text-slate-600 max-w-sm mx-auto leading-relaxed">
-                Thank you for corroborating {data.candidateName}'s tenure at {data.companyName}. Your confirmation is now certified in the public dossier ledger.
+                Thank you. {data.candidateName}&apos;s page now shows that a colleague confirmed their time at {data.companyName}. Your name stays off that page.
               </p>
-              {confirmedSig && (
-                <div className="inline-block mt-2 font-mono text-[11px] text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200">
-                  {confirmedSig}
-                </div>
-              )}
             </div>
 
-            {/* Reciprocal Loop Action Card: Turn Attestor into User */}
-            <div className="p-6 rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white text-left space-y-5 shadow-sm border border-slate-800">
-              <div className="flex items-center gap-2">
-                <RotateCcw className="w-4 h-4 text-emerald-400" />
-                <span className="text-xs font-black uppercase tracking-wider text-emerald-300">
-                  Reciprocal Corroboration
-                </span>
-              </div>
-              
-              <div className="space-y-1.5">
-                <h3 className="font-extrabold text-base text-white">
-                  Have {data.candidateName} vouch for your accomplishments too.
-                </h3>
-                <p className="text-xs text-slate-300 leading-relaxed font-normal">
-                  Start your own VerifiedCV dossier with <strong>{data.companyName}</strong> as a verified chapter. We will automatically link {data.candidateName} as an available peer voucher.
-                </p>
-              </div>
-
-              {/* Ingress Tabs: Resume PDF vs Quick Stamp */}
-              <div className="flex gap-1 p-1 bg-white/10 rounded-xl border border-white/10 text-xs font-bold">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("PDF")}
-                  className={`flex-1 py-1.5 rounded-lg transition-all cursor-pointer ${
-                    activeTab === "PDF" ? "bg-white text-slate-950 shadow-xs" : "text-slate-300 hover:text-white"
-                  }`}
-                >
-                  Option A: Drop Resume PDF
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("MANUAL")}
-                  className={`flex-1 py-1.5 rounded-lg transition-all cursor-pointer ${
-                    activeTab === "MANUAL" ? "bg-white text-slate-950 shadow-xs" : "text-slate-300 hover:text-white"
-                  }`}
-                >
-                  Option B: Quick Tenure Stamp
-                </button>
-              </div>
-
-              {activeTab === "PDF" ? (
-                <div className="space-y-3">
-                  <input
-                    ref={resumeInputRef}
-                    type="file"
-                    accept=".pdf"
-                    onChange={handleReciprocalResumeUpload}
-                    className="hidden"
-                  />
-                  <div
-                    onClick={() => resumeInputRef.current?.click()}
-                    className="p-5 rounded-xl border-2 border-dashed border-emerald-500/50 hover:border-emerald-400 bg-emerald-950/30 hover:bg-emerald-950/50 text-center cursor-pointer transition-all space-y-2 group"
-                  >
-                    <UploadCloud className="w-6 h-6 text-emerald-400 mx-auto group-hover:scale-105 transition-transform" />
-                    <div>
-                      <span className="text-xs font-bold text-white block">
-                        Drop your resume to parse full career timeline
-                      </span>
-                      <span className="text-[10px] text-slate-400 block mt-0.5">
-                        Matches {data.companyName} tenures and stages {data.candidateName} as your reciprocal peer voucher
-                      </span>
-                    </div>
-                  </div>
-                  {isUploadingResume && (
-                    <div className="flex items-center justify-center gap-2 text-xs text-emerald-400">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Ingesting resume and staging reciprocal proof...</span>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-3 text-xs">
-                  <div className="p-3 bg-white/5 border border-white/10 rounded-xl space-y-2">
-                    <div className="text-[11px] text-slate-300">
-                      Company: <strong className="text-white">{data.companyName}</strong> (Pre-anchored)
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-slate-400 block mb-1">Your Title During Tenure</label>
-                      <input
-                        type="text"
-                        value={attestorTitle}
-                        onChange={(e) => setAttestorTitle(e.target.value)}
-                        placeholder="e.g. Senior Director of Engineering"
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-emerald-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-slate-400 block mb-1">Tenure Window at {data.companyName}</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={manualStartYear}
-                          onChange={(e) => setManualStartYear(e.target.value)}
-                          placeholder="Start Year"
-                          className="w-1/2 bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-emerald-500 text-center font-mono"
-                        />
-                        <span className="text-slate-400">—</span>
-                        <input
-                          type="text"
-                          value={manualEndYear}
-                          onChange={(e) => setManualEndYear(e.target.value)}
-                          placeholder="End Year"
-                          className="w-1/2 bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-emerald-500 text-center font-mono"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={handleManualShellCreate}
-                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
-                  >
-                    <span>Create Profile & Queue Reciprocal Sign-Off</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              )}
-
+            <div className="p-5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] text-left space-y-3">
+              <h3 className="font-extrabold text-sm text-[#0F172A]">
+                Start your own page
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Upload a resume and claim a link. {data.candidateName} can confirm your chapter later. Nothing is marked corroborated until someone does.
+              </p>
+              <button
+                type="button"
+                onClick={startOwnPage}
+                className="w-full py-2.5 bg-[#059669] hover:bg-[#047857] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+              >
+                <span>Start your page</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
         )}
@@ -739,7 +622,7 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
 
       {/* Footer */}
       <footer className="py-6 border-t border-slate-200 text-center text-xs text-slate-500">
-        VerifiedCV • Forensic Proof Signals for High-Trust Candidates
+        VerifiedCV • A portfolio people can confirm
       </footer>
 
     </div>

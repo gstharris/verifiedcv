@@ -1,7 +1,8 @@
 # VerifiedCV Project Rules & AI Agent Directives
 
 ## 1. Core Identity & Architecture
-- **Product:** VerifiedCV (verifiedcv.app) — Candidate-enablement trust platform replacing unverified resumes with forensic proof signals.
+- **Product:** VerifiedCV (verifiedcv.app) — a candidate-owned professional profile with a portfolio and proof attached. Product decisions live in `docs/strategy.md` and `docs/product-teardown.md`. Read both before changing onboarding, public copy, trust labels, the assistant, portfolio presentation, or analytics.
+- **Decision rules from those docs:** Publish after upload, parse review, save, and auth. Missing verification must not block the page or stigmatize it. Public words must match the check. Use “Verified” only when the evidence supports it. One assistant call to action at a time. The activation event to measure is the first corroboration request sent, then completion, then a corroborator creating a profile. Recruiter accounts, ATS, and institution-confirmed verification stay deferred.
 - **Stack:** Next.js (App Router, Turbopack), TypeScript, Tailwind CSS.
 - **Visual Design:** Strictly clean, modern light theme. 
   - Pure white cards: `#FFFFFF`

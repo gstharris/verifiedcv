@@ -4,15 +4,18 @@ import React, { useState } from "react";
 import { ExternalLink, Plus, Trash2, UploadCloud } from "lucide-react";
 import {
   PORTFOLIO_ASSET_TYPES,
-  RECRUITER_LAYOUTS,
+  RESUME_TEMPLATES,
   assetForm,
   assetTypeLabel,
+  encodeDossierLayout,
   isAllowedPortfolioUpload,
   normalizePortfolioAsset,
+  parseDossierLayout,
   recruiterLayout,
   type PortfolioAsset,
   type PortfolioAssetType,
-  type RecruiterLayout
+  type ResumeTemplate,
+  type SamplePlacement
 } from "@/lib/portfolioAssets";
 
 export function DossierLayoutControl({
@@ -21,36 +24,55 @@ export function DossierLayoutControl({
   assetCount,
   onLayoutChange
 }: {
-  layout: RecruiterLayout;
+  layout: string;
   saved: boolean;
   assetCount: number;
-  onLayoutChange: (layout: RecruiterLayout) => void;
+  onLayoutChange: (layout: string) => void;
 }) {
-  const current = recruiterLayout(layout);
+  const current = parseDossierLayout(layout);
+  const description = recruiterLayout(layout).summary;
+  const choiceClass = (active: boolean) =>
+    `px-2 py-1 rounded-md text-[11px] font-bold ${
+      active ? "bg-emerald-50 text-[#059669]" : "text-slate-500 hover:text-[#0F172A]"
+    } ${saved ? "cursor-pointer" : "cursor-pointer"}`;
+
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Sample work on the page</span>
-      <div className="inline-flex p-0.5 rounded-lg bg-white border border-[#E2E8F0]">
-        {RECRUITER_LAYOUTS.map((option) => {
-          const active = layout === option.id;
-          return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Page</span>
+        <div className="inline-flex flex-wrap p-0.5 rounded-lg bg-white border border-[#E2E8F0]">
+          {RESUME_TEMPLATES.map((option) => (
             <button
               key={option.id}
               type="button"
               disabled={!saved}
-              onClick={() => onLayoutChange(option.id)}
-              className={`px-2 py-1 rounded-md text-[11px] font-bold ${
-                active ? "bg-emerald-50 text-[#059669]" : "text-slate-500 hover:text-[#0F172A]"
-              } ${saved ? "cursor-pointer" : "opacity-70 cursor-pointer"}`}
+              onClick={() => onLayoutChange(encodeDossierLayout(option.id, current.placement))}
+              className={choiceClass(current.template === option.id)}
             >
               {option.title}
             </button>
-          );
-        })}
+          ))}
+        </div>
       </div>
-      <span className="text-[11px] text-slate-500">
-        {assetCount === 0 ? "Nothing added, so this stays off the public page." : current.summary}
-      </span>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Sample work</span>
+        <div className="inline-flex p-0.5 rounded-lg bg-white border border-[#E2E8F0]">
+          {(["top", "bottom"] as SamplePlacement[]).map((placement) => (
+            <button
+              key={placement}
+              type="button"
+              disabled={!saved}
+              onClick={() => onLayoutChange(encodeDossierLayout(current.template as ResumeTemplate, placement))}
+              className={choiceClass(current.placement === placement)}
+            >
+              {placement === "top" ? "Top" : "Bottom"}
+            </button>
+          ))}
+        </div>
+        <span className="text-[11px] text-slate-500">
+          {assetCount === 0 ? "Nothing added yet, so this stays off the public page." : description}
+        </span>
+      </div>
     </div>
   );
 }

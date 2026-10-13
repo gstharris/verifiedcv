@@ -1,4 +1,4 @@
-import { CheckCircle2, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { assetTypeLabel, type PortfolioAsset } from "@/lib/portfolioAssets";
 
 export default function PortfolioAssetsGallery({
@@ -25,9 +25,8 @@ export default function PortfolioAssetsGallery({
                 {assetTypeLabel(asset.type)}
               </span>
               {asset.verificationStatus !== "unverified" && (
-                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700">
-                  <CheckCircle2 className="w-3 h-3" />
-                  {asset.verificationStatus === "registry" ? "Public record" : "Public link"}
+                <span className="text-[10px] font-semibold text-slate-500">
+                  {asset.verificationStatus === "registry" ? "Issuer-linked" : "Public link"}
                 </span>
               )}
             </div>

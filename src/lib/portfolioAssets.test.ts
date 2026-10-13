@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetForm, assessPortfolioAssetLink, isAllowedPortfolioUpload, normalizePortfolioAsset, recruiterLayout, RECRUITER_LAYOUTS } from "./portfolioAssets";
+import { assetForm, assessPortfolioAssetLink, dossierSectionOrder, highlightLines, isAllowedPortfolioUpload, normalizePortfolioAsset, parseDossierLayout, publicRegistryLabel, recruiterLayout } from "./portfolioAssets";
 
 describe("portfolio asset link checks", () => {
   it("marks Credly certification URLs as registry links", () => {
@@ -11,6 +11,12 @@ describe("portfolio asset link checks", () => {
     expect(assessPortfolioAssetLink("https://patents.google.com/patent/US1234567", "patent").verificationStatus).toBe(
       "registry"
     );
+  });
+
+  it("reserves issuer-linked for credential and patent records", () => {
+    expect(publicRegistryLabel("credly")).toBe("Issuer-linked");
+    expect(publicRegistryLabel("uspto")).toBe("Issuer-linked");
+    expect(publicRegistryLabel("github")).toBe("Public link");
   });
 
   it("treats a generic project URL as a saved public link", () => {
@@ -48,21 +54,22 @@ describe("work sample forms", () => {
 });
 
 describe("recruiter layouts", () => {
-  it("puts sample work at the bottom by default and at the top for the other choices", () => {
-    expect(recruiterLayout("traditional").title).toBe("Bottom");
-    expect(recruiterLayout("traditional").blocks.at(-1)).toBe("work");
-    expect(recruiterLayout("traditional").blocks[0]).toBe("experience");
-    expect(recruiterLayout("hybrid").title).toBe("Top");
-    expect(recruiterLayout("hybrid").blocks[0]).toBe("work");
-    expect(recruiterLayout("creative").title).toBe("Top grid");
-    expect(recruiterLayout("creative").featured).toBe(true);
-    expect(recruiterLayout("missing").id).toBe("traditional");
+  it("keeps older layout ids and separates the resume template from sample work", () => {
+    expect(parseDossierLayout("traditional")).toMatchObject({ template: "summary", placement: "bottom" });
+    expect(parseDossierLayout("hybrid").placement).toBe("top");
+    expect(parseDossierLayout("creative").placement).toBe("top");
+    expect(recruiterLayout("summary:top").blocks[0]).toBe("work");
+    expect(dossierSectionOrder("experience:bottom")).toEqual(["experience", "skills", "education", "work"]);
+    expect(dossierSectionOrder("summary-highlights:top").slice(0, 3)).toEqual(["work", "highlights", "summary"]);
+    expect(dossierSectionOrder("highlights:bottom")).not.toContain("summary");
   });
 
-  it("only places work samples first or last, matching the public page", () => {
-    for (const layout of RECRUITER_LAYOUTS) {
-      const index = layout.blocks.indexOf("work");
-      expect(index === 0 || index === layout.blocks.length - 1).toBe(true);
-    }
+  it("pulls one highlight line from each chapter", () => {
+    expect(
+      highlightLines([
+        { company: "Ge-on", claims: ["Built the onboarding flow for new operators."] },
+        { company: "Yahoo", claims: [] }
+      ])
+    ).toEqual([{ company: "Ge-on", line: "Built the onboarding flow for new operators." }]);
   });
 });

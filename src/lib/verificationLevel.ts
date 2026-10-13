@@ -6,20 +6,26 @@ export type VerificationCounts = {
 
 export type VerificationStatus = {
   level: 0 | 1 | 2 | 3;
-  label: "Self-Attested" | "Verified" | "Verified+";
+  label: "On your profile" | "Corroborated" | "Multi-source";
 };
 
 export function getVerificationStatus(counts: VerificationCounts): VerificationStatus {
   if (counts.peers >= 3 || (counts.peers >= 2 && counts.docs >= 1)) {
-    return { level: 3, label: "Verified+" };
+    return { level: 3, label: "Multi-source" };
   }
   if (counts.peers >= 2 || (counts.peers >= 1 && counts.docs >= 1)) {
-    return { level: 2, label: "Verified+" };
+    return { level: 2, label: "Multi-source" };
   }
   if (counts.peers === 1 || counts.docs >= 1) {
-    return { level: 1, label: "Verified" };
+    return { level: 1, label: "Corroborated" };
   }
-  return { level: 0, label: "Self-Attested" };
+  return { level: 0, label: "On your profile" };
+}
+
+export function publicChapterLabel(level: number): "Corroborated" | "Multi-source" | null {
+  if (level >= 2) return "Multi-source";
+  if (level === 1) return "Corroborated";
+  return null;
 }
 
 export function previewVerificationStatus(

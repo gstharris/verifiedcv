@@ -14,6 +14,18 @@ describe("corroboration display", () => {
     ).toBe("Confirmed by a Senior Director of Core Engineering at Yahoo");
   });
 
+  it("names a work email without calling it verified", () => {
+    expect(
+      corroborationHeadline("Ge-on", [{ name: "Corporate Email Verification" }])
+    ).toBe("Work email confirmed at Ge-on");
+    expect(
+      corroborationHeadline("Ge-on", [
+        { name: "Corporate Email Verification" },
+        { name: "Engineering Manager" }
+      ])
+    ).toBe("Work email and 1 colleague at Ge-on");
+  });
+
   it("rolls up many confirmations into a LinkedIn member count", () => {
     const seven = Array.from({ length: 7 }, (_, i) => ({ name: `Director ${i}` }));
     expect(corroborationHeadline("Yahoo", seven)).toBe(

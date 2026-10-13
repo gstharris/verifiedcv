@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextPortfolioVerificationStep } from "./verificationQueue";
+import { nextPortfolioVerificationStep, verificationStatusLine } from "./verificationQueue";
 
 describe("portfolio verification queue", () => {
   it("asks for email before any company chapter", () => {
@@ -41,5 +41,21 @@ describe("portfolio verification queue", () => {
       chapters: [{ id: "m1", company: "Ge-on", level: 2 }]
     });
     expect(next.id).toBe("phone");
+  });
+
+  it("summarizes what is confirmed and the next two checks", () => {
+    expect(
+      verificationStatusLine({
+        emailVerified: true,
+        phoneVerified: true,
+        linkedinVerified: false,
+        chapters: [
+          { company: "Ge-on", level: 1 },
+          { company: "SCD Enterprises / PairedRight", level: 0 }
+        ]
+      })
+    ).toBe(
+      "Email, phone, and work at Ge-on are confirmed. Verify LinkedIn, or your work at SCD Enterprises / PairedRight, next."
+    );
   });
 });

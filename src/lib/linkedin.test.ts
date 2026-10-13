@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createOAuthState,
   isSafeNextPath,
+  confirmedLinkedInLabel,
   mapUserInfoToIdentity,
   parseOAuthState,
   sanitizeNextPath
@@ -42,5 +43,13 @@ describe("linkedin helpers", () => {
     expect(identity?.emailVerified).toBe(true);
     expect(mapUserInfoToIdentity({ name: "Missing Sub" })).toBeNull();
     expect(mapUserInfoToIdentity({ sub: "linkedin-member-2", email: "alex@example.com" })?.name).toBe("alex");
+  });
+
+  it("shows the confirmed handle and never a typed url", () => {
+    expect(confirmedLinkedInLabel({ vanityName: "gstharris", name: "Graham Harris" })).toBe("gstharris");
+    expect(confirmedLinkedInLabel({ profileUrl: "https://www.linkedin.com/in/gstharris/", name: "Graham Harris" })).toBe(
+      "gstharris"
+    );
+    expect(confirmedLinkedInLabel({ name: "Graham Harris" })).toBe("Graham Harris");
   });
 });

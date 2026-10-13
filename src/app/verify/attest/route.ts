@@ -146,7 +146,7 @@ export async function PUT(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: "Attestation confirmed and anchored to Vault.",
+      message: "Chapter confirmed.",
       signature: cryptographicSignature,
     });
   } catch (error: any) {

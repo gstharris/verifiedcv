@@ -12,6 +12,8 @@ export type LinkedInIdentity = {
   email?: string;
   emailVerified?: boolean;
   picture?: string;
+  vanityName?: string;
+  profileUrl?: string;
   authenticatedAt: string;
 };
 
@@ -137,6 +139,17 @@ export function mapUserInfoToIdentity(userInfo: Record<string, unknown>): Linked
 
   if (!sub) return null;
 
+  const vanityName = linkedInHandle(
+    typeof userInfo.vanity_name === "string"
+      ? userInfo.vanity_name
+      : typeof userInfo.vanityName === "string"
+        ? userInfo.vanityName
+        : ""
+  );
+  const profileUrl = linkedInProfileUrl(
+    typeof userInfo.profile === "string" ? userInfo.profile : vanityName
+  );
+
   return {
     sub,
     name,
@@ -145,6 +158,28 @@ export function mapUserInfoToIdentity(userInfo: Record<string, unknown>): Linked
     email: typeof userInfo.email === "string" ? userInfo.email : undefined,
     emailVerified: userInfo.email_verified === true,
     picture: typeof userInfo.picture === "string" ? userInfo.picture : undefined,
+    vanityName: vanityName || undefined,
+    profileUrl,
     authenticatedAt: new Date().toISOString()
   };
+}
+
+export function linkedInHandle(value: string) {
+  const trimmed = String(value || "").trim();
+  const fromUrl = trimmed.match(/linkedin\.com\/(?:in|pub)\/([^/?#]+)/i);
+  const handle = decodeURIComponent((fromUrl?.[1] || trimmed).replace(/\/$/, ""));
+  if (!/^[A-Za-z0-9-]{3,100}$/.test(handle)) return "";
+  if (/linkedin/i.test(handle)) return "";
+  return handle;
+}
+
+export function linkedInProfileUrl(value: string) {
+  const handle = linkedInHandle(value);
+  return handle ? `https://www.linkedin.com/in/${handle}` : undefined;
+}
+
+export function confirmedLinkedInLabel(identity: { name?: string; vanityName?: string; profileUrl?: string }) {
+  const handle = linkedInHandle(identity.vanityName || "") || linkedInHandle(identity.profileUrl || "");
+  if (handle) return handle;
+  return String(identity.name || "LinkedIn").trim() || "LinkedIn";
 }

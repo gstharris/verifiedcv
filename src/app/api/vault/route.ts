@@ -363,6 +363,10 @@ export async function POST(req: NextRequest) {
           );
           if (assetsInsertError) {
             console.error("Could not save portfolio assets:", assetsInsertError.message);
+            return NextResponse.json(
+              { error: `Sample work did not save: ${assetsInsertError.message}` },
+              { status: 500 }
+            );
           }
         }
 

@@ -9,42 +9,84 @@ export const PORTFOLIO_ASSET_TYPES = [
 ] as const;
 
 export type PortfolioAssetType = (typeof PORTFOLIO_ASSET_TYPES)[number];
-export type RecruiterLayout = "traditional" | "hybrid" | "creative";
-export type LayoutBlock = "experience" | "skills" | "education" | "work";
+export type ResumeTemplate = "summary" | "experience" | "summary-highlights" | "highlights";
+export type SamplePlacement = "top" | "bottom";
+export type RecruiterLayout = string;
+export type LayoutBlock = "summary" | "highlights" | "experience" | "skills" | "education" | "work";
 export type AssetVerificationStatus = "unverified" | "link_checked" | "registry";
 
-export const RECRUITER_LAYOUTS: {
-  id: RecruiterLayout;
-  title: string;
-  summary: string;
-  featured: boolean;
-  blocks: LayoutBlock[];
-}[] = [
-  {
-    id: "traditional",
-    title: "Bottom",
-    summary: "Sample work sits after experience.",
-    featured: false,
-    blocks: ["experience", "skills", "education", "work"]
-  },
-  {
-    id: "hybrid",
-    title: "Top",
-    summary: "Sample work sits before experience.",
-    featured: false,
-    blocks: ["work", "experience", "skills", "education"]
-  },
-  {
-    id: "creative",
-    title: "Top grid",
-    summary: "Sample work is a two-column grid before experience.",
-    featured: true,
-    blocks: ["work", "experience", "skills", "education"]
-  }
+export const RESUME_TEMPLATES: { id: ResumeTemplate; title: string; summary: string }[] = [
+  { id: "summary", title: "Summary", summary: "Summary, then experience, skills, and education." },
+  { id: "experience", title: "No summary", summary: "Experience first. The summary stays off the public page." },
+  { id: "summary-highlights", title: "Summary and highlights", summary: "Summary, a few highlight lines, then experience." },
+  { id: "highlights", title: "Highlights", summary: "Highlight lines, then experience. Skills stay at the bottom." }
 ];
 
+export function encodeDossierLayout(template: ResumeTemplate, placement: SamplePlacement) {
+  return `${template}:${placement}`;
+}
+
+export function parseDossierLayout(id?: string | null) {
+  const raw = String(id || "").trim();
+  if (raw === "hybrid" || raw === "creative") {
+    return { template: "summary" as ResumeTemplate, placement: "top" as SamplePlacement, id: "summary:top" };
+  }
+  if (raw === "traditional" || !raw) {
+    return { template: "summary" as ResumeTemplate, placement: "bottom" as SamplePlacement, id: "summary:bottom" };
+  }
+  const [templateRaw, placementRaw] = raw.split(":");
+  const template = RESUME_TEMPLATES.some((option) => option.id === templateRaw)
+    ? (templateRaw as ResumeTemplate)
+    : "summary";
+  const placement: SamplePlacement = placementRaw === "top" ? "top" : "bottom";
+  return { template, placement, id: encodeDossierLayout(template, placement) };
+}
+
+export function dossierSectionOrder(id?: string | null): LayoutBlock[] {
+  const parsed = parseDossierLayout(id);
+  const blocks: LayoutBlock[] = [];
+  if (parsed.placement === "top") blocks.push("work");
+  if (parsed.template === "highlights" || parsed.template === "summary-highlights") blocks.push("highlights");
+  if (parsed.template === "summary" || parsed.template === "summary-highlights") blocks.push("summary");
+  blocks.push("experience", "skills", "education");
+  if (parsed.placement === "bottom") blocks.push("work");
+  return blocks;
+}
+
+export function dossierSectionRank(id?: string | null) {
+  const rank: Record<string, number> = {};
+  dossierSectionOrder(id).forEach((block, index) => {
+    rank[block] = index + 1;
+  });
+  if (!rank.summary) rank.summary = 20;
+  if (!rank.highlights) rank.highlights = 21;
+  if (!rank.work) rank.work = 22;
+  return rank;
+}
+
+export function highlightLines<T extends { company?: string; claims?: string[] }>(chapters: T[]) {
+  return chapters
+    .map((chapter) => ({
+      company: String(chapter.company || "").trim(),
+      line: (chapter.claims || []).map((claim) => String(claim || "").trim()).find(Boolean) || ""
+    }))
+    .filter((item) => item.line)
+    .slice(0, 4);
+}
+
 export function recruiterLayout(id?: string | null) {
-  return RECRUITER_LAYOUTS.find((layout) => layout.id === id) || RECRUITER_LAYOUTS[0];
+  const parsed = parseDossierLayout(id);
+  const template = RESUME_TEMPLATES.find((option) => option.id === parsed.template) || RESUME_TEMPLATES[0];
+  const placementLabel = parsed.placement === "top" ? "Sample work sits at the top." : "Sample work sits at the bottom.";
+  return {
+    id: parsed.id,
+    title: parsed.placement === "top" ? "Top" : "Bottom",
+    summary: `${template.summary} ${placementLabel}`,
+    featured: parsed.placement === "top",
+    blocks: dossierSectionOrder(id),
+    template: parsed.template,
+    placement: parsed.placement
+  };
 }
 
 const PORTFOLIO_UPLOAD_EXTENSIONS = ["pdf", "png", "jpg", "jpeg", "webp", "ppt", "pptx", "key", "zip"];
@@ -186,6 +228,11 @@ export function assessPortfolioAssetLink(url: string, type: PortfolioAssetType) 
     verificationStatus: "link_checked" as const,
     verificationNote: "Public link saved. We did not independently certify this work."
   };
+}
+
+export function publicRegistryLabel(type: string) {
+  if (type === "credly" || type === "uspto") return "Issuer-linked";
+  return "Public link";
 }
 
 export function normalizePortfolioAsset(raw: Partial<PortfolioAsset> & { title?: string }): PortfolioAsset | null {

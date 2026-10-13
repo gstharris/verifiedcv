@@ -71,6 +71,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const owner = await supabase
+      .from("candidates")
+      .select("email")
+      .eq("handle", String(candidateHandle).toLowerCase().trim())
+      .maybeSingle();
+    if (emailsMatch(owner.data?.email, String(attestorEmail))) {
+      return NextResponse.json(
+        { success: false, error: "You cannot ask your own email to confirm this chapter." },
+        { status: 400 }
+      );
+    }
+
     const token = crypto.randomBytes(16).toString("hex");
     const row = {
       token,
@@ -105,13 +117,13 @@ export async function POST(req: NextRequest) {
       const { error: emailError } = await resend.emails.send({
         from: "VerifiedCV <verify@verifiedcv.app>",
         to: attestorEmail,
-        subject: `${row.candidate_name || "A colleague"} is requesting peer verification for their time at ${row.company_name}`,
+        subject: `${row.candidate_name || "A colleague"} asked you to confirm their time at ${row.company_name}`,
         html: `
           <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2>Peer Verification Request</h2>
-            <p><strong>${row.candidate_name}</strong> asked you to corroborate their experience at <strong>${row.company_name}</strong>.</p>
+            <h2>Confirm a chapter</h2>
+            <p><strong>${row.candidate_name}</strong> asked you to confirm their time at <strong>${row.company_name}</strong>. Your name stays off the public page.</p>
             <div style="margin: 30px 0;">
-              <a href="${attestUrl}" style="background-color: #059669; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Review & Verify Claims</a>
+              <a href="${attestUrl}" style="background-color: #059669; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Review and confirm</a>
             </div>
             <p style="color: #64748b; font-size: 12px;">If you did not work with them, ignore this email.</p>
           </div>
@@ -144,15 +156,30 @@ export async function GET(req: NextRequest) {
 
     const token = new URL(req.url).searchParams.get("token");
     if (!token) {
-      return NextResponse.json({ success: false, error: "Invalid or expired verification token." }, { status: 404 });
+      return NextResponse.json({ success: false, error: "This confirmation link has expired or was already used." }, { status: 404 });
     }
 
     const { data, error } = await supabase.from("attestations").select("*").eq("token", token).maybeSingle();
     if (error || !data) {
-      return NextResponse.json({ success: false, error: "Invalid or expired verification token." }, { status: 404 });
+      return NextResponse.json({ success: false, error: "This confirmation link has expired or was already used." }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, data: mapAttestation(data) });
+    const session = getLinkedInSessionFromRequest(req);
+    let blockedReason: string | null = null;
+    if (session?.sub) {
+      const owner = await supabase
+        .from("candidates")
+        .select("email, linkedin_sub")
+        .eq("handle", String(data.candidate_handle || "").toLowerCase())
+        .maybeSingle();
+      if (owner.data?.linkedin_sub && owner.data.linkedin_sub === session.sub) {
+        blockedReason = "This LinkedIn account is the one on the page, so it cannot confirm this chapter. Ask someone else.";
+      } else if (emailsMatch(owner.data?.email, session.email)) {
+        blockedReason = "The email on this LinkedIn account matches the page, so you cannot confirm your own chapter.";
+      }
+    }
+
+    return NextResponse.json({ success: true, data: mapAttestation(data), blockedReason });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error?.message || "Server retrieval failure." }, { status: 500 });
   }
