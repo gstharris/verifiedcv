@@ -91,26 +91,71 @@ export function decodeStoredHighlights(value?: string | null) {
   }
 }
 
+const PAGE_MARK = "vcv-page:";
+
 export function candidateSummary(summaryStatement?: string | null, bioSummary?: string | null) {
   const summary = String(summaryStatement || "").trim();
   if (summary) return summary;
   const bio = String(bioSummary || "");
-  if (bio.startsWith(HIGHLIGHT_MARK)) return "";
+  if (bio.startsWith(HIGHLIGHT_MARK) || bio.startsWith(PAGE_MARK)) return "";
   return bio.trim();
 }
 
-export function workPreviewUrl(url?: string) {
+export function encodeStoredPage(input: { highlights?: unknown; portfolioAssets?: unknown }) {
+  const highlights = normalizeHighlights(input.highlights);
+  const assets = (Array.isArray(input.portfolioAssets) ? input.portfolioAssets : [])
+    .map((asset) => normalizePortfolioAsset(asset as Partial<PortfolioAsset>))
+    .filter((asset): asset is PortfolioAsset => Boolean(asset));
+  if (!highlights.length && !assets.length) return "";
+  return `${PAGE_MARK}${JSON.stringify({ highlights, assets })}`;
+}
+
+export function decodeStoredPage(value?: string | null) {
+  const raw = String(value || "");
+  if (!raw.startsWith(PAGE_MARK)) return null;
+  try {
+    const parsed = JSON.parse(raw.slice(PAGE_MARK.length)) as { highlights?: unknown; assets?: unknown };
+    return {
+      highlights: normalizeHighlights(parsed.highlights),
+      assets: (Array.isArray(parsed.assets) ? parsed.assets : [])
+        .map((asset) => normalizePortfolioAsset(asset as Partial<PortfolioAsset>))
+        .filter((asset): asset is PortfolioAsset => Boolean(asset))
+    };
+  } catch {
+    return null;
+  }
+}
+
+export type WorkPreview = { kind: "image" | "frame" | "shot"; src: string };
+
+export function workPreview(url?: string): WorkPreview | null {
   const trimmed = String(url || "").trim();
-  if (!trimmed) return "";
-  if (/\.(png|jpe?g|gif|webp)(\?|#|$)/i.test(trimmed)) return trimmed;
-  if (/\.(pdf|ppt|pptx|key|zip)(\?|#|$)/i.test(trimmed)) return "";
+  if (!trimmed) return null;
+  if (/\.(png|jpe?g|gif|webp)(\?|#|$)/i.test(trimmed)) return { kind: "image", src: trimmed };
+  const slides = trimmed.match(/docs\.google\.com\/presentation\/d\/([^/?#]+)/i);
+  if (slides) {
+    return {
+      kind: "frame",
+      src: `https://docs.google.com/presentation/d/${slides[1]}/embed?start=false&loop=false&rm=minimal`
+    };
+  }
+  if (/\.pdf(\?|#|$)/i.test(trimmed)) return { kind: "frame", src: `${trimmed.split("#")[0]}#page=1&view=FitH` };
+  if (/\.(ppt|pptx)(\?|#|$)/i.test(trimmed)) {
+    return { kind: "frame", src: `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(trimmed)}` };
+  }
   try {
     const parsed = new URL(trimmed);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
-    return `https://s.wordpress.com/mshots/v1/${encodeURIComponent(trimmed)}?w=480`;
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return { kind: "shot", src: `https://s.wordpress.com/mshots/v1/${encodeURIComponent(trimmed)}?w=960` };
   } catch {
-    return "";
+    return null;
   }
+}
+
+export function workPreviewUrl(url?: string) {
+  const preview = workPreview(url);
+  if (!preview || preview.kind === "frame") return "";
+  return preview.src;
 }
 
 export function recruiterLayout(id?: string | null) {

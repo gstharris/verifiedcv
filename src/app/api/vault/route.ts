@@ -11,7 +11,7 @@ import {
   hashOwnerToken
 } from "@/lib/handleOwner";
 import { issueRestoreCode } from "@/lib/handleRestore";
-import { candidateSummary, decodeStoredHighlights, encodeStoredHighlights, normalizePortfolioAsset, type PortfolioAsset } from "@/lib/portfolioAssets";
+import { candidateSummary, decodeStoredHighlights, decodeStoredPage, encodeStoredPage, normalizePortfolioAsset, type PortfolioAsset } from "@/lib/portfolioAssets";
 
 export const dynamic = "force-dynamic";
 
@@ -65,14 +65,8 @@ export async function GET(req: NextRequest) {
           endorsedByMilestone.set(row.milestone_id, [...existing, ...next.map(String)]);
         }
 
-        const record = {
-          handle: candidate.handle,
-          fullName: candidate.full_name,
-          headline: candidate.headline,
-          summaryStatement: candidateSummary(candidate.summary_statement, candidate.bio_summary),
-          highlights: decodeStoredHighlights(candidate.bio_summary),
-          preferredLayout: candidate.preferred_layout || "traditional",
-          portfolioAssets: (assetsRes.error ? [] : assetsRes.data || [])
+        const storedPage = decodeStoredPage(candidate.bio_summary);
+        const tableAssets = (assetsRes.error ? [] : assetsRes.data || [])
             .map((asset: {
               id: string;
               title: string;
@@ -92,7 +86,15 @@ export async function GET(req: NextRequest) {
                 issuedAt: asset.issued_at
               })
             )
-            .filter(Boolean),
+            .filter(Boolean);
+        const record = {
+          handle: candidate.handle,
+          fullName: candidate.full_name,
+          headline: candidate.headline,
+          summaryStatement: candidateSummary(candidate.summary_statement, candidate.bio_summary),
+          highlights: storedPage ? storedPage.highlights : decodeStoredHighlights(candidate.bio_summary),
+          preferredLayout: candidate.preferred_layout || "traditional",
+          portfolioAssets: tableAssets.length ? tableAssets : storedPage?.assets || [],
           contact: {
             email: candidate.email,
             phone: candidate.phone,
@@ -266,7 +268,10 @@ export async function POST(req: NextRequest) {
             full_name: payload.fullName,
             headline: payload.headline,
             summary_statement: payload.summaryStatement,
-            bio_summary: encodeStoredHighlights(payload.highlights) || payload.summaryStatement,
+            bio_summary: encodeStoredPage({
+              highlights: payload.highlights,
+              portfolioAssets: payload.portfolioAssets
+            }) || payload.summaryStatement,
             email: payload.contact?.email || "",
             phone: payload.contact?.phone,
             linkedin: payload.contact?.linkedin,
@@ -345,9 +350,9 @@ export async function POST(req: NextRequest) {
           .map((asset: Partial<PortfolioAsset>) => normalizePortfolioAsset(asset))
           .filter(Boolean) as PortfolioAsset[];
         const { error: assetsDeleteError } = await rawSupabase.from("portfolio_assets").delete().eq("candidate_handle", handle);
-        if (assetsDeleteError && !/portfolio_assets/i.test(assetsDeleteError.message || "")) {
+        if (assetsDeleteError) {
           console.error("Could not clear portfolio assets:", assetsDeleteError.message);
-        } else if (!assetsDeleteError && assetRows.length > 0) {
+        } else if (assetRows.length > 0) {
           const { error: assetsInsertError } = await rawSupabase.from("portfolio_assets").insert(
             assetRows.map((asset) => ({
               id: asset.id,

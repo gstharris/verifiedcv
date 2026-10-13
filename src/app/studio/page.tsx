@@ -56,7 +56,7 @@ import { corporateEmailMatchesCompany } from "@/lib/corporateEmail";
 import { nextPortfolioVerificationStep, verificationStatusLine } from "@/lib/verificationQueue";
 import { dossierSectionRank, parseDossierLayout, publicRegistryLabel, type PortfolioAsset } from "@/lib/portfolioAssets";
 import { LOOP_EVENTS, consumeCorroboratorRef } from "@/lib/corroborationLoop";
-import { confirmedLinkedInLabel, linkedInHandle, linkedInProfileUrl } from "@/lib/linkedin";
+import { confirmedLinkedInLabel, linkedInHandle, linkedInProfileUrl, preferLinkedInProfile } from "@/lib/linkedin";
 import { flagEmoji, parseLocation } from "@/lib/locations";
 import { resolvePlace, suggestPlaces } from "@/lib/places";
 import { hydrateChapter, packChapter } from "@/lib/chapterMeta";
@@ -67,9 +67,13 @@ import PortfolioStudioPanel, { DossierLayoutControl } from "@/components/Portfol
 import { captureEvent, identifyHandle } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 
-function linkedInFields(profile: { name?: string; vanityName?: string; profileUrl?: string }) {
+function linkedInFields(
+  profile: { name?: string; vanityName?: string; profileUrl?: string },
+  existing?: string
+) {
+  const fromProfile = profile.profileUrl || (profile.vanityName ? linkedInProfileUrl(profile.vanityName) : "") || "";
   return {
-    linkedin: confirmedLinkedInLabel(profile),
+    linkedin: preferLinkedInProfile(existing || "", fromProfile || confirmedLinkedInLabel(profile)),
     linkedinVerified: true as const
   };
 }
@@ -124,12 +128,43 @@ function LocationField({
   const [draft, setDraft] = useState(value);
   const [open, setOpen] = useState(false);
   const [touched, setTouched] = useState(false);
+  const [remote, setRemote] = useState<ReturnType<typeof suggestPlaces>>([]);
+  const suggestionsRef = React.useRef<ReturnType<typeof suggestPlaces>>([]);
   useEffect(() => {
     setDraft(parseLocation(value)?.label || value);
   }, [value]);
+  useEffect(() => {
+    const query = draft.trim();
+    if (!open || query.length < 2) {
+      setRemote([]);
+      return;
+    }
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/places?q=${encodeURIComponent(query)}`, { signal: controller.signal });
+        const data = await res.json();
+        if (Array.isArray(data.places)) setRemote(data.places);
+      } catch {
+        // Local matches still show while the city search is unavailable.
+      }
+    }, 180);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeout);
+    };
+  }, [draft, open]);
   const resolved = resolvePlace(draft);
-  const suggestions = open ? suggestPlaces(draft) : [];
-  const notice = touched && draft.trim() && !resolved ? "Choose a city, like Paris or Los Angeles, CA." : "";
+  const local = open ? suggestPlaces(draft) : [];
+  const seen = new Set<string>();
+  const suggestions = [...local, ...remote].filter((place) => {
+    const key = place.label.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 6);
+  suggestionsRef.current = suggestions;
+  const notice = touched && draft.trim() && !resolved && suggestions.length === 0 ? "Choose a city from the list." : "";
   return (
     <div className="relative p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC]">
       <div className="flex items-center gap-2">
@@ -147,10 +182,16 @@ function LocationField({
           }}
           onFocus={() => saved && setOpen(true)}
           onBlur={() => {
-            window.setTimeout(() => setOpen(false), 150);
-            setTouched(true);
-            const place = resolvePlace(draft);
-            if (place) onChange(place.label);
+            window.setTimeout(() => {
+              setOpen(false);
+              setTouched(true);
+              const listed = suggestionsRef.current;
+              const place = resolvePlace(draft) || (listed.length === 1 ? listed[0] : null);
+              if (place) {
+                onChange(place.label);
+                setDraft(place.label);
+              }
+            }, 150);
           }}
           placeholder="City"
           className="w-full text-xs bg-transparent focus:outline-none font-medium"
@@ -172,7 +213,9 @@ function LocationField({
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-[#F8FAFC] cursor-pointer"
             >
               <span className="text-sm leading-none">{place.countryCode ? flagEmoji(place.countryCode) : "🌐"}</span>
-              <span className="font-semibold text-[#0F172A]">{place.label}</span>
+              <span className="min-w-0">
+                <span className="block font-semibold text-[#0F172A]">{place.label}</span>
+              </span>
             </button>
           ))}
         </div>
@@ -484,7 +527,7 @@ export default function StudioPage() {
               name: user.user_metadata?.full_name || user.user_metadata?.name,
               vanityName: user.user_metadata?.preferred_username,
               profileUrl: user.user_metadata?.url
-            }));
+            }, prev.linkedin));
             
             if (!prev.linkedinVerified && isPortfolioSaved) {
               const savedRec = readStudioRecord<any>(STUDIO_SAVED_KEY);
@@ -527,7 +570,7 @@ export default function StudioPage() {
               name: user.user_metadata?.full_name || user.user_metadata?.name,
               vanityName: user.user_metadata?.preferred_username,
               profileUrl: user.user_metadata?.url
-            }));
+            }, prev.linkedin));
           }
           return nextContact;
         });
@@ -570,8 +613,9 @@ export default function StudioPage() {
       }
       return [{ label: "Save and publish", action: "save_portfolio" }];
     }
-    return [{ label: "Continue", action: "continue_verification" }];
-  }, [isPortfolioSaved, milestones, summaryStatement]);
+    const label = nextVerifyStep.id === "done" ? "Ask a colleague" : nextVerifyStep.title;
+    return [{ label, action: "continue_verification" }];
+  }, [isPortfolioSaved, milestones, nextVerifyStep, summaryStatement]);
 
   const buildPortfolioPayload = () => ({
     handle: handle.toLowerCase().trim(),
@@ -695,7 +739,19 @@ export default function StudioPage() {
         if (Array.isArray(data.highlights)) setHighlights(data.highlights);
         if (data.skills) setSkills(data.skills);
         if (data.education) setEducation(data.education);
-        if (data.contact) setContact((prev) => ({ ...prev, ...data.contact }));
+        if (data.contact) {
+          setContact((prev) => ({
+            ...prev,
+            ...data.contact,
+            email: data.contact.email || prev.email,
+            phone: data.contact.phone || prev.phone,
+            location: prev.location || data.contact.location,
+            linkedin: preferLinkedInProfile(prev.linkedin, data.contact.linkedin || ""),
+            emailVerified: prev.emailVerified || Boolean(data.contact.emailVerified),
+            phoneVerified: prev.phoneVerified || Boolean(data.contact.phoneVerified),
+            linkedinVerified: prev.linkedinVerified || Boolean(data.contact.linkedinVerified)
+          }));
+        }
 
         setActiveTab("canvas");
         captureEvent("resume_parsed", { source: "studio_paste", chapters: data.milestones.length });
@@ -773,7 +829,7 @@ export default function StudioPage() {
                 name: user.user_metadata?.full_name || user.user_metadata?.name,
                 vanityName: user.user_metadata?.preferred_username,
                 profileUrl: user.user_metadata?.url
-              })
+              }, prev.linkedin)
             };
             const base = saved && hasPortfolioContent(saved) ? saved : draft;
             if (base && hasPortfolioContent(base)) {
@@ -817,7 +873,7 @@ export default function StudioPage() {
     const pendingRaw = localStorage.getItem("vcv_pending_payload");
 
     if (saved && hasPortfolioContent(saved)) {
-      skipNextAutosaveRef.current = true;
+      skipNextAutosaveRef.current = !(Array.isArray(saved.portfolioAssets) && saved.portfolioAssets.length > 0);
       applyPortfolioRecord(saved);
       setIsPortfolioSaved(true);
       setSaveStatus("saved");
@@ -887,7 +943,7 @@ export default function StudioPage() {
             const nextContact = {
               ...prev,
               email: prev.email || data.profile.email || prev.email,
-              ...linkedInFields(data.profile)
+              ...linkedInFields(data.profile, prev.linkedin)
             };
             const base = saved && hasPortfolioContent(saved) ? saved : draft;
             if (base && hasPortfolioContent(base)) {
@@ -1081,7 +1137,19 @@ export default function StudioPage() {
         if (Array.isArray(data.highlights)) setHighlights(data.highlights);
         if (data.skills) setSkills(data.skills);
         if (data.education) setEducation(data.education);
-        if (data.contact) setContact((prev) => ({ ...prev, ...data.contact }));
+        if (data.contact) {
+          setContact((prev) => ({
+            ...prev,
+            ...data.contact,
+            email: data.contact.email || prev.email,
+            phone: data.contact.phone || prev.phone,
+            location: prev.location || data.contact.location,
+            linkedin: preferLinkedInProfile(prev.linkedin, data.contact.linkedin || ""),
+            emailVerified: prev.emailVerified || Boolean(data.contact.emailVerified),
+            phoneVerified: prev.phoneVerified || Boolean(data.contact.phoneVerified),
+            linkedinVerified: prev.linkedinVerified || Boolean(data.contact.linkedinVerified)
+          }));
+        }
 
         setActiveTab("canvas");
         captureEvent("resume_parsed", { source: "studio_upload", chapters: data.milestones.length });
@@ -2157,7 +2225,7 @@ export default function StudioPage() {
                       }}
                       className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer shrink-0"
                     >
-                      {contact.linkedinVerified ? "Change" : "Verify"}
+                      {contact.linkedinVerified ? "Edit" : "Verify"}
                     </button>
                   </div>
 

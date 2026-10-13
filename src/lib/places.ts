@@ -266,3 +266,60 @@ export function resolvePlace(query: string): PlaceSuggestion | null {
   if (bareCity || matches.length === 1 || comma > 0) return matches[0];
   return null;
 }
+
+type GeocodeHit = {
+  name?: string;
+  country_code?: string;
+  admin1?: string;
+  feature_code?: string;
+  population?: number;
+};
+
+export function suggestionsFromGeocode(results: unknown, limit = 6): PlaceSuggestion[] {
+  if (!Array.isArray(results)) return [];
+  const ranked = results
+    .map((item) => item as GeocodeHit)
+    .filter((item) => {
+      const name = String(item.name || "").trim();
+      const code = String(item.feature_code || "");
+      if (!name || !item.country_code) return false;
+      if (code && !code.startsWith("PPL")) return false;
+      return true;
+    })
+    .sort((a, b) => (b.population || 0) - (a.population || 0));
+
+  const seen = new Set<string>();
+  const suggestions: PlaceSuggestion[] = [];
+  for (const item of ranked) {
+    const countryCode = String(item.country_code || "").toUpperCase();
+    const city = String(item.name || "").trim();
+    const region = String(item.admin1 || "").trim();
+    const country = countryName(countryCode);
+    const label = region && region.toLowerCase() !== city.toLowerCase()
+      ? `${city}, ${region}, ${country}`
+      : formatLocation(city, countryCode);
+    if (!label || seen.has(label)) continue;
+    seen.add(label);
+    suggestions.push({
+      city,
+      countryCode,
+      label,
+      detail: region && region.toLowerCase() !== city.toLowerCase() ? `${region} · ${country}` : country
+    });
+    if (suggestions.length >= limit) break;
+  }
+  return suggestions;
+}
+
+export function mergePlaceSuggestions(local: PlaceSuggestion[], remote: PlaceSuggestion[], limit = 6) {
+  const seen = new Set<string>();
+  const merged: PlaceSuggestion[] = [];
+  for (const place of [...local, ...remote]) {
+    const key = place.label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(place);
+    if (merged.length >= limit) break;
+  }
+  return merged;
+}

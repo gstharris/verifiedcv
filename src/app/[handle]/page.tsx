@@ -6,7 +6,6 @@ import { useParams } from "next/navigation";
 import {
   ShieldCheck,
   CheckCircle2,
-  Lock,
   ArrowRight,
   GraduationCap,
   Share2,
@@ -114,6 +113,9 @@ export default function CandidateDossierPage() {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [openProofId, setOpenProofId] = useState<string | null>(null);
+  const [aboutHover, setAboutHover] = useState(false);
+  const [aboutPinned, setAboutPinned] = useState(false);
+  const aboutOpen = aboutHover || aboutPinned;
 
   useEffect(() => {
     if (!requestedHandle) return;
@@ -241,6 +243,25 @@ export default function CandidateDossierPage() {
         </Link>
 
         <div className="flex items-center gap-3">
+          <div
+            className="relative"
+            onMouseEnter={() => setAboutHover(true)}
+            onMouseLeave={() => setAboutHover(false)}
+          >
+            <button
+              type="button"
+              onClick={() => setAboutPinned((current) => !current)}
+              className="text-xs font-semibold text-slate-500 hover:text-[#0F172A] cursor-pointer"
+              aria-expanded={aboutOpen}
+            >
+              How we check
+            </button>
+            {aboutOpen && (
+              <div className="absolute right-0 top-full z-30 mt-2 w-72 rounded-2xl border border-[#E2E8F0] bg-white p-4 text-xs leading-relaxed text-slate-600 shadow-lg">
+                VerifiedCV is a page the candidate owns. A check means that item was confirmed: an email, a phone number, LinkedIn, a colleague who worked with them, or a public link they added. A page without those checks is still their portfolio. This is not an employer background check.
+              </div>
+            )}
+          </div>
           <button
             type="button"
             onClick={copyDossierLink}
@@ -254,8 +275,7 @@ export default function CandidateDossierPage() {
             href="/studio"
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs"
           >
-            <Lock className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Edit in Studio</span>
+            <span>Sign in</span>
           </Link>
         </div>
       </header>
@@ -315,16 +335,26 @@ export default function CandidateDossierPage() {
                 </div>
               )}
               {dossier.contact.linkedin && (
-                <div className="flex items-center gap-2">
-                  <div className={`flex items-center justify-center w-6 h-6 rounded-full ${dossier.contact.linkedinVerified ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
-                    <LinkedInIcon className="w-3 h-3" />
-                  </div>
+                <div className="flex items-center gap-2 min-w-0">
                   {linkedInHref ? (
-                    <a href={linkedInHref} target="_blank" rel="noreferrer" className="font-medium truncate text-blue-700">
-                      {linkedInLabel}
+                    <a
+                      href={linkedInHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 min-w-0 text-blue-700"
+                    >
+                      <span className={`flex items-center justify-center w-6 h-6 rounded-full shrink-0 ${dossier.contact.linkedinVerified ? "bg-blue-50 text-blue-600" : "bg-slate-50 text-slate-400"}`}>
+                        <LinkedInIcon className="w-3 h-3" />
+                      </span>
+                      <span className="font-medium truncate">{linkedInLabel}</span>
                     </a>
                   ) : (
-                    <span className={`font-medium truncate ${dossier.contact.linkedinVerified ? 'text-slate-900' : 'text-slate-500'}`}>{linkedInLabel}</span>
+                    <>
+                      <div className={`flex items-center justify-center w-6 h-6 rounded-full shrink-0 ${dossier.contact.linkedinVerified ? "bg-blue-50 text-blue-600" : "bg-slate-50 text-slate-400"}`}>
+                        <LinkedInIcon className="w-3 h-3" />
+                      </div>
+                      <span className={`font-medium truncate ${dossier.contact.linkedinVerified ? "text-slate-900" : "text-slate-500"}`}>{linkedInLabel}</span>
+                    </>
                   )}
                   {dossier.contact.linkedinVerified && <ProofMark label="LinkedIn confirmed" />}
                 </div>
@@ -344,13 +374,6 @@ export default function CandidateDossierPage() {
             </div>
           )}
 
-          {dossier.summaryStatement && parseDossierLayout(dossier.preferredLayout).template === "summary" && (
-            <div className="pt-3 border-t border-slate-100">
-              <p className="text-xs sm:text-sm text-slate-700 leading-relaxed">
-                {dossier.summaryStatement}
-              </p>
-            </div>
-          )}
         </div>
 
         {(() => {
@@ -360,9 +383,16 @@ export default function CandidateDossierPage() {
           const gallery = showWork ? <PortfolioAssetsGallery assets={assets} /> : null;
           const workFirst = showWork && pageTemplate.placement === "top";
           const highlights = (dossier.highlights || []).map((line) => String(line || "").trim()).filter(Boolean);
+          const showSummary = Boolean(dossier.summaryStatement) && pageTemplate.template === "summary";
           return (
             <>
               {workFirst && gallery}
+              {showSummary && (
+                <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
+                  <h2 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">Summary</h2>
+                  <p className="text-sm text-slate-700 leading-relaxed">{dossier.summaryStatement}</p>
+                </div>
+              )}
               {highlights.length > 0 && (
                 <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <h2 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">Highlights</h2>

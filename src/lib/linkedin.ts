@@ -167,8 +167,8 @@ export function mapUserInfoToIdentity(userInfo: Record<string, unknown>): Linked
 export function linkedInHandle(value: string) {
   const trimmed = String(value || "").trim();
   const fromUrl = trimmed.match(/linkedin\.com\/(?:in|pub)\/([^/?#]+)/i);
-  const handle = decodeURIComponent((fromUrl?.[1] || trimmed).replace(/\/$/, ""));
-  if (!/^[A-Za-z0-9-]{3,100}$/.test(handle)) return "";
+  const handle = decodeURIComponent((fromUrl?.[1] || trimmed).replace(/^@/, "").replace(/\/$/, ""));
+  if (!/^[A-Za-z0-9._-]{3,100}$/.test(handle)) return "";
   if (/linkedin/i.test(handle)) return "";
   return handle;
 }
@@ -176,6 +176,10 @@ export function linkedInHandle(value: string) {
 export function linkedInProfileUrl(value: string) {
   const handle = linkedInHandle(value);
   return handle ? `https://www.linkedin.com/in/${handle}` : undefined;
+}
+
+export function preferLinkedInProfile(existing: string, incoming: string) {
+  return linkedInProfileUrl(incoming) || linkedInProfileUrl(existing) || String(incoming || existing || "").trim();
 }
 
 export function confirmedLinkedInLabel(identity: { name?: string; vanityName?: string; profileUrl?: string }) {

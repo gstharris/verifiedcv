@@ -3,7 +3,9 @@ import {
   createOAuthState,
   isSafeNextPath,
   confirmedLinkedInLabel,
+  linkedInProfileUrl,
   mapUserInfoToIdentity,
+  preferLinkedInProfile,
   parseOAuthState,
   sanitizeNextPath
 } from "./linkedin";
@@ -51,5 +53,9 @@ describe("linkedin helpers", () => {
       "gstharris"
     );
     expect(confirmedLinkedInLabel({ name: "Graham Harris" })).toBe("Graham Harris");
+    expect(linkedInProfileUrl("linkedin.com/in/gstharris")).toBe("https://www.linkedin.com/in/gstharris");
+    expect(preferLinkedInProfile("linkedin.com/in/gstharris", "Graham Harris")).toBe(
+      "https://www.linkedin.com/in/gstharris"
+    );
   });
 });

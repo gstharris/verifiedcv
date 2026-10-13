@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetForm, assessPortfolioAssetLink, candidateSummary, decodeStoredHighlights, dossierSectionOrder, encodeStoredHighlights, isAllowedPortfolioUpload, normalizeHighlights, normalizePortfolioAsset, parseDossierLayout, publicRegistryLabel, recruiterLayout, workPreviewUrl } from "./portfolioAssets";
+import { assetForm, assessPortfolioAssetLink, candidateSummary, decodeStoredHighlights, decodeStoredPage, dossierSectionOrder, encodeStoredHighlights, encodeStoredPage, isAllowedPortfolioUpload, normalizeHighlights, normalizePortfolioAsset, parseDossierLayout, publicRegistryLabel, recruiterLayout, workPreview, workPreviewUrl } from "./portfolioAssets";
 
 describe("portfolio asset link checks", () => {
   it("marks Credly certification URLs as registry links", () => {
@@ -49,6 +49,9 @@ describe("work sample forms", () => {
   it("uses the image itself and a page thumbnail for other public links", () => {
     expect(workPreviewUrl("https://cdn.example.com/shot.PNG")).toBe("https://cdn.example.com/shot.PNG");
     expect(workPreviewUrl("https://files.example.com/deck.pdf")).toBe("");
+    expect(workPreview("https://files.example.com/deck.pdf")?.src).toContain("#page=1");
+    expect(workPreview("https://files.example.com/deck.pptx")?.src).toContain("officeapps.live.com");
+    expect(workPreview("https://docs.google.com/presentation/d/abc123/edit")?.src).toContain("/presentation/d/abc123/embed");
     expect(workPreviewUrl("https://pairedright.com")).toContain("mshots");
   });
 
@@ -84,5 +87,11 @@ describe("recruiter layouts", () => {
     expect(decodeStoredHighlights(stored)).toEqual(["Led Ge-on from founding through the first enterprise contracts."]);
     expect(candidateSummary("", stored)).toBe("");
     expect(candidateSummary("Operator and product lead.", stored)).toBe("Operator and product lead.");
+    const page = encodeStoredPage({
+      highlights: ["Led Ge-on from founding through the first enterprise contracts."],
+      portfolioAssets: [{ title: "PairedRight", url: "https://pairedright.com", type: "app" }]
+    });
+    expect(decodeStoredPage(page)?.assets.map((asset) => asset.title)).toEqual(["PairedRight"]);
+    expect(candidateSummary("", page)).toBe("");
   });
 });
