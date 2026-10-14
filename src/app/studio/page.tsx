@@ -1800,19 +1800,19 @@ export default function StudioPage() {
 
   return (
     <div className="h-screen overflow-hidden bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col antialiased selection:bg-emerald-100">
-      <header className="shrink-0 sticky top-0 z-50 bg-white border-b border-[#E2E8F0] h-14 px-6 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <header className="shrink-0 sticky top-0 z-50 bg-white border-b border-[#E2E8F0] h-14 px-4 sm:px-6 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <Link href="/" className="flex items-center gap-2 group">
             <VerifiedCVLogo className="w-6 h-6 group-hover:scale-105 transition-transform" />
             <span className="font-black text-base text-[#0F172A] tracking-tight">VerifiedCV</span>
           </Link>
-          <span className="text-[#E2E8F0]">/</span>
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+          <span className="hidden sm:inline text-[#E2E8F0]">/</span>
+          <span className="hidden sm:inline text-xs font-bold text-slate-500 uppercase tracking-wider">
             Candidate Studio
           </span>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
           {(canPublish || portfolioStarted) && !isPortfolioSaved && (
             <button
               type="button"
@@ -1827,24 +1827,26 @@ export default function StudioPage() {
                 clearStudioPortfolioStorage();
                 setActiveTab("canvas");
               }}
-              className="text-xs font-semibold text-slate-400 hover:text-red-500 transition-colors px-3 py-1.5 cursor-pointer flex items-center gap-1"
+              aria-label="Clear canvas"
+              className="text-xs font-semibold text-slate-400 hover:text-red-500 transition-colors px-2 sm:px-3 py-1.5 cursor-pointer flex items-center gap-1"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Clear Canvas</span>
+              <span className="hidden sm:inline">Clear Canvas</span>
             </button>
           )}
 
           {isPortfolioSaved ? (
             <>
-              <span className="text-[11px] font-semibold text-slate-400">
+              <span className="hidden sm:inline text-[11px] font-semibold text-slate-400">
                 {saveStatus === "saving" ? "Saving..." : saveStatus === "error" ? "Save failed" : "All changes saved"}
               </span>
               <Link
                 href={`/${handle.toLowerCase().trim()}`}
                 target="_blank"
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#059669] text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                aria-label="View live dossier"
+                className="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#059669] text-xs font-bold transition-all shadow-2xs cursor-pointer"
               >
-                <span>View Live Dossier</span>
+                <span className="hidden sm:inline">View Live Dossier</span>
                 <ExternalLink className="w-3.5 h-3.5" />
               </Link>
               <button
@@ -1865,10 +1867,11 @@ export default function StudioPage() {
               <button
                 type="button"
                 onClick={() => setIsClaimModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-[#059669] hover:bg-emerald-600 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-xl bg-[#059669] hover:bg-emerald-600 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
               >
                 <UserCheck className="w-3.5 h-3.5" />
-                <span>Save Portfolio</span>
+                <span className="sm:hidden">Save</span>
+                <span className="hidden sm:inline">Save Portfolio</span>
               </button>
             )
           )}
@@ -1889,9 +1892,9 @@ export default function StudioPage() {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden min-h-0">
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
         {/* CV ALLY */}
-        <aside className="w-[320px] shrink-0 border-r border-[#E2E8F0] bg-white flex flex-col justify-between h-full">
+        <aside className="flex min-h-0 w-full shrink-0 grow-0 basis-[40%] flex-col overflow-hidden border-b border-[#E2E8F0] bg-white md:h-full md:w-[320px] md:basis-auto md:border-b-0 md:border-r">
           <div className="p-4 border-b border-[#E2E8F0] flex items-center gap-2.5 bg-[#F8FAFC]">
             <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#059669]">
               <Bot className="w-4 h-4" />
@@ -1899,7 +1902,7 @@ export default function StudioPage() {
             <h3 className="text-xs font-black text-[#0F172A]">Ally</h3>
           </div>
 
-          <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div ref={chatScrollRef} className="min-h-0 flex-1 overflow-y-auto p-4 space-y-3">
             {chatMessages.map((msg, idx) => (
               <div
                 key={idx}
@@ -1958,8 +1961,8 @@ export default function StudioPage() {
         </aside>
 
         {/* LIVE CANVAS */}
-        <main className="flex-1 overflow-y-auto w-full">
-          <div className="p-8 max-w-5xl mx-auto space-y-8 antialiased">
+        <main className="min-h-0 flex-1 overflow-y-auto w-full">
+          <div className="p-4 sm:p-8 max-w-5xl mx-auto space-y-8 antialiased">
           {!portfolioStarted && !canPublish ? (
             <div className="bg-white border border-[#E2E8F0] rounded-3xl p-8 sm:p-10 text-center space-y-6 shadow-xs max-w-2xl mx-auto mt-4">
               <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#059669] mx-auto">
@@ -2066,7 +2069,7 @@ export default function StudioPage() {
             >
               <nav
                 aria-label="Resume sections"
-                className="sticky top-0 z-20 -mx-8 px-8 py-2.5 bg-[#F8FAFC]/95 backdrop-blur-sm border-b border-[#E2E8F0] flex flex-col gap-2"
+                className="sticky top-0 z-20 -mx-4 px-4 sm:-mx-8 sm:px-8 py-2.5 bg-[#F8FAFC]/95 backdrop-blur-sm border-b border-[#E2E8F0] flex flex-col gap-2"
               >
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 {[
