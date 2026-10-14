@@ -51,9 +51,9 @@ import {
 } from "@/lib/studioPortfolio";
 import { getVerificationStatus } from "@/lib/verificationLevel";
 import { corroborationHeadline } from "@/lib/corroborationDisplay";
-import { companyVerificationTooltip, endorsedClaimIndexes, firstChapterWithoutColleague, postSavePrompt } from "@/lib/verificationSignals";
+import { companyVerificationTooltip, endorsedClaimIndexes, firstChapterWithoutColleague, isCorpEmailVerification, postSavePrompt } from "@/lib/verificationSignals";
 import { corporateEmailMatchesCompany } from "@/lib/corporateEmail";
-import { nextPortfolioVerificationStep, verificationStatusLine } from "@/lib/verificationQueue";
+import { nextPortfolioVerificationStep, recommendedAllyAction, verificationStatusLine } from "@/lib/verificationQueue";
 import { dossierSectionRank, parseDossierLayout, publicRegistryLabel, type PortfolioAsset } from "@/lib/portfolioAssets";
 import { LOOP_EVENTS, consumeCorroboratorRef } from "@/lib/corroborationLoop";
 import { linkedInHandle, linkedInProfileUrl, preferLinkedInProfile } from "@/lib/linkedin";
@@ -588,6 +588,7 @@ export default function StudioPage() {
     }
   ]);
   const [chatInput, setChatInput] = useState("");
+  const [closedAllyActionId, setClosedAllyActionId] = useState<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -607,16 +608,16 @@ export default function StudioPage() {
     contact.phoneVerified ||
     milestones.some((milestone) => getVerificationLevel(milestone).level > 0);
 
-  const actionPrompts = React.useMemo(() => {
-    if (!isPortfolioSaved) {
-      if (!hasPortfolioContent({ milestones, summaryStatement, highlights, portfolioAssets })) {
-        return [{ label: "Upload a resume", action: "upload_resume" }];
-      }
-      return [{ label: "Save and publish", action: "save_portfolio" }];
-    }
-    const label = nextVerifyStep.id === "done" ? "Ask a colleague" : nextVerifyStep.title;
-    return [{ label, action: "continue_verification" }];
-  }, [isPortfolioSaved, milestones, nextVerifyStep, summaryStatement]);
+  const recommendation = recommendedAllyAction({
+    saved: isPortfolioSaved,
+    hasContent: hasPortfolioContent({ milestones, summaryStatement, highlights, portfolioAssets }),
+    nextStep: nextVerifyStep,
+    colleagueConfirmed: milestones.some((milestone) =>
+      (milestone.verifications || []).some((record) => !isCorpEmailVerification(record))
+    )
+  });
+  const actionPrompts = recommendation ? [recommendation] : [];
+  const allyOpenOnMobile = Boolean(recommendation) && closedAllyActionId !== recommendation?.id;
 
   const buildPortfolioPayload = () => ({
     handle: handle.toLowerCase().trim(),
@@ -1203,7 +1204,7 @@ export default function StudioPage() {
       setChatMessages((prev) => [
         ...prev,
         { sender: "user", text: "Review & Edit Resume" },
-        { sender: "ally", text: "Scroll through your career chapters on the right. You can edit titles, dates, and claims. We recommend keeping only the most impactful, factual deliverables." }
+        { sender: "ally", text: "Scroll through your career chapters. You can edit titles, dates, and claims. We recommend keeping only the most impactful, factual deliverables." }
       ]);
       return;
     }
@@ -1889,17 +1890,27 @@ export default function StudioPage() {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden min-h-0">
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
         {/* CV ALLY */}
-        <aside className="w-[320px] shrink-0 border-r border-[#E2E8F0] bg-white flex flex-col justify-between h-full">
+        <aside
+          className={`${allyOpenOnMobile ? "flex" : "hidden"} md:flex order-2 md:order-1 w-full md:w-[320px] shrink-0 border-t md:border-t-0 md:border-r border-[#E2E8F0] bg-white flex-col justify-between md:h-full max-h-[46vh] md:max-h-none`}
+        >
           <div className="p-4 border-b border-[#E2E8F0] flex items-center gap-2.5 bg-[#F8FAFC]">
             <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#059669]">
               <Bot className="w-4 h-4" />
             </div>
             <h3 className="text-xs font-black text-[#0F172A]">Ally</h3>
+            <button
+              type="button"
+              onClick={() => recommendation && setClosedAllyActionId(recommendation.id)}
+              className="md:hidden ml-auto text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+              aria-label="Close Ally"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
 
-          <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 max-md:max-h-28">
             {chatMessages.map((msg, idx) => (
               <div
                 key={idx}
@@ -1920,23 +1931,25 @@ export default function StudioPage() {
             )}
           </div>
 
-          <div className="p-2.5 border-t border-[#E2E8F0] bg-[#F8FAFC] space-y-1.5">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block px-1">
-              Next step
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              {actionPrompts.map((p, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleActionPrompt(p.action)}
-                  className="text-[11px] font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-[#E2E8F0] px-2.5 py-1 rounded-lg transition-all shadow-2xs cursor-pointer text-left"
-                >
-                  {p.label}
-                </button>
-              ))}
+          {actionPrompts.length > 0 && (
+            <div className="p-2.5 border-t border-[#E2E8F0] bg-[#F8FAFC] space-y-1.5">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block px-1">
+                Next step
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {actionPrompts.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handleActionPrompt(p.action)}
+                    className="text-[11px] font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-[#E2E8F0] px-2.5 py-1 rounded-lg transition-all shadow-2xs cursor-pointer text-left"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           <form onSubmit={handleSendMessage} className="p-3 border-t border-[#E2E8F0] bg-white">
             <div className="relative flex items-center">
@@ -1957,9 +1970,26 @@ export default function StudioPage() {
           </form>
         </aside>
 
+        {recommendation && !allyOpenOnMobile && (
+          <button
+            type="button"
+            onClick={() => setClosedAllyActionId(null)}
+            className="md:hidden order-2 shrink-0 w-full border-t border-[#E2E8F0] bg-white px-4 py-3 flex items-center gap-2.5 text-left"
+            aria-label={`Open Ally: ${recommendation.label}`}
+          >
+            <span className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#059669]">
+              <Bot className="w-4 h-4" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Ally</span>
+              <span className="block text-xs font-semibold text-[#0F172A] truncate">{recommendation.label}</span>
+            </span>
+          </button>
+        )}
+
         {/* LIVE CANVAS */}
-        <main className="flex-1 overflow-y-auto w-full">
-          <div className="p-8 max-w-5xl mx-auto space-y-8 antialiased">
+        <main className="order-1 md:order-2 flex-1 overflow-y-auto w-full min-h-0">
+          <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-8 antialiased">
           {!portfolioStarted && !canPublish ? (
             <div className="bg-white border border-[#E2E8F0] rounded-3xl p-8 sm:p-10 text-center space-y-6 shadow-xs max-w-2xl mx-auto mt-4">
               <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#059669] mx-auto">

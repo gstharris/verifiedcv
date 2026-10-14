@@ -76,6 +76,40 @@ function joinList(items: string[]) {
   return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
 }
 
+export type AllyRecommendation = {
+  id: string;
+  label: string;
+  action: "upload_resume" | "save_portfolio" | "continue_verification" | "ask_colleague";
+};
+
+export function recommendedAllyAction(input: {
+  saved: boolean;
+  hasContent: boolean;
+  nextStep: VerificationQueueItem;
+  colleagueConfirmed: boolean;
+}): AllyRecommendation | null {
+  if (!input.saved) {
+    if (!input.hasContent) {
+      return { id: "upload_resume", label: "Upload a resume", action: "upload_resume" };
+    }
+    return { id: "save_portfolio", label: "Save and publish", action: "save_portfolio" };
+  }
+
+  if (input.nextStep.id !== "done") {
+    return {
+      id: input.nextStep.milestoneId ? `chapter:${input.nextStep.milestoneId}` : input.nextStep.id,
+      label: input.nextStep.title,
+      action: "continue_verification"
+    };
+  }
+
+  if (!input.colleagueConfirmed) {
+    return { id: "ask_colleague", label: "Ask a colleague", action: "ask_colleague" };
+  }
+
+  return null;
+}
+
 export function verificationStatusLine(input: {
   emailVerified?: boolean;
   linkedinVerified?: boolean;
