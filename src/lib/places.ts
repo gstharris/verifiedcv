@@ -1,4 +1,4 @@
-import { countryOptions, formatLocation, parseLocation } from "./locations";
+import { countryOptions, parseLocation, placeLabel } from "./locations";
 
 type Place = {
   city: string;
@@ -197,7 +197,7 @@ function suggestion(place: Place): PlaceSuggestion {
   return {
     city: place.city,
     countryCode: place.countryCode,
-    label: formatLocation(place.city, place.countryCode),
+    label: placeLabel(place.city, place.countryCode, place.regionCode || ""),
     detail: place.regionCode ? `${place.regionCode} · ${countryName(place.countryCode)}` : countryName(place.countryCode)
   };
 }
@@ -295,9 +295,7 @@ export function suggestionsFromGeocode(results: unknown, limit = 6): PlaceSugges
     const city = String(item.name || "").trim();
     const region = String(item.admin1 || "").trim();
     const country = countryName(countryCode);
-    const label = region && region.toLowerCase() !== city.toLowerCase()
-      ? `${city}, ${region}, ${country}`
-      : formatLocation(city, countryCode);
+    const label = placeLabel(city, countryCode, region && region.toLowerCase() !== city.toLowerCase() ? region : "");
     if (!label || seen.has(label)) continue;
     seen.add(label);
     suggestions.push({

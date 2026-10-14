@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ShieldCheck,
   CheckCircle2,
@@ -184,12 +185,14 @@ function LocationField({
           onBlur={() => {
             window.setTimeout(() => {
               setOpen(false);
-              setTouched(true);
               const listed = suggestionsRef.current;
               const place = resolvePlace(draft) || (listed.length === 1 ? listed[0] : null);
               if (place) {
                 onChange(place.label);
                 setDraft(place.label);
+                setTouched(false);
+              } else {
+                setTouched(true);
               }
             }, 150);
           }}
@@ -391,6 +394,7 @@ function linkedInReturnMessage(auth: string | null, reason: string | null, hasSe
 }
 
 export default function StudioPage() {
+  const router = useRouter();
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [summaryStatement, setSummaryStatement] = useState("");
   const [skills, setSkills] = useState<string[]>([]);
@@ -423,6 +427,13 @@ export default function StudioPage() {
   const [isCommitting, setIsCommitting] = useState(false);
   const [isPortfolioSaved, setIsPortfolioSaved] = useState(false);
   const [portfolioStarted, setPortfolioStarted] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [hasSession, setHasSession] = useState(false);
+  const [vaultChecked, setVaultChecked] = useState(false);
+  const [signInOnly, setSignInOnly] = useState(false);
+  const [allyOpen, setAllyOpen] = useState(false);
+  const [replaceOpen, setReplaceOpen] = useState(false);
+  const [replaceBusy, setReplaceBusy] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [isReplayingProof, setIsReplayingProof] = useState(false);
   const skipNextAutosaveRef = useRef(true);
@@ -514,7 +525,10 @@ export default function StudioPage() {
   const supabase = createClient();
 
   useEffect(() => {
+    const authTimer = window.setTimeout(() => setAuthChecked(true), 4000);
     supabase.auth.getUser().then(({ data: { user } }) => {
+      setHasSession(Boolean(user));
+      setAuthChecked(true);
       if (user) {
         setUser(user);
         setContact(prev => {
@@ -560,6 +574,8 @@ export default function StudioPage() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const user = session?.user;
       setUser(user || null);
+      setHasSession(Boolean(user));
+      setAuthChecked(true);
       if (user) {
         setContact(prev => {
           const nextContact = { 
@@ -578,13 +594,16 @@ export default function StudioPage() {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      window.clearTimeout(authTimer);
+      subscription.unsubscribe();
+    };
   }, [supabase.auth, isPortfolioSaved]);
 
   const [chatMessages, setChatMessages] = useState<Array<{ sender: "ally" | "user"; text: string }>>([
     {
       sender: "ally",
-      text: "Welcome to VerifiedCV. Upload your resume or paste your career history to get started."
+      text: "Your portfolio is open. I'll point you at the next step."
     }
   ]);
   const [chatInput, setChatInput] = useState("");
@@ -661,22 +680,34 @@ export default function StudioPage() {
   useEffect(() => {
     if (!user) return;
     const saved = readStudioRecord<{ milestones?: unknown[]; summaryStatement?: string; highlights?: unknown[]; portfolioAssets?: unknown[] }>(STUDIO_SAVED_KEY);
-    if (saved && hasPortfolioContent(saved)) return;
+    if (saved && hasPortfolioContent(saved)) {
+      setVaultChecked(true);
+      return;
+    }
+    const vaultTimer = window.setTimeout(() => setVaultChecked(true), 8000);
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch("/api/vault?mine=1", { credentials: "include" });
-        if (!res.ok || cancelled) return;
+        if (!res.ok || cancelled) {
+          if (!cancelled) setVaultChecked(true);
+          return;
+        }
         const data = await res.json();
-        if (!data?.handle || cancelled) return;
+        if (!data?.handle || cancelled) {
+          if (!cancelled) setVaultChecked(true);
+          return;
+        }
         applyPortfolioRecord(data);
         setIsPortfolioSaved(true);
+        if (!cancelled) setVaultChecked(true);
       } catch {
-        // A new sign-in can start a portfolio on this screen.
+        if (!cancelled) setVaultChecked(true);
       }
     })();
     return () => {
       cancelled = true;
+      window.clearTimeout(vaultTimer);
     };
   }, [user]);
 
@@ -799,6 +830,10 @@ export default function StudioPage() {
     if (typeof window === "undefined") return;
 
     const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get("signin") === "1") {
+      setSignInOnly(true);
+      setIsClaimModalOpen(true);
+    }
     if (urlParams.get("fresh") === "1") {
       clearStudioPortfolioStorage();
       localStorage.removeItem("vcv_pending_payload");
@@ -904,7 +939,7 @@ export default function StudioPage() {
       setChatMessages([
         {
           sender: "ally",
-          text: "Welcome back. Your portfolio is saved and ready."
+          text: "Your page is saved. I'll point you at the next step."
         }
       ]);
     } else if (draft && hasPortfolioContent(draft)) {
@@ -1021,6 +1056,19 @@ export default function StudioPage() {
       applyLinkedInSession();
     }
   }, []);
+
+  const resumeCueRef = useRef(false);
+  useEffect(() => {
+    if (!isPortfolioSaved || resumeCueRef.current) return;
+    if (!hasPortfolioContent({ milestones, summaryStatement, highlights, portfolioAssets })) return;
+    resumeCueRef.current = true;
+    setChatMessages([
+      {
+        sender: "ally",
+        text: `${nextVerifyStep.title}. ${nextVerifyStep.detail}`
+      }
+    ]);
+  }, [highlights, isPortfolioSaved, milestones, nextVerifyStep.detail, nextVerifyStep.title, portfolioAssets, summaryStatement]);
 
   useEffect(() => {
     if (chatScrollRef.current) {
@@ -1785,6 +1833,80 @@ export default function StudioPage() {
   };
 
   const canPublish = hasPortfolioContent({ milestones, summaryStatement, highlights, portfolioAssets });
+  const hasWork = portfolioStarted || canPublish || isPortfolioSaved;
+  const waitingForStudio = !hasWork && (!authChecked || (hasSession && !vaultChecked));
+
+  useEffect(() => {
+    if (waitingForStudio || signInOnly || hasSession || hasWork) return;
+    router.replace("/");
+  }, [hasSession, hasWork, router, signInOnly, waitingForStudio]);
+
+  const confirmReplaceResume = async () => {
+    const currentHandle = handle.toLowerCase().trim();
+    if (!currentHandle) return;
+    setReplaceBusy(true);
+    try {
+      const res = await fetch("/api/vault/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ handle: currentHandle, clearContent: true })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.error || "Could not clear the public page.");
+        return;
+      }
+      setMilestones([]);
+      setSummaryStatement("");
+      setHighlights([]);
+      setSkills([]);
+      setEducation([]);
+      setPortfolioAssets([]);
+      setHeadline("");
+      setContact((prev) => ({
+        ...prev,
+        location: "",
+        emailVerified: false,
+        phoneVerified: false,
+        linkedinVerified: false
+      }));
+      setPortfolioStarted(true);
+      const kept = {
+        handle: currentHandle,
+        email: contact.email,
+        fullName,
+        headline: "",
+        summaryStatement: "",
+        highlights: [],
+        skills: [],
+        education: [],
+        portfolioAssets: [],
+        milestones: [],
+        preferredLayout,
+        contact: {
+          ...contact,
+          location: "",
+          emailVerified: false,
+          phoneVerified: false,
+          linkedinVerified: false
+        }
+      };
+      writeStudioRecord(STUDIO_SAVED_KEY, kept);
+      writeStudioRecord(STUDIO_DRAFT_KEY, kept);
+      setChatMessages([
+        {
+          sender: "ally",
+          text: `verifiedcv.app/${currentHandle} is empty. Upload the resume that should replace it. Proof you add later starts over.`
+        }
+      ]);
+      setReplaceOpen(false);
+      setAllyOpen(true);
+      fileInputRef.current?.click();
+    } finally {
+      setReplaceBusy(false);
+    }
+  };
   const corroboratedCount = milestones.reduce((acc, m) => acc + (m.verifications?.length || 0), 0);
   const verifiedSignalsCount =
     (contact.emailVerified ? 1 : 0) +
@@ -1892,10 +2014,31 @@ export default function StudioPage() {
         </div>
       </header>
 
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,.docx,.txt,.md"
+        className="hidden"
+        onChange={handleFileUpload}
+      />
+
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
-        {/* CV ALLY */}
-        <aside className="flex min-h-0 w-full shrink-0 grow-0 basis-[40%] flex-col overflow-hidden border-b border-[#E2E8F0] bg-white md:h-full md:w-[320px] md:basis-auto md:border-b-0 md:border-r">
-          <div className="p-4 border-b border-[#E2E8F0] flex items-center gap-2.5 bg-[#F8FAFC]">
+        {hasWork && (
+        <aside className="order-2 flex w-full shrink-0 flex-col border-t border-[#E2E8F0] bg-white md:order-1 md:h-full md:w-[320px] md:border-t-0 md:border-r">
+          <button
+            type="button"
+            className="md:hidden flex w-full items-center gap-2.5 px-4 py-3 text-left"
+            onClick={() => setAllyOpen((open) => !open)}
+            aria-expanded={allyOpen}
+          >
+            <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#059669]">
+              <Bot className="w-4 h-4" />
+            </div>
+            <span className="text-xs font-black text-[#0F172A]">Ally</span>
+            <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-600">{actionPrompts[0]?.label}</span>
+          </button>
+          <div className={`${allyOpen ? "flex" : "hidden"} md:flex min-h-0 max-h-[46vh] md:max-h-none md:h-full md:flex-1 flex-col overflow-hidden`}>
+          <div className="hidden md:flex p-4 border-b border-[#E2E8F0] items-center gap-2.5 bg-[#F8FAFC]">
             <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#059669]">
               <Bot className="w-4 h-4" />
             </div>
@@ -1958,33 +2101,33 @@ export default function StudioPage() {
               </button>
             </div>
           </form>
+          </div>
         </aside>
+        )}
 
         {/* LIVE CANVAS */}
-        <main className="min-h-0 flex-1 overflow-y-auto w-full">
+        <main className="order-1 min-h-0 flex-1 overflow-y-auto w-full md:order-2">
           <div className="p-4 sm:p-8 max-w-5xl mx-auto space-y-8 antialiased">
-          {!portfolioStarted && !canPublish ? (
+          {waitingForStudio || (!hasWork && !hasSession && !signInOnly) ? (
+            <p className="pt-16 text-center text-sm font-semibold text-slate-500">
+              {waitingForStudio ? "Opening your studio…" : "Taking you to the start page…"}
+            </p>
+          ) : !portfolioStarted && !canPublish ? (
             <div className="bg-white border border-[#E2E8F0] rounded-3xl p-8 sm:p-10 text-center space-y-6 shadow-xs max-w-2xl mx-auto mt-4">
               <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#059669] mx-auto">
                 <UploadCloud className="w-7 h-7" />
               </div>
 
               <div className="space-y-2">
-                <h2 className="text-xl font-black text-[#0F172A]">Start your portfolio</h2>
+                <h2 className="text-xl font-black text-[#0F172A]">{hasSession ? "Upload your resume" : "Start your portfolio"}</h2>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                  Upload a resume, or start with the work you want to show. A name, an email, and one piece of work is enough to publish. Experience is optional.
+                  {hasSession
+                    ? "You are signed in, and this page does not have a resume yet. Upload a file or paste the text."
+                    : "Upload a resume, or start with the work you want to show. A name, an email, and one piece of work is enough to publish. Experience is optional."}
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,.docx,.txt,.md"
-                  className="hidden"
-                  onChange={handleFileUpload}
-                />
-
                 <button
                   type="button"
                   disabled={isProcessing}
@@ -2125,7 +2268,8 @@ export default function StudioPage() {
                     />
                   </div>
 
-                  <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold self-start sm:self-auto border ${
+                  <div className="flex flex-col items-start gap-2 self-start sm:self-auto">
+                  <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${
                     isPortfolioSaved
                       ? "bg-emerald-50 border-emerald-200 text-[#059669]"
                       : "bg-amber-50 border-amber-200 text-amber-800"
@@ -2133,6 +2277,16 @@ export default function StudioPage() {
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>{isPortfolioSaved ? "Portfolio Saved" : "Save to edit"}</span>
                   </span>
+                  {isPortfolioSaved && (
+                    <button
+                      type="button"
+                      onClick={() => setReplaceOpen(true)}
+                      className="text-[11px] font-bold text-slate-500 hover:text-red-600 cursor-pointer"
+                    >
+                      Replace resume
+                    </button>
+                  )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
@@ -3252,6 +3406,40 @@ export default function StudioPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {replaceOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-lg space-y-5">
+            <div className="space-y-2">
+              <p className="text-[11px] font-bold uppercase tracking-widest text-amber-700">Warning</p>
+              <h3 className="font-black text-lg text-[#0F172A]">Replace your resume?</h3>
+              <p className="text-xs leading-relaxed text-slate-600">
+                Replacing your resume deletes every verification on this profile. That cannot be undone.
+                Your public page at verifiedcv.app/{handle.toLowerCase().trim() || "your-handle"} will be cleared.
+                You keep the handle, and the page stays empty until you publish a new resume.
+              </p>
+            </div>
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setReplaceOpen(false)}
+                disabled={replaceBusy}
+                className="px-4 py-2.5 rounded-xl border border-[#E2E8F0] bg-white text-xs font-bold text-[#0F172A] cursor-pointer"
+              >
+                Keep my resume
+              </button>
+              <button
+                type="button"
+                onClick={confirmReplaceResume}
+                disabled={replaceBusy}
+                className="px-4 py-2.5 rounded-xl border border-red-200 bg-white text-red-700 text-xs font-bold cursor-pointer disabled:opacity-50"
+              >
+                {replaceBusy ? "Clearing…" : "Replace resume"}
+              </button>
+            </div>
           </div>
         </div>
       )}

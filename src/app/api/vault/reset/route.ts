@@ -3,6 +3,7 @@ import { getSupabase } from "@/lib/supabase";
 import { requireHandleOwner } from "@/lib/handleOwner";
 import { clearLinkedInSessionCookie } from "@/lib/linkedin";
 import { BETA_COOKIE, isBetaEnforced } from "@/lib/betaAccess";
+import { getVaultStore, saveToVaultStore } from "@/lib/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
   const handle = String(body.handle || "").toLowerCase().trim();
+  const clearContent = Boolean(body.clearContent);
   const owner = await requireHandleOwner(req, supabase, handle);
   if (!owner.ok) {
     return NextResponse.json({ error: owner.error }, { status: owner.status });
@@ -31,7 +33,15 @@ export async function POST(req: NextRequest) {
     .update({
       email_verified: false,
       phone_verified: false,
-      linkedin_verified: false
+      linkedin_verified: false,
+      ...(clearContent
+        ? {
+            headline: "",
+            summary_statement: "",
+            bio_summary: "",
+            location: ""
+          }
+        : {})
     })
     .eq("handle", handle);
 
@@ -44,8 +54,40 @@ export async function POST(req: NextRequest) {
   if (milestoneIds.length > 0) {
     await supabase.from("artifacts").delete().in("milestone_id", milestoneIds);
     await supabase.from("verifications").delete().in("milestone_id", milestoneIds);
+    await supabase.from("registry_links").delete().in("milestone_id", milestoneIds);
+    if (clearContent) {
+      const { error: milestoneError } = await supabase.from("milestones").delete().in("id", milestoneIds);
+      if (milestoneError) {
+        return NextResponse.json({ error: milestoneError.message || "Could not clear the resume." }, { status: 500 });
+      }
+    }
   }
   await supabase.from("attestations").delete().eq("candidate_handle", handle);
+
+  if (clearContent) {
+    await supabase.from("skills").delete().eq("candidate_handle", handle);
+    await supabase.from("education").delete().eq("candidate_handle", handle);
+    await supabase.from("portfolio_assets").delete().eq("candidate_handle", handle);
+    const store = getVaultStore();
+    const existing = store[handle] || {};
+    const contact = { ...(existing.contact || {}) };
+    contact.location = "";
+    contact.emailVerified = false;
+    contact.phoneVerified = false;
+    contact.linkedinVerified = false;
+    saveToVaultStore(handle, {
+      ...existing,
+      handle,
+      headline: "",
+      summaryStatement: "",
+      highlights: [],
+      skills: [],
+      education: [],
+      portfolioAssets: [],
+      milestones: [],
+      contact
+    });
+  }
 
   if (candidate?.email) {
     await supabase.from("email_codes").delete().eq("email", String(candidate.email).toLowerCase().trim());

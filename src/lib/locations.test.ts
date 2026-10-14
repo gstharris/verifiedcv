@@ -6,6 +6,13 @@ describe("locations", () => {
     expect(parseLocation("Austin, United States")?.countryCode).toBe("US");
     expect(parseLocation("Nairobi, Kenya")?.label).toBe("Nairobi, Kenya");
     expect(parseLocation("Remote")?.label).toBe("Remote");
+    expect(parseLocation("Lockhart, Texas, United States")).toEqual({
+      city: "Lockhart",
+      countryCode: "US",
+      label: "Lockhart, TX"
+    });
+    expect(parseLocation("Thousand Oaks, California, United States")?.label).toBe("Thousand Oaks, CA");
+    expect(parseLocation("Thousand Oaks, CA")?.countryCode).toBe("US");
     expect(formatLocation("Lyon", "FR")).toBe("Lyon, France");
   });
 

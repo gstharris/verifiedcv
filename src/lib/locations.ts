@@ -37,20 +37,66 @@ const byName = () => {
   return map;
 };
 
+const US_STATE_NAMES: Record<string, string> = {
+  alabama: "AL", alaska: "AK", arizona: "AZ", arkansas: "AR", california: "CA", colorado: "CO",
+  connecticut: "CT", delaware: "DE", florida: "FL", georgia: "GA", hawaii: "HI", idaho: "ID",
+  illinois: "IL", indiana: "IN", iowa: "IA", kansas: "KS", kentucky: "KY", louisiana: "LA",
+  maine: "ME", maryland: "MD", massachusetts: "MA", michigan: "MI", minnesota: "MN",
+  mississippi: "MS", missouri: "MO", montana: "MT", nebraska: "NE", nevada: "NV",
+  "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM", "new york": "NY",
+  "north carolina": "NC", "north dakota": "ND", ohio: "OH", oklahoma: "OK", oregon: "OR",
+  pennsylvania: "PA", "rhode island": "RI", "south carolina": "SC", "south dakota": "SD",
+  tennessee: "TN", texas: "TX", utah: "UT", vermont: "VT", virginia: "VA", washington: "WA",
+  "west virginia": "WV", wisconsin: "WI", wyoming: "WY", "district of columbia": "DC"
+};
+
+const US_STATE_CODES = new Set(Object.values(US_STATE_NAMES));
+
+export function usStateAbbreviation(region: string) {
+  const trimmed = region.replace(/\s+/g, " ").trim();
+  if (/^[A-Za-z]{2}$/.test(trimmed) && US_STATE_CODES.has(trimmed.toUpperCase())) return trimmed.toUpperCase();
+  return US_STATE_NAMES[trimmed.toLowerCase()] || "";
+}
+
+export function placeLabel(city: string, countryCode: string, region = "") {
+  const place = city.replace(/\s+/g, " ").trim();
+  if (!place) return "";
+  if (countryCode.toUpperCase() === "US") {
+    const abbreviation = usStateAbbreviation(region);
+    if (abbreviation) return `${place}, ${abbreviation}`;
+  }
+  return formatLocation(place, countryCode);
+}
+
 export function parseLocation(value: string): { city: string; countryCode: string; label: string } | null {
   const trimmed = String(value || "").replace(/\s+/g, " ").trim();
   if (!trimmed) return null;
   if (/^remote$/i.test(trimmed)) return { city: "", countryCode: "", label: "Remote" };
 
-  const comma = trimmed.lastIndexOf(",");
-  if (comma <= 0) return null;
-  const city = trimmed.slice(0, comma).trim();
-  const countryText = trimmed.slice(comma + 1).trim();
+  const parts = trimmed.split(",").map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2 || parts.length > 3) return null;
+  const city = parts[0];
+  const placeName = /^[\p{L}\p{M}][\p{L}\p{M}\s.'-]{1,80}$/u;
+  if (!placeName.test(city)) return null;
+
+  if (parts.length === 2 && parts[1].length === 2) {
+    const abbreviation = usStateAbbreviation(parts[1]);
+    if (abbreviation) return { city, countryCode: "US", label: `${city}, ${abbreviation}` };
+  }
+
+  const countryText = parts[parts.length - 1];
+  const region = parts.length === 3 ? parts[1] : "";
   const country =
     countryOptions().find((option) => option.code.toLowerCase() === countryText.toLowerCase()) ||
     byName().get(countryText.toLowerCase());
-  if (!country || !/^[\p{L}\p{M}][\p{L}\p{M}\s.'-]{1,80}$/u.test(city)) return null;
-  return { city, countryCode: country.code, label: `${city}, ${country.name}` };
+  if (region && !placeName.test(region)) return null;
+  if (country) {
+    return { city, countryCode: country.code, label: placeLabel(city, country.code, region) };
+  }
+
+  const abbreviation = usStateAbbreviation(parts[1] || "");
+  if (parts.length === 2 && abbreviation) return { city, countryCode: "US", label: `${city}, ${abbreviation}` };
+  return null;
 }
 
 export function formatLocation(city: string, countryCode: string) {

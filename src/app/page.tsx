@@ -109,6 +109,23 @@ export default function VerifiedCVLandingPage() {
     router.push("/studio");
   };
 
+  const openStudio = async () => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 2500);
+    try {
+      const res = await fetch("/api/vault?mine=1", { credentials: "include", signal: controller.signal });
+      if (res.status !== 401) {
+        router.push("/studio");
+        return;
+      }
+    } catch {
+      // Stay on the start page when studio cannot be opened.
+    } finally {
+      window.clearTimeout(timer);
+    }
+    document.getElementById("start")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0 || isProcessing) return;
     const file = e.target.files[0];
@@ -199,18 +216,19 @@ export default function VerifiedCVLandingPage() {
 
           <div className="flex items-center gap-3">
             <Link
-              className="text-xs font-bold text-slate-700 hover:text-slate-950 px-2.5 py-1.5 rounded-lg transition-colors hidden sm:inline-block"
-              href="/studio"
+              className="text-xs font-bold text-slate-700 hover:text-slate-950 px-2.5 py-1.5 rounded-lg transition-colors"
+              href="/studio?signin=1"
             >
               Sign In
             </Link>
-            <Link
+            <button
+              type="button"
+              onClick={openStudio}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer group"
-              href="/studio"
             >
               <span>Open Studio</span>
               <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform text-emerald-400" />
-            </Link>
+            </button>
           </div>
         </div>
       </header>
@@ -229,7 +247,7 @@ export default function VerifiedCVLandingPage() {
           </p>
 
           <div className="max-w-xl mx-auto pt-2 space-y-4">
-            <div className="bg-white border border-[#E2E8F0] rounded-2xl shadow-sm p-5 space-y-3">
+            <div id="start" className="bg-white border border-[#E2E8F0] rounded-2xl shadow-sm p-5 space-y-3">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -580,13 +598,14 @@ export default function VerifiedCVLandingPage() {
             Free while we are in beta. Upload a resume to claim your page.
           </p>
           <div className="pt-2">
-            <Link
-              href="/studio"
+            <button
+              type="button"
+              onClick={openStudio}
               className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#059669] hover:bg-emerald-600 text-white font-black text-xs transition-all shadow-xs cursor-pointer group"
             >
               <span>Open Studio</span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-            </Link>
+            </button>
           </div>
         </div>
       </section>

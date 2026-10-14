@@ -8,13 +8,13 @@ describe("place suggestions", () => {
   });
 
   it("resolves a US city written with its state", () => {
-    expect(resolvePlace("Los Angeles, CA")?.label).toBe("Los Angeles, United States");
+    expect(resolvePlace("Los Angeles, CA")?.label).toBe("Los Angeles, CA");
     expect(resolvePlace("Austin")?.countryCode).toBe("US");
   });
 
   it("keeps the less famous city when the region is included", () => {
-    expect(suggestPlaces("Paris").map((place) => place.label)).toContain("Paris, United States");
-    expect(resolvePlace("Paris, TX")?.label).toBe("Paris, United States");
+    expect(suggestPlaces("Paris").map((place) => place.label)).toContain("Paris, TX");
+    expect(resolvePlace("Paris, TX")?.label).toBe("Paris, TX");
     expect(resolvePlace("Remote")?.label).toBe("Remote");
   });
 
@@ -23,7 +23,10 @@ describe("place suggestions", () => {
       { name: "Lockhart", country_code: "US", admin1: "Texas", feature_code: "PPL", population: 14500 },
       { name: "United States", country_code: "US", feature_code: "PCLI", population: 300000000 }
     ]);
-    expect(places.map((place) => place.label)).toEqual(["Lockhart, Texas, United States"]);
+    expect(places.map((place) => place.label)).toEqual(["Lockhart, TX"]);
     expect(places[0].countryCode).toBe("US");
+    expect(resolvePlace("Thousand Oaks, California, United States")?.label).toBe("Thousand Oaks, CA");
+    expect(resolvePlace("Lockhart, Texas, United States")?.label).toBe("Lockhart, TX");
+    expect(resolvePlace("Lockhart, Texas, United States")?.countryCode).toBe("US");
   });
 });
