@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { corroborationHeadline, publicTitleFromVerification } from "./corroborationDisplay";
+import { colleagueInvitePitch, corroborationHeadline, publicTitleFromVerification } from "./corroborationDisplay";
 
 describe("corroboration display", () => {
+  it("invites the colleague to start their own page from the same company", () => {
+    expect(colleagueInvitePitch("Graham Harris", "Yahoo")).toEqual({
+      ask: "Graham Harris wants you to confirm you worked together at Yahoo.",
+      loop: "That request is Graham saying you were there too. Create your portfolio, and Yahoo can be the first chapter on it."
+    });
+  });
+
   it("hides the name and keeps title plus company for one person", () => {
     expect(
       publicTitleFromVerification({

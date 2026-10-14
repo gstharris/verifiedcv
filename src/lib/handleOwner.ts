@@ -57,6 +57,17 @@ export function getHandleOwnerFromRequest(req: NextRequest): HandleOwnerCookie |
   return parseHandleOwnerCookie(req.cookies.get(HANDLE_OWNER_COOKIE)?.value);
 }
 
+export function clearHandleOwnerCookie(response: NextResponse) {
+  response.cookies.set(HANDLE_OWNER_COOKIE, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: cookieSecure(),
+    path: "/",
+    maxAge: 0,
+    ...(cookieDomain() ? { domain: cookieDomain() } : {})
+  });
+}
+
 export function applyHandleOwnerCookie(response: NextResponse, payload: HandleOwnerCookie) {
   response.cookies.set(HANDLE_OWNER_COOKIE, serializeHandleOwnerCookie(payload), {
     httpOnly: true,

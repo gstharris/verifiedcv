@@ -4,10 +4,17 @@ export const STUDIO_SAVED_KEY = "vcv_saved_vault";
 export function hasPortfolioContent(portfolio: {
   milestones?: unknown[];
   summaryStatement?: string;
+  highlights?: unknown[];
+  portfolioAssets?: unknown[];
 }) {
+  const highlights = Array.isArray(portfolio.highlights)
+    ? portfolio.highlights.some((line) => String(line || "").trim())
+    : false;
   return Boolean(
     (Array.isArray(portfolio.milestones) && portfolio.milestones.length > 0) ||
-      (portfolio.summaryStatement && portfolio.summaryStatement.trim().length > 0)
+      (portfolio.summaryStatement && portfolio.summaryStatement.trim().length > 0) ||
+      highlights ||
+      (Array.isArray(portfolio.portfolioAssets) && portfolio.portfolioAssets.length > 0)
   );
 }
 

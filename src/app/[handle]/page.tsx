@@ -215,7 +215,7 @@ export default function CandidateDossierPage() {
         </main>
 
         <footer className="h-14 border-t border-[#E2E8F0] bg-white px-6 flex items-center justify-center text-xs text-slate-400">
-          <span>VerifiedCV • A portfolio people can confirm</span>
+          <span>VerifiedCV • Your portfolio</span>
         </footer>
       </div>
     );
@@ -229,10 +229,8 @@ export default function CandidateDossierPage() {
     corroboratedChapters: chapters.filter((milestone) => getVerificationLevel(milestone) > 0).length,
     workSamples: dossier.portfolioAssets?.length || 0
   });
-  const linkedInHref = dossier.contact?.linkedin
-    ? linkedInProfileUrl(dossier.contact.linkedin) || (/^https?:\/\//i.test(dossier.contact.linkedin) ? dossier.contact.linkedin : "")
-    : "";
-  const linkedInLabel = dossier.contact?.linkedin ? linkedInHandle(dossier.contact.linkedin) || dossier.contact.linkedin : "";
+  const linkedInSlug = linkedInHandle(dossier.contact?.linkedin || "");
+  const linkedInHref = linkedInProfileUrl(dossier.contact?.linkedin || "") || "";
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans antialiased selection:bg-emerald-100 flex flex-col justify-between">
@@ -334,28 +332,19 @@ export default function CandidateDossierPage() {
                   {dossier.contact.phoneVerified && <ProofMark label="Phone confirmed" />}
                 </div>
               )}
-              {dossier.contact.linkedin && (
+              {linkedInSlug && linkedInHref && (
                 <div className="flex items-center gap-2 min-w-0">
-                  {linkedInHref ? (
-                    <a
-                      href={linkedInHref}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 min-w-0 text-blue-700"
-                    >
-                      <span className={`flex items-center justify-center w-6 h-6 rounded-full shrink-0 ${dossier.contact.linkedinVerified ? "bg-blue-50 text-blue-600" : "bg-slate-50 text-slate-400"}`}>
-                        <LinkedInIcon className="w-3 h-3" />
-                      </span>
-                      <span className="font-medium truncate">{linkedInLabel}</span>
-                    </a>
-                  ) : (
-                    <>
-                      <div className={`flex items-center justify-center w-6 h-6 rounded-full shrink-0 ${dossier.contact.linkedinVerified ? "bg-blue-50 text-blue-600" : "bg-slate-50 text-slate-400"}`}>
-                        <LinkedInIcon className="w-3 h-3" />
-                      </div>
-                      <span className={`font-medium truncate ${dossier.contact.linkedinVerified ? "text-slate-900" : "text-slate-500"}`}>{linkedInLabel}</span>
-                    </>
-                  )}
+                  <a
+                    href={linkedInHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 min-w-0 text-blue-700"
+                  >
+                    <span className={`flex items-center justify-center w-6 h-6 rounded-full shrink-0 ${dossier.contact.linkedinVerified ? "bg-blue-50 text-blue-600" : "bg-slate-50 text-slate-400"}`}>
+                      <LinkedInIcon className="w-3 h-3" />
+                    </span>
+                    <span className="font-medium truncate">{linkedInSlug}</span>
+                  </a>
                   {dossier.contact.linkedinVerified && <ProofMark label="LinkedIn confirmed" />}
                 </div>
               )}
@@ -561,7 +550,7 @@ export default function CandidateDossierPage() {
           <div className="flex items-center gap-2">
             <VerifiedCVLogo className="w-4 h-4" />
             <span className="font-bold text-[#0F172A]">VerifiedCV</span>
-            <span>• A portfolio with proof on the work</span>
+            <span>• Your portfolio</span>
           </div>
           <span className="text-[11px]">verifiedcv.app/{dossier.handle}</span>
         </div>

@@ -11,6 +11,7 @@ import {
   hashOwnerToken
 } from "@/lib/handleOwner";
 import { issueRestoreCode } from "@/lib/handleRestore";
+import { linkedInProfileUrl, preferLinkedInProfile } from "@/lib/linkedin";
 import { candidateSummary, decodeStoredHighlights, decodeStoredPage, encodeStoredPage, normalizePortfolioAsset, type PortfolioAsset } from "@/lib/portfolioAssets";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +32,23 @@ function missingOwnerColumn(message?: string) {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const handle = (searchParams.get("handle") || "").toLowerCase().trim();
+  let handle = (searchParams.get("handle") || "").toLowerCase().trim();
+
+  if (searchParams.get("mine") === "1") {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Sign in first." }, { status: 401 });
+    }
+    const byUser = await rawSupabase.from("candidates").select("handle").eq("auth_user_id", user.id).maybeSingle();
+    const byEmail = byUser.data?.handle || !user.email
+      ? null
+      : await rawSupabase.from("candidates").select("handle").ilike("email", user.email).maybeSingle();
+    handle = String(byUser.data?.handle || byEmail?.data?.handle || "").toLowerCase().trim();
+    if (!handle) {
+      return NextResponse.json({ error: "No portfolio yet." }, { status: 404 });
+    }
+  }
 
   if (!handle) {
     return NextResponse.json({ error: "Handle parameter required." }, { status: 400 });
@@ -98,7 +115,7 @@ export async function GET(req: NextRequest) {
           contact: {
             email: candidate.email,
             phone: candidate.phone,
-            linkedin: candidate.linkedin,
+            linkedin: linkedInProfileUrl(String(candidate.linkedin || "")) || "",
             location: candidate.location,
             emailVerified: candidate.email_verified,
             phoneVerified: candidate.phone_verified,
@@ -191,7 +208,7 @@ export async function POST(req: NextRequest) {
 
         const { data: existing, error: existingError } = await rawSupabase
           .from("candidates")
-          .select("handle, email, owner_token_hash, auth_user_id")
+          .select("handle, email, linkedin, owner_token_hash, auth_user_id")
           .eq("handle", handle)
           .maybeSingle();
 
@@ -274,7 +291,7 @@ export async function POST(req: NextRequest) {
             }) || payload.summaryStatement,
             email: payload.contact?.email || "",
             phone: payload.contact?.phone,
-            linkedin: payload.contact?.linkedin,
+            linkedin: preferLinkedInProfile(String(existing?.linkedin || ""), String(payload.contact?.linkedin || "")),
             location: payload.contact?.location,
             email_verified: payload.contact?.emailVerified || false,
             phone_verified: payload.contact?.phoneVerified || false,

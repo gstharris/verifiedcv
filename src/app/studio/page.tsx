@@ -56,7 +56,7 @@ import { corporateEmailMatchesCompany } from "@/lib/corporateEmail";
 import { nextPortfolioVerificationStep, verificationStatusLine } from "@/lib/verificationQueue";
 import { dossierSectionRank, parseDossierLayout, publicRegistryLabel, type PortfolioAsset } from "@/lib/portfolioAssets";
 import { LOOP_EVENTS, consumeCorroboratorRef } from "@/lib/corroborationLoop";
-import { confirmedLinkedInLabel, linkedInHandle, linkedInProfileUrl, preferLinkedInProfile } from "@/lib/linkedin";
+import { linkedInHandle, linkedInProfileUrl, preferLinkedInProfile } from "@/lib/linkedin";
 import { flagEmoji, parseLocation } from "@/lib/locations";
 import { resolvePlace, suggestPlaces } from "@/lib/places";
 import { hydrateChapter, packChapter } from "@/lib/chapterMeta";
@@ -73,7 +73,7 @@ function linkedInFields(
 ) {
   const fromProfile = profile.profileUrl || (profile.vanityName ? linkedInProfileUrl(profile.vanityName) : "") || "";
   return {
-    linkedin: preferLinkedInProfile(existing || "", fromProfile || confirmedLinkedInLabel(profile)),
+    linkedin: preferLinkedInProfile(existing || "", fromProfile),
     linkedinVerified: true as const
   };
 }
@@ -422,6 +422,7 @@ export default function StudioPage() {
   const [headline, setHeadline] = useState("");
   const [isCommitting, setIsCommitting] = useState(false);
   const [isPortfolioSaved, setIsPortfolioSaved] = useState(false);
+  const [portfolioStarted, setPortfolioStarted] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [isReplayingProof, setIsReplayingProof] = useState(false);
   const skipNextAutosaveRef = useRef(true);
@@ -608,7 +609,7 @@ export default function StudioPage() {
 
   const actionPrompts = React.useMemo(() => {
     if (!isPortfolioSaved) {
-      if (!hasPortfolioContent({ milestones, summaryStatement })) {
+      if (!hasPortfolioContent({ milestones, summaryStatement, highlights, portfolioAssets })) {
         return [{ label: "Upload a resume", action: "upload_resume" }];
       }
       return [{ label: "Save and publish", action: "save_portfolio" }];
@@ -654,7 +655,30 @@ export default function StudioPage() {
     if (parsed.contact) setContact((prev) => ({ ...prev, ...parsed.contact }));
     if (parsed.handle) setHandle(String(parsed.handle).toLowerCase().trim());
     setActiveTab("canvas");
+    setPortfolioStarted(true);
   };
+
+  useEffect(() => {
+    if (!user) return;
+    const saved = readStudioRecord<{ milestones?: unknown[]; summaryStatement?: string; highlights?: unknown[]; portfolioAssets?: unknown[] }>(STUDIO_SAVED_KEY);
+    if (saved && hasPortfolioContent(saved)) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/vault?mine=1", { credentials: "include" });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (!data?.handle || cancelled) return;
+        applyPortfolioRecord(data);
+        setIsPortfolioSaved(true);
+      } catch {
+        // A new sign-in can start a portfolio on this screen.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   const requirePortfolioSaved = (onReady: () => void) => {
     if (!isPortfolioSaved) {
@@ -1341,7 +1365,7 @@ export default function StudioPage() {
         ]);
         return;
       }
-      if (!hasPortfolioContent({ milestones, summaryStatement })) {
+      if (!hasPortfolioContent({ milestones, summaryStatement, highlights, portfolioAssets })) {
         setChatMessages((prev) => [
           ...prev,
           {
@@ -1760,6 +1784,7 @@ export default function StudioPage() {
     );
   };
 
+  const canPublish = hasPortfolioContent({ milestones, summaryStatement, highlights, portfolioAssets });
   const corroboratedCount = milestones.reduce((acc, m) => acc + (m.verifications?.length || 0), 0);
   const verifiedSignalsCount =
     (contact.emailVerified ? 1 : 0) +
@@ -1788,7 +1813,7 @@ export default function StudioPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {(milestones.length > 0 || summaryStatement) && !isPortfolioSaved && (
+          {(canPublish || portfolioStarted) && !isPortfolioSaved && (
             <button
               type="button"
               onClick={() => {
@@ -1797,6 +1822,7 @@ export default function StudioPage() {
                 setSkills([]);
                 setEducation([]);
                 setIsPortfolioSaved(false);
+                setPortfolioStarted(false);
                 setSaveStatus("idle");
                 clearStudioPortfolioStorage();
                 setActiveTab("canvas");
@@ -1821,9 +1847,21 @@ export default function StudioPage() {
                 <span>View Live Dossier</span>
                 <ExternalLink className="w-3.5 h-3.5" />
               </Link>
+              <button
+                type="button"
+                onClick={async () => {
+                  await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+                  await supabase.auth.signOut();
+                  clearStudioPortfolioStorage();
+                  window.location.href = "/studio";
+                }}
+                className="text-xs font-semibold text-slate-500 hover:text-[#0F172A] cursor-pointer"
+              >
+                Log out
+              </button>
             </>
           ) : (
-            (milestones.length > 0 || summaryStatement) && (
+            canPublish && (
               <button
                 type="button"
                 onClick={() => setIsClaimModalOpen(true)}
@@ -1833,6 +1871,20 @@ export default function StudioPage() {
                 <span>Save Portfolio</span>
               </button>
             )
+          )}
+          {user && !isPortfolioSaved && (
+            <button
+              type="button"
+              onClick={async () => {
+                await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+                await supabase.auth.signOut();
+                clearStudioPortfolioStorage();
+                window.location.href = "/studio";
+              }}
+              className="text-xs font-semibold text-slate-500 hover:text-[#0F172A] cursor-pointer"
+            >
+              Log out
+            </button>
           )}
         </div>
       </header>
@@ -1908,16 +1960,16 @@ export default function StudioPage() {
         {/* LIVE CANVAS */}
         <main className="flex-1 overflow-y-auto w-full">
           <div className="p-8 max-w-5xl mx-auto space-y-8 antialiased">
-          {milestones.length === 0 && !summaryStatement ? (
+          {!portfolioStarted && !canPublish ? (
             <div className="bg-white border border-[#E2E8F0] rounded-3xl p-8 sm:p-10 text-center space-y-6 shadow-xs max-w-2xl mx-auto mt-4">
               <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#059669] mx-auto">
                 <UploadCloud className="w-7 h-7" />
               </div>
 
               <div className="space-y-2">
-                <h2 className="text-xl font-black text-[#0F172A]">Start with your resume</h2>
+                <h2 className="text-xl font-black text-[#0F172A]">Start your portfolio</h2>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                  Upload your resume or paste below. We keep dates, titles, and company names intact.
+                  Upload a resume, or start with the work you want to show. A name, an email, and one piece of work is enough to publish. Experience is optional.
                 </p>
               </div>
 
@@ -1939,6 +1991,24 @@ export default function StudioPage() {
                   <UploadCloud className="w-4 h-4 text-emerald-400" />
                   <span>{isProcessing ? "Analyzing..." : "Upload Document"}</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPortfolioStarted(true)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#059669] hover:bg-emerald-600 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                >
+                  <span>Start with your work</span>
+                </button>
+
+                {!user && (
+                  <button
+                    type="button"
+                    onClick={() => setIsClaimModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-[#E2E8F0] bg-white hover:bg-slate-50 text-[#0F172A] text-xs font-bold transition-all cursor-pointer"
+                  >
+                    <span>Sign in</span>
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -2197,7 +2267,7 @@ export default function StudioPage() {
                   <div className="p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 flex-1 min-w-0">
                       <LinkedInIcon className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                      {contact.linkedinVerified && linkedInHandle(contact.linkedin) ? (
+                      {linkedInHandle(contact.linkedin) ? (
                         <a
                           href={linkedInProfileUrl(contact.linkedin)}
                           target="_blank"
@@ -2207,9 +2277,7 @@ export default function StudioPage() {
                           {linkedInHandle(contact.linkedin)}
                         </a>
                       ) : (
-                        <span className={`text-xs font-medium truncate ${contact.linkedinVerified ? "text-slate-800" : "text-slate-400"}`}>
-                          {contact.linkedinVerified ? contact.linkedin : "Not confirmed"}
-                        </span>
+                        <span className="text-xs font-medium truncate text-slate-400">Not confirmed</span>
                       )}
                     </div>
                     {contact.linkedinVerified && <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />}
@@ -2223,7 +2291,11 @@ export default function StudioPage() {
                           window.location.href = "/api/auth/linkedin?next=/studio";
                         });
                       }}
-                      className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer shrink-0"
+                      className={
+                        contact.linkedinVerified
+                          ? "text-[10px] font-bold text-slate-500 hover:text-[#0F172A] cursor-pointer shrink-0"
+                          : "text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer shrink-0"
+                      }
                     >
                       {contact.linkedinVerified ? "Edit" : "Verify"}
                     </button>
@@ -3188,7 +3260,7 @@ export default function StudioPage() {
             <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
               <div className="flex items-center gap-2">
                 <VerifiedCVLogo className="w-6 h-6" />
-                <h3 className="font-black text-sm text-[#0F172A]">Save Portfolio to Start Editing</h3>
+                <h3 className="font-black text-sm text-[#0F172A]">{canPublish ? "Save your portfolio" : "Sign in"}</h3>
               </div>
               <button
                 type="button"
@@ -3202,7 +3274,9 @@ export default function StudioPage() {
             {!user ? (
               <div className="space-y-5 text-xs antialiased">
                 <p className="text-slate-500 leading-relaxed text-center">
-                  Sign in to claim your handle and save your portfolio.
+                  {canPublish
+                    ? "Sign in with Google, LinkedIn, or email. Your name and email publish the page. Add work, a summary, or one chapter — experience is optional."
+                    : "Sign in to open the portfolio you already saved."}
                 </p>
                 
                 <div className="space-y-3">

@@ -3,6 +3,7 @@ import {
   createOAuthState,
   isSafeNextPath,
   confirmedLinkedInLabel,
+  linkedInHandle,
   linkedInProfileUrl,
   mapUserInfoToIdentity,
   preferLinkedInProfile,
@@ -53,9 +54,12 @@ describe("linkedin helpers", () => {
       "gstharris"
     );
     expect(confirmedLinkedInLabel({ name: "Graham Harris" })).toBe("Graham Harris");
+    expect(linkedInHandle("https://www.linkedin.com/in/gstharris/")).toBe("gstharris");
+    expect(linkedInHandle("Graham Harris")).toBe("");
     expect(linkedInProfileUrl("linkedin.com/in/gstharris")).toBe("https://www.linkedin.com/in/gstharris");
     expect(preferLinkedInProfile("linkedin.com/in/gstharris", "Graham Harris")).toBe(
       "https://www.linkedin.com/in/gstharris"
     );
+    expect(preferLinkedInProfile("Graham Harris", "Graham Harris")).toBe("");
   });
 });

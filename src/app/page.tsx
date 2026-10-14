@@ -597,7 +597,7 @@ export default function VerifiedCVLandingPage() {
           <div className="flex items-center gap-2">
             <VerifiedCVLogo className="w-4 h-4" />
             <span className="font-bold text-[#0F172A]">VerifiedCV</span>
-            <span className="text-slate-400">• A portfolio people can confirm</span>
+            <span className="text-slate-400">• Your portfolio</span>
           </div>
 
           <div className="flex items-center gap-5 text-[11px]">

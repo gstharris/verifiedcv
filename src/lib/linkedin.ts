@@ -179,7 +179,7 @@ export function linkedInProfileUrl(value: string) {
 }
 
 export function preferLinkedInProfile(existing: string, incoming: string) {
-  return linkedInProfileUrl(incoming) || linkedInProfileUrl(existing) || String(incoming || existing || "").trim();
+  return linkedInProfileUrl(incoming) || linkedInProfileUrl(existing) || "";
 }
 
 export function confirmedLinkedInLabel(identity: { name?: string; vanityName?: string; profileUrl?: string }) {

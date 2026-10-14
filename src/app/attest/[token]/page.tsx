@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 import { overlapMonths, parseTenureRange } from "@/lib/tenureOverlap";
-import { corroborationHeadline } from "@/lib/corroborationDisplay";
+import { colleagueInvitePitch, corroborationHeadline } from "@/lib/corroborationDisplay";
 import { captureEvent } from "@/lib/analytics";
 import { LOOP_EVENTS, writeCorroboratorRef } from "@/lib/corroborationLoop";
 
@@ -355,11 +355,10 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
                 </span>
               </div>
               <h1 className="text-xl sm:text-2xl font-black text-slate-950 tracking-tight">
-                Confirm time with {data.candidateName} at {data.companyName}
+                {colleagueInvitePitch(data.candidateName, data.companyName).ask}
               </h1>
               <p className="text-xs text-slate-600 leading-relaxed font-normal">
-                Sign in with LinkedIn, add your title, and the years you overlapped. Your name stays private.
-                Recruiters will see a title at {data.companyName}, or a count if several people confirm.
+                {colleagueInvitePitch(data.candidateName, data.companyName).loop} Sign in with LinkedIn, add your title, and the years you overlapped. Your name stays private on {data.candidateName}'s page.
               </p>
             </div>
 
@@ -601,17 +600,17 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
 
             <div className="p-5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] text-left space-y-3">
               <h3 className="font-extrabold text-sm text-[#0F172A]">
-                Start your own page
+                Create your portfolio
               </h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Upload a resume and claim a link. {data.candidateName} can confirm your chapter later. Nothing is marked corroborated until someone does.
+                {colleagueInvitePitch(data.candidateName, data.companyName).loop} A name, an email, and the work you want to show is enough.
               </p>
               <button
                 type="button"
                 onClick={startOwnPage}
                 className="w-full py-2.5 bg-[#059669] hover:bg-[#047857] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
               >
-                <span>Start your page</span>
+                <span>Create your portfolio</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -622,7 +621,7 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
 
       {/* Footer */}
       <footer className="py-6 border-t border-slate-200 text-center text-xs text-slate-500">
-        VerifiedCV • A portfolio people can confirm
+        VerifiedCV • Your portfolio
       </footer>
 
     </div>

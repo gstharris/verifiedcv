@@ -28,6 +28,16 @@ export function publicTitleFromVerification(record: CorroborationRecord) {
   return "colleague";
 }
 
+export function colleagueInvitePitch(candidateName: string, company: string) {
+  const name = String(candidateName || "").trim() || "Someone";
+  const place = String(company || "").trim() || "that company";
+  const first = name.split(/\s+/)[0] || name;
+  return {
+    ask: `${name} wants you to confirm you worked together at ${place}.`,
+    loop: `That request is ${first} saying you were there too. Create your portfolio, and ${place} can be the first chapter on it.`
+  };
+}
+
 export function corroborationHeadline(company: string, verifications: CorroborationRecord[]) {
   const count = verifications.length;
   const place = String(company || "this company").trim() || "this company";

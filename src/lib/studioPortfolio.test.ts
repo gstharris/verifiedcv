@@ -31,6 +31,8 @@ describe("studio portfolio storage", () => {
     expect(hasPortfolioContent({ milestones: [], summaryStatement: "" })).toBe(false);
     expect(hasPortfolioContent({ milestones: [{ id: "m1" }] })).toBe(true);
     expect(hasPortfolioContent({ summaryStatement: "Built a $400M platform." })).toBe(true);
+    expect(hasPortfolioContent({ portfolioAssets: [{ title: "Recipe film" }] })).toBe(true);
+    expect(hasPortfolioContent({ highlights: ["A film about the tasting menu."] })).toBe(true);
   });
 
   it("round-trips draft and saved portfolio records", () => {
