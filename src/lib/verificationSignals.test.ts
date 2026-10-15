@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  chapterProofItems,
   companyProofLines,
   companyVerificationTooltip,
   corpEmailDomain,
+  employmentDocumentLabel,
   endorsedClaimIndexes,
   firstChapterWithoutColleague,
+  hasWorkEmailProof,
+  mergeChapterProof,
   postSavePrompt,
   publicTrustSummary
 } from "./verificationSignals";
@@ -63,5 +67,34 @@ describe("verification signals", () => {
 
   it("maps claim ids like c0 to indexes", () => {
     expect(endorsedClaimIndexes(["c0", "c2", "c0", "skip"])).toEqual([0, 2]);
+  });
+
+  it("lists work email, colleagues, and uploaded documents as completed proof", () => {
+    expect(employmentDocumentLabel({ name: "Employment document", type: "W-2 / offer letter" })).toBe(
+      "Employment document"
+    );
+    expect(employmentDocumentLabel({ name: "Employment contract", type: "contract" })).toBe("Employment contract");
+    expect(
+      chapterProofItems(
+        [
+          { id: "v1", name: "Corporate Email Verification", email: "graham.harris@ge-on.com" },
+          { id: "v2", name: "Alex Rivera", role: "Manager" }
+        ],
+        [{ id: "art-1", name: "Employment document", type: "contract" }]
+      )
+    ).toEqual([
+      { id: "v1", kind: "verification", label: "Work email graham.harris@ge-on.com" },
+      { id: "v2", kind: "verification", label: "Alex Rivera · Manager" },
+      { id: "art-1", kind: "document", label: "Employment contract" }
+    ]);
+    expect(hasWorkEmailProof([{ name: "Corporate Email Verification" }])).toBe(true);
+    expect(hasWorkEmailProof([{ name: "Alex Rivera" }])).toBe(false);
+  });
+
+  it("keeps server proof that the open studio is missing, and skips proof the user removed", () => {
+    const removed = new Set(["art-1"]);
+    expect(
+      mergeChapterProof([{ id: "v1" }], [{ id: "v1" }, { id: "art-1" }, { id: "art-2" }], removed).map((item) => item.id)
+    ).toEqual(["v1", "art-2"]);
   });
 });

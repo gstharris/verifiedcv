@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { extractText } from "unpdf";
 import { getSupabase } from "@/lib/supabase";
-import { matchEmploymentDocument } from "@/lib/documentProof";
+import { employmentDocumentName, matchEmploymentDocument } from "@/lib/documentProof";
 import { getHandleOwnerFromRequest, ownerCookieMatches } from "@/lib/handleOwner";
 
 export const runtime = "nodejs";
@@ -161,8 +161,8 @@ export async function POST(req: NextRequest) {
 
     const artifact = {
       id: `art-${crypto.randomUUID()}`,
-      name: "Employment document",
-      type: "W-2 / offer letter"
+      name: employmentDocumentName(match.documentClass) || "Employment document",
+      type: match.documentClass || "document"
     };
 
     if (canPersistArtifact && supabase && process.env.NEXT_PUBLIC_SUPABASE_URL) {

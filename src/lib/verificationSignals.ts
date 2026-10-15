@@ -1,3 +1,5 @@
+import { employmentDocumentName } from "@/lib/documentProof";
+
 export const CORP_EMAIL_VERIFIER = "Corporate Email Verification";
 
 export type ProofRecord = {
@@ -8,6 +10,54 @@ export type ProofRecord = {
 
 export function isCorpEmailVerification(record: ProofRecord) {
   return String(record.name || "") === CORP_EMAIL_VERIFIER;
+}
+
+export function employmentDocumentLabel(artifact: { name?: string; type?: string }) {
+  const name = String(artifact.name || "").trim();
+  const typed = employmentDocumentName(artifact.type);
+  if (typed) return typed;
+  if (name && name !== "Employment document") return name;
+  return "Employment document";
+}
+
+export type ChapterProofItem = {
+  id: string;
+  kind: "verification" | "document";
+  label: string;
+};
+
+export function chapterProofItems(
+  verifications: Array<ProofRecord & { id?: string }> = [],
+  artifacts: Array<{ id?: string; name?: string; type?: string }> = []
+): ChapterProofItem[] {
+  return [
+    ...verifications.map((record, index) => ({
+      id: record.id || `verification-${index}`,
+      kind: "verification" as const,
+      label: isCorpEmailVerification(record)
+        ? record.email
+          ? `Work email ${record.email}`
+          : "Work email"
+        : [record.name, record.role].map((part) => String(part || "").trim()).filter(Boolean).join(" · ") || "Colleague"
+    })),
+    ...artifacts.map((artifact, index) => ({
+      id: artifact.id || `document-${index}`,
+      kind: "document" as const,
+      label: employmentDocumentLabel(artifact)
+    }))
+  ];
+}
+
+export function hasWorkEmailProof(verifications: ProofRecord[] = []) {
+  return verifications.some(isCorpEmailVerification);
+}
+
+export function mergeChapterProof<T extends { id?: string }>(local: T[] = [], server: T[] = [], removedIds: Set<string> = new Set()) {
+  const seen = new Set(local.map((item) => item.id).filter((id): id is string => Boolean(id)));
+  return [
+    ...local,
+    ...server.filter((item) => item.id && !seen.has(item.id) && !removedIds.has(item.id))
+  ];
 }
 
 export function corpEmailDomain(email?: string) {

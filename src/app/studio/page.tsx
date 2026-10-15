@@ -50,8 +50,9 @@ import {
   writeStudioRecord
 } from "@/lib/studioPortfolio";
 import { getVerificationStatus } from "@/lib/verificationLevel";
-import { companyVerificationTooltip, endorsedClaimIndexes, firstChapterWithoutColleague, isCorpEmailVerification, postSavePrompt } from "@/lib/verificationSignals";
+import { chapterProofItems, companyVerificationTooltip, endorsedClaimIndexes, firstChapterWithoutColleague, hasWorkEmailProof, mergeChapterProof, postSavePrompt } from "@/lib/verificationSignals";
 import { corporateEmailMatchesCompany } from "@/lib/corporateEmail";
+import { interpretVerificationAsk } from "@/lib/chapterMatch";
 import { nextPortfolioVerificationStep, verificationStatusLine } from "@/lib/verificationQueue";
 import { dossierSectionRank, encodeDossierLayout, parseDossierLayout, publicRegistryLabel, type PortfolioAsset } from "@/lib/portfolioAssets";
 import { LOOP_EVENTS, consumeCorroboratorRef } from "@/lib/corroborationLoop";
@@ -432,6 +433,7 @@ export default function StudioPage() {
   const [highlights, setHighlights] = useState<string[]>([]);
   const [summaryEditor, setSummaryEditor] = useState(false);
   const [sampleWorkOpen, setSampleWorkOpen] = useState(false);
+  const [sampleWorkAddSignal, setSampleWorkAddSignal] = useState(0);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const addMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -493,6 +495,7 @@ export default function StudioPage() {
   const [isCorpEmailModalOpen, setIsCorpEmailModalOpen] = useState(false);
   const [artifactScanError, setArtifactScanError] = useState<string | null>(null);
   const returnToVerifyHubRef = useRef(false);
+  const removedProofIdsRef = useRef(new Set<string>());
   const [targetMilestone, setTargetMilestone] = useState<Milestone | null>(null);
   
   // Corp Email State
@@ -825,6 +828,38 @@ export default function StudioPage() {
       setIsVerifyHubOpen(true);
     }
   };
+
+  useEffect(() => {
+    if (!isVerifyHubOpen || !targetMilestone?.id) return;
+    const milestoneId = targetMilestone.id;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/vault?mine=1", { credentials: "include" });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        const fresh = Array.isArray(data.milestones)
+          ? data.milestones.find((milestone: Milestone) => milestone.id === milestoneId)
+          : null;
+        if (!fresh || cancelled) return;
+        setMilestones((prev) =>
+          prev.map((milestone) => {
+            if (milestone.id !== milestoneId) return milestone;
+            return {
+              ...milestone,
+              artifacts: mergeChapterProof(milestone.artifacts || [], fresh.artifacts || [], removedProofIdsRef.current),
+              verifications: mergeChapterProof(milestone.verifications || [], fresh.verifications || [], removedProofIdsRef.current)
+            };
+          })
+        );
+      } catch {
+        // The open window still shows whatever proof is already on the chapter.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isVerifyHubOpen, targetMilestone?.id]);
 
 
   const executeIngest = async (text: string) => {
@@ -1455,6 +1490,82 @@ export default function StudioPage() {
     const normalized = query.toLowerCase();
     setChatMessages((prev) => [...prev, { sender: "user", text: query }]);
     setChatInput("");
+
+    const verificationAsk = interpretVerificationAsk(query, milestones);
+    if (verificationAsk.status === "match") {
+      const chapter = verificationAsk.chapter;
+      requirePortfolioSaved(() => {
+        setTargetMilestone(chapter);
+        setHighlightedMilestoneId(chapter.id);
+        document.getElementById(chapter.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        setIsVerifyHubOpen(true);
+        setChatMessages((prev) => [
+          ...prev,
+          { sender: "ally", text: `${chapter.company} is on your resume. Opening verification for that chapter.` }
+        ]);
+      });
+      return;
+    }
+    if (verificationAsk.status === "missing") {
+      const names = milestones.map((milestone) => milestone.company).filter(Boolean);
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          sender: "ally",
+          text: names.length
+            ? `I don't see ${verificationAsk.phrase} on your resume. Your chapters are ${names.join(", ")}.`
+            : "Add a company chapter first, then we can verify it."
+        }
+      ]);
+      return;
+    }
+    if (verificationAsk.status === "ambiguous") {
+      const names = verificationAsk.chapters.map((chapter) => chapter.company).filter(Boolean);
+      setChatMessages((prev) => [
+        ...prev,
+        { sender: "ally", text: `That could be ${names.join(" or ")}. Which chapter should we verify?` }
+      ]);
+      return;
+    }
+    if (verificationAsk.status === "identity") {
+      requirePortfolioSaved(() => {
+        document.getElementById("identity-card")?.scrollIntoView({ behavior: "smooth", block: "center" });
+        if (verificationAsk.field === "email") document.getElementById("contact-email")?.focus();
+        if (verificationAsk.field === "phone") document.getElementById("contact-phone")?.focus();
+        if (verificationAsk.field === "linkedin") {
+          setChatMessages((prev) => [
+            ...prev,
+            { sender: "ally", text: "Use the LinkedIn control on your contact row. If it is already verified, changing the handle means verifying it again." }
+          ]);
+          return;
+        }
+        setChatMessages((prev) => [
+          ...prev,
+          { sender: "ally", text: `Use the Verify button next to your ${verificationAsk.field}.` }
+        ]);
+      });
+      return;
+    }
+    if (verificationAsk.status === "next") {
+      handleActionPrompt("verify_portfolio");
+      return;
+    }
+
+    if (
+      normalized.includes("sample work") ||
+      normalized.includes("add a project") ||
+      normalized.includes("add work") ||
+      normalized.includes("portfolio piece")
+    ) {
+      setSampleWorkOpen(true);
+      setSampleWorkAddSignal((current) => current + 1);
+      window.setTimeout(() => document.getElementById("work-samples")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+      setChatMessages((prev) => [
+        ...prev,
+        { sender: "ally", text: "Choose what to add. The fields show up after you pick a type." }
+      ]);
+      return;
+    }
 
     if (
       normalized.includes("save") ||
@@ -2853,9 +2964,9 @@ export default function StudioPage() {
                           : "border-[#E2E8F0] hover:border-slate-300"
                       }`}
                     >
-                      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 pb-2 border-b border-[#E2E8F0]/70">
-                        <div className="min-w-0 space-y-1">
-                          <div className="inline-flex max-w-full flex-wrap items-center gap-x-2 gap-y-1">
+                      <div className="space-y-1 pb-2 border-b border-[#E2E8F0]/70">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="inline-flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                             <input
                             type="text"
                             value={milestone.company}
@@ -2881,28 +2992,30 @@ export default function StudioPage() {
                                 )
                               }
                             />
-                            <span className="group/proof relative inline-flex shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => openVerifyHub(milestone)}
-                                className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1 ${
-                                  isPortfolioSaved
-                                    ? "text-[#059669] bg-emerald-50 hover:bg-emerald-100 border border-emerald-200"
-                                    : "text-slate-400 bg-slate-50 border border-slate-200"
-                                }`}
-                              >
-                                <ShieldCheck className="w-3 h-3" />
-                                <span>Verification</span>
-                              </button>
-                              <span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-56 rounded-lg bg-slate-900 px-3 py-2 text-left text-[10px] font-semibold leading-relaxed text-white shadow-xl group-hover/proof:block group-focus-within/proof:block">
-                                {companyVerificationTooltip(
-                                  milestone.company,
-                                  milestone.verifications || [],
-                                  milestone.artifacts?.length || 0
-                                ) || "Nothing checked for this chapter yet."}
-                              </span>
-                            </span>
                           </div>
+                          <span className="group/proof relative inline-flex shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => openVerifyHub(milestone)}
+                              className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1 ${
+                                isPortfolioSaved
+                                  ? "text-[#059669] bg-emerald-50 hover:bg-emerald-100 border border-emerald-200"
+                                  : "text-slate-400 bg-slate-50 border border-slate-200"
+                              }`}
+                            >
+                              <ShieldCheck className="w-3 h-3" />
+                              <span>Verification</span>
+                            </button>
+                            <span className="pointer-events-none absolute right-0 top-full z-20 mt-1 hidden w-56 rounded-lg bg-slate-900 px-3 py-2 text-left text-[10px] font-semibold leading-relaxed text-white shadow-xl group-hover/proof:block group-focus-within/proof:block">
+                              {companyVerificationTooltip(
+                                milestone.company,
+                                milestone.verifications || [],
+                                milestone.artifacts?.length || 0
+                              ) || "Nothing checked for this chapter yet."}
+                            </span>
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                           <input
                             type="text"
                             value={milestone.role}
@@ -2916,36 +3029,34 @@ export default function StudioPage() {
                             placeholder="Role title"
                             spellCheck={true}
                             size={Math.max(milestone.role.trim().length, 16)}
-                            className={`w-auto max-w-full text-xs font-semibold text-slate-600 focus:outline-none border-b border-transparent [field-sizing:content] ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
+                            className={`min-w-0 w-auto max-w-full text-xs font-semibold text-slate-600 focus:outline-none border-b border-transparent [field-sizing:content] ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
                           />
-                        </div>
-
-                        <div className="flex items-center gap-2 shrink-0">
-                          <input
-                            type="text"
-                            value={milestone.period}
-                            readOnly={!isPortfolioSaved}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setMilestones((prev) =>
-                                prev.map((m) => (m.id === milestone.id ? { ...m, period: val } : m))
-                              );
-                            }}
-                            onBlur={() => setMilestones((prev) => sortChaptersByTenure(prev))}
-                            placeholder="May 2025 — Present"
-                            aria-label="Dates"
-                            size={Math.max(milestone.period.trim().length, 16)}
-                            className={`w-auto text-[11px] font-medium text-slate-600 text-right bg-transparent focus:outline-none border-b border-transparent [field-sizing:content] ${isPortfolioSaved ? "focus:border-[#059669]" : ""}`}
-                          />
-
-                          <button
-                            type="button"
-                            onClick={() => setChapterToRemove({ id: milestone.id, company: milestone.company || "this chapter" })}
-                            className="text-slate-300 hover:text-red-500 transition-colors p-1 cursor-pointer"
-                            title="Remove chapter"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <input
+                              type="text"
+                              value={milestone.period}
+                              readOnly={!isPortfolioSaved}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setMilestones((prev) =>
+                                  prev.map((m) => (m.id === milestone.id ? { ...m, period: val } : m))
+                                );
+                              }}
+                              onBlur={() => setMilestones((prev) => sortChaptersByTenure(prev))}
+                              placeholder="May 2025 — Present"
+                              aria-label="Dates"
+                              size={Math.max(milestone.period.trim().length, 16)}
+                              className={`w-auto text-[11px] font-medium text-slate-600 text-right bg-transparent focus:outline-none border-b border-transparent [field-sizing:content] ${isPortfolioSaved ? "focus:border-[#059669]" : ""}`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setChapterToRemove({ id: milestone.id, company: milestone.company || "this chapter" })}
+                              className="text-slate-300 hover:text-red-500 transition-colors p-1 cursor-pointer"
+                              title="Remove chapter"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                       </div>
 
@@ -3091,6 +3202,7 @@ export default function StudioPage() {
 
               {(sampleWorkOpen || portfolioAssets.length > 0) && (
               <div id="work-samples" style={{ order: dossierSectionRank(preferredLayout).work }} className="scroll-mt-14 space-y-3">
+                {portfolioAssets.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">On the dossier</span>
                   <div className="inline-flex p-0.5 rounded-lg bg-white border border-[#E2E8F0]">
@@ -3114,10 +3226,12 @@ export default function StudioPage() {
                     })}
                   </div>
                 </div>
+                )}
               <PortfolioStudioPanel
                 assets={portfolioAssets}
                 handle={handle}
                 saved={isPortfolioSaved}
+                addSignal={sampleWorkAddSignal}
                 onAssetsChange={setPortfolioAssets}
               />
               </div>
@@ -3148,23 +3262,11 @@ export default function StudioPage() {
             {(() => {
               const live = milestones.find((m) => m.id === targetMilestone.id) || targetMilestone;
 
-              const checked = [
-                ...(live.verifications || []).map((record) => ({
-                  id: record.id,
-                  kind: "verification" as const,
-                  label: isCorpEmailVerification(record)
-                    ? record.email
-                      ? `Work email ${record.email}`
-                      : "Work email"
-                    : [record.name, record.role].map((part) => String(part || "").trim()).filter(Boolean).join(" · ") || "Colleague"
-                })),
-                ...(live.artifacts || []).map((artifact) => ({
-                  id: artifact.id,
-                  kind: "document" as const,
-                  label: artifact.name ? `Employment document · ${artifact.name}` : "Employment document"
-                }))
-              ];
+              const checked = chapterProofItems(live.verifications || [], live.artifacts || []);
+              const workEmailDone = hasWorkEmailProof(live.verifications || []);
+              const documentDone = (live.artifacts || []).length > 0;
               const dropProof = (item: { id: string; kind: "verification" | "document" }) => {
+                removedProofIdsRef.current.add(item.id);
                 const updated = milestones.map((milestone) => {
                   if (milestone.id !== live.id) return milestone;
                   if (item.kind === "verification") {
@@ -3236,6 +3338,7 @@ export default function StudioPage() {
                     ))}
                   </div>
 
+                  {!workEmailDone && (
                   <button
                     type="button"
                     onClick={() => openVerifyStep("corp")}
@@ -3249,6 +3352,7 @@ export default function StudioPage() {
                       Send a code to the work inbox {live.company} issued you. We reject personal inboxes, require the domain to match this company, check its mail servers, and look the mailbox up in a company directory before a code goes out.
                     </p>
                   </button>
+                  )}
 
                   <button
                     type="button"
@@ -3264,6 +3368,7 @@ export default function StudioPage() {
                     </p>
                   </button>
 
+                  {!documentDone && (
                   <button
                     type="button"
                     onClick={() => openVerifyStep("doc")}
@@ -3277,6 +3382,7 @@ export default function StudioPage() {
                       Upload a W-2, offer letter, contract, or pay stub. We check your name, this employer, overlapping dates, and document language, then delete the file. This is not an IRS lookup — pair it with a colleague when you can.
                     </p>
                   </button>
+                  )}
 
                 </div>
               );

@@ -12,6 +12,14 @@ export type DocumentMatch = {
   reason: string;
 };
 
+export function employmentDocumentName(documentClass?: string | null) {
+  if (documentClass === "w2") return "W-2";
+  if (documentClass === "offer") return "Offer letter";
+  if (documentClass === "contract") return "Employment contract";
+  if (documentClass === "paystub") return "Pay stub";
+  return "";
+}
+
 export function classifyEmploymentDocument(text: string): EmploymentDocumentClass {
   const haystack = String(text || "").toLowerCase();
   if (/\bform\s*w-?2\b|\bwage and tax statement\b/.test(haystack)) return "w2";

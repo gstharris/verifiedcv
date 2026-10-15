@@ -4,6 +4,7 @@ import {
   chapterYears,
   classifyEmploymentDocument,
   companyMentioned,
+  employmentDocumentName,
   matchEmploymentDocument
 } from "./documentProof";
 
@@ -15,6 +16,12 @@ Wages 120000
 `;
 
 describe("document proof matching", () => {
+  it("names the document class that was matched", () => {
+    expect(employmentDocumentName("contract")).toBe("Employment contract");
+    expect(employmentDocumentName("w2")).toBe("W-2");
+    expect(employmentDocumentName("W-2 / offer letter")).toBe("");
+  });
+
   it("treats slash-separated company names as either entity", () => {
     expect(companyMentioned("SCD Enterprises / PairedRight", "Offer letter from PairedRight")).toBe(true);
     expect(companyMentioned("Yahoo", "Google LLC paystub")).toBe(false);
