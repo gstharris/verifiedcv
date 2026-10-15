@@ -444,9 +444,16 @@ export async function POST(req: NextRequest) {
             );
           }
 
-          if (m.verifications && m.verifications.length > 0) {
+          if (Array.isArray(m.verifications)) {
             const { data: existingVers } = await rawSupabase.from("verifications").select("id").eq("milestone_id", milestoneId);
             const existingIds = new Set((existingVers || []).map((row) => row.id));
+            const keepIds = new Set(
+              m.verifications.map((v: { id?: string }) => v.id).filter((id: string | undefined): id is string => Boolean(id))
+            );
+            const staleIds = (existingVers || []).map((row) => row.id).filter((id) => !keepIds.has(id));
+            if (staleIds.length > 0) {
+              await rawSupabase.from("verifications").delete().in("id", staleIds);
+            }
             const fresh = m.verifications.filter((v: { id?: string }) => v.id && !existingIds.has(v.id));
             if (fresh.length > 0) {
               await rawSupabase.from("verifications").insert(

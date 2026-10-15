@@ -36,8 +36,7 @@ import {
   ShieldAlert,
   Share2,
   Zap,
-  Paperclip,
-  FileBadge
+  Paperclip
 } from "lucide-react";
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 import {
@@ -50,9 +49,8 @@ import {
   unverifiedContact,
   writeStudioRecord
 } from "@/lib/studioPortfolio";
-import { getVerificationStatus, publicChapterLabel } from "@/lib/verificationLevel";
-import { corroborationHeadline } from "@/lib/corroborationDisplay";
-import { companyVerificationTooltip, endorsedClaimIndexes, firstChapterWithoutColleague, postSavePrompt } from "@/lib/verificationSignals";
+import { getVerificationStatus } from "@/lib/verificationLevel";
+import { companyVerificationTooltip, endorsedClaimIndexes, firstChapterWithoutColleague, isCorpEmailVerification, postSavePrompt } from "@/lib/verificationSignals";
 import { corporateEmailMatchesCompany } from "@/lib/corporateEmail";
 import { nextPortfolioVerificationStep, verificationStatusLine } from "@/lib/verificationQueue";
 import { dossierSectionRank, encodeDossierLayout, parseDossierLayout, publicRegistryLabel, type PortfolioAsset } from "@/lib/portfolioAssets";
@@ -289,7 +287,7 @@ function CompanySitePrompt({
           }}
           className="text-[10px] font-bold text-slate-400 hover:text-[#0F172A] cursor-pointer shrink-0"
         >
-          Change
+          Modify URL
         </button>
       </>
     );
@@ -476,6 +474,12 @@ export default function StudioPage() {
   const [allyOpen, setAllyOpen] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [chapterToRemove, setChapterToRemove] = useState<{ id: string; company: string } | null>(null);
+  const [proofToRemove, setProofToRemove] = useState<{
+    milestoneId: string;
+    kind: "verification" | "document";
+    id: string;
+    label: string;
+  } | null>(null);
   const [replaceBusy, setReplaceBusy] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [isReplayingProof, setIsReplayingProof] = useState(false);
@@ -2839,7 +2843,6 @@ export default function StudioPage() {
 
                 <div className="space-y-6">
                   {milestones.map((milestone) => {
-                    const trustStatus = getVerificationLevel(milestone);
                     return (
                     <div
                       key={milestone.id}
@@ -2850,9 +2853,9 @@ export default function StudioPage() {
                           : "border-[#E2E8F0] hover:border-slate-300"
                       }`}
                     >
-                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3.5 border-b border-[#E2E8F0]/70">
-                        <div className="flex-1 space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 pb-2 border-b border-[#E2E8F0]/70">
+                        <div className="min-w-0 space-y-1">
+                          <div className="inline-flex max-w-full flex-wrap items-center gap-x-2 gap-y-1">
                             <input
                             type="text"
                             value={milestone.company}
@@ -2865,7 +2868,8 @@ export default function StudioPage() {
                             }}
                             placeholder="Company name"
                             spellCheck={true}
-                            className={`min-w-[8rem] flex-1 font-black text-base text-[#0F172A] focus:outline-none border-b border-transparent ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
+                            size={Math.max(milestone.company.trim().length, 12)}
+                            className={`w-auto max-w-full font-black text-base text-[#0F172A] focus:outline-none border-b border-transparent [field-sizing:content] ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
                           />
                             <CompanySitePrompt
                               company={milestone.company}
@@ -2877,27 +2881,27 @@ export default function StudioPage() {
                                 )
                               }
                             />
-                            {trustStatus.level > 0 && (
-                              <span
-                                className="group/proof relative inline-flex items-center cursor-help shrink-0"
-                                title={companyVerificationTooltip(
+                            <span className="group/proof relative inline-flex shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => openVerifyHub(milestone)}
+                                className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1 ${
+                                  isPortfolioSaved
+                                    ? "text-[#059669] bg-emerald-50 hover:bg-emerald-100 border border-emerald-200"
+                                    : "text-slate-400 bg-slate-50 border border-slate-200"
+                                }`}
+                              >
+                                <ShieldCheck className="w-3 h-3" />
+                                <span>Verification</span>
+                              </button>
+                              <span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-56 rounded-lg bg-slate-900 px-3 py-2 text-left text-[10px] font-semibold leading-relaxed text-white shadow-xl group-hover/proof:block group-focus-within/proof:block">
+                                {companyVerificationTooltip(
                                   milestone.company,
                                   milestone.verifications || [],
                                   milestone.artifacts?.length || 0
-                                )}
-                              >
-                                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
-                                  {publicChapterLabel(trustStatus.level)}
-                                </span>
-                                <span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-56 rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-semibold leading-relaxed text-white shadow-xl group-hover/proof:block">
-                                  {companyVerificationTooltip(
-                                    milestone.company,
-                                    milestone.verifications || [],
-                                    milestone.artifacts?.length || 0
-                                  )}
-                                </span>
+                                ) || "Nothing checked for this chapter yet."}
                               </span>
-                            )}
+                            </span>
                           </div>
                           <input
                             type="text"
@@ -2909,13 +2913,14 @@ export default function StudioPage() {
                                 prev.map((m) => (m.id === milestone.id ? { ...m, role: val } : m))
                               );
                             }}
-                            placeholder="Role Title (e.g. Founder and Head of Product)"
+                            placeholder="Role title"
                             spellCheck={true}
-                            className={`w-full text-xs font-semibold text-slate-600 focus:outline-none border-b border-transparent ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
+                            size={Math.max(milestone.role.trim().length, 16)}
+                            className={`w-auto max-w-full text-xs font-semibold text-slate-600 focus:outline-none border-b border-transparent [field-sizing:content] ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
                           />
                         </div>
 
-                        <div className="flex items-center gap-2.5 shrink-0 self-start lg:self-center">
+                        <div className="flex items-center gap-2 shrink-0">
                           <input
                             type="text"
                             value={milestone.period}
@@ -2929,22 +2934,9 @@ export default function StudioPage() {
                             onBlur={() => setMilestones((prev) => sortChaptersByTenure(prev))}
                             placeholder="May 2025 — Present"
                             aria-label="Dates"
-                            className={`w-36 text-[11px] font-medium text-slate-600 text-right bg-transparent focus:outline-none border-b border-transparent ${isPortfolioSaved ? "focus:border-[#059669]" : ""}`}
+                            size={Math.max(milestone.period.trim().length, 16)}
+                            className={`w-auto text-[11px] font-medium text-slate-600 text-right bg-transparent focus:outline-none border-b border-transparent [field-sizing:content] ${isPortfolioSaved ? "focus:border-[#059669]" : ""}`}
                           />
-
-                          <button
-                            type="button"
-                            onClick={() => openVerifyHub(milestone)}
-                            className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1 ${
-                              isPortfolioSaved
-                                ? "text-[#059669] bg-emerald-50 hover:bg-emerald-100 border border-emerald-200"
-                                : "text-slate-400 bg-slate-50 border border-slate-200"
-                            }`}
-                            title={!isPortfolioSaved ? "Save your portfolio to add proof for this company" : "Add proof for this company"}
-                          >
-                            <ShieldCheck className="w-3 h-3" />
-                            <span>Add proof</span>
-                          </button>
 
                           <button
                             type="button"
@@ -2958,33 +2950,6 @@ export default function StudioPage() {
                       </div>
 
                       <div className="space-y-3">
-                        {milestone.artifacts && milestone.artifacts.length > 0 && (
-                          <div className="flex flex-wrap gap-2 pb-2">
-                            {milestone.artifacts.map((art) => (
-                              <div key={art.id} className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-100 border border-slate-200 text-[10px] font-medium text-slate-600">
-                                <FileBadge className="w-3 h-3 text-indigo-500" />
-                                <span className="truncate max-w-[150px]">{art.name}</span>
-                                <span className="text-slate-400">Scanned, file not kept</span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const updated = milestones.map((item) =>
-                                      item.id === milestone.id
-                                        ? { ...item, artifacts: (item.artifacts || []).filter((artifact) => artifact.id !== art.id) }
-                                        : item
-                                    );
-                                    setMilestones(updated);
-                                    void updateVaultStore(updated);
-                                  }}
-                                  className="text-slate-400 hover:text-red-500 cursor-pointer"
-                                >
-                                  Remove
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
                         {milestone.registryLinks && milestone.registryLinks.length > 0 && (
                           <div className="flex flex-wrap gap-2 pb-2 border-b border-slate-100">
                             {milestone.registryLinks.map((link) => (
@@ -2993,15 +2958,6 @@ export default function StudioPage() {
                                 <span className="text-slate-400">{publicRegistryLabel(link.type)}</span>
                               </a>
                             ))}
-                          </div>
-                        )}
-
-                        {milestone.verifications && milestone.verifications.length > 0 && (
-                          <div className="pt-2 pb-2 border-b border-slate-100">
-                            <div className="text-[10px] text-emerald-800 font-semibold flex items-center gap-1.5">
-                              <CheckCircle2 className="w-3 h-3 text-[#059669]" />
-                              <span>{corroborationHeadline(milestone.company, milestone.verifications)}</span>
-                            </div>
                           </div>
                         )}
 
@@ -3177,7 +3133,7 @@ export default function StudioPage() {
           <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-lg space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
               <div>
-                <h3 className="font-black text-sm text-[#0F172A]">Add proof for {targetMilestone.company}</h3>
+                <h3 className="font-black text-sm text-[#0F172A]">Verification for {targetMilestone.company}</h3>
                 <p className="text-[11px] text-slate-500 mt-0.5">{targetMilestone.role}</p>
               </div>
               <button
@@ -3191,16 +3147,93 @@ export default function StudioPage() {
 
             {(() => {
               const live = milestones.find((m) => m.id === targetMilestone.id) || targetMilestone;
-              const currentStatus = getVerificationStatus(milestoneCounts(live));
+
+              const checked = [
+                ...(live.verifications || []).map((record) => ({
+                  id: record.id,
+                  kind: "verification" as const,
+                  label: isCorpEmailVerification(record)
+                    ? record.email
+                      ? `Work email ${record.email}`
+                      : "Work email"
+                    : [record.name, record.role].map((part) => String(part || "").trim()).filter(Boolean).join(" · ") || "Colleague"
+                })),
+                ...(live.artifacts || []).map((artifact) => ({
+                  id: artifact.id,
+                  kind: "document" as const,
+                  label: artifact.name ? `Employment document · ${artifact.name}` : "Employment document"
+                }))
+              ];
+              const dropProof = (item: { id: string; kind: "verification" | "document" }) => {
+                const updated = milestones.map((milestone) => {
+                  if (milestone.id !== live.id) return milestone;
+                  if (item.kind === "verification") {
+                    return {
+                      ...milestone,
+                      verifications: (milestone.verifications || []).filter((record) => record.id !== item.id)
+                    };
+                  }
+                  return {
+                    ...milestone,
+                    artifacts: (milestone.artifacts || []).filter((artifact) => artifact.id !== item.id)
+                  };
+                });
+                setMilestones(updated);
+                setProofToRemove(null);
+                void updateVaultStore(updated);
+              };
 
               return (
                 <div className="space-y-3">
-                  <div className="px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs">
-                    <span className="text-slate-500">Current status: </span>
-                    <span className="font-bold text-[#0F172A]">{publicChapterLabel(currentStatus.level) || currentStatus.label}</span>
-                    <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                      A work email, an employment document, and a colleague are different kinds of proof. Hover Verification on a chapter to see what was checked.
-                    </p>
+                  <div className="space-y-2">
+                    {checked.length === 0 && (
+                      <p className="text-[11px] text-slate-500">Nothing checked for this chapter yet.</p>
+                    )}
+                    {checked.map((item) => (
+                      <div key={`${item.kind}-${item.id}`} className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
+                        {proofToRemove?.id === item.id && proofToRemove.kind === item.kind ? (
+                          <div className="space-y-2">
+                            <p className="text-[11px] leading-relaxed text-slate-600">
+                              Remove {item.label}? It will no longer count as proof on {live.company}.
+                            </p>
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setProofToRemove(null)}
+                                className="text-[11px] font-bold text-slate-500 cursor-pointer"
+                              >
+                                Keep
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => dropProof(item)}
+                                className="text-[11px] font-bold text-red-700 cursor-pointer"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-xs font-semibold text-[#0F172A]">{item.label}</span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setProofToRemove({
+                                  milestoneId: live.id,
+                                  kind: item.kind,
+                                  id: item.id,
+                                  label: item.label
+                                })
+                              }
+                              className="text-[10px] font-bold text-slate-400 hover:text-red-600 cursor-pointer shrink-0"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
 
                   <button
