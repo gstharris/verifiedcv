@@ -491,7 +491,7 @@ export default function CandidateDossierPage() {
         {dossier.skills && dossier.skills.length > 0 && (
           <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
             <h3 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">
-              Core Proficiencies & Technologies ({dossier.skills.length})
+              Skills ({dossier.skills.length})
             </h3>
             <div className="flex flex-wrap gap-2 pt-1">
               {dossier.skills.map((skill, idx) => (

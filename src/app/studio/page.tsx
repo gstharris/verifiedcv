@@ -29,7 +29,6 @@ import {
   RotateCcw,
   GraduationCap,
   FileText,
-  Calendar,
   AlertCircle,
   Mail,
   Phone,
@@ -60,6 +59,7 @@ import { dossierSectionRank, encodeDossierLayout, parseDossierLayout, publicRegi
 import { LOOP_EVENTS, consumeCorroboratorRef } from "@/lib/corroborationLoop";
 import { linkedInHandle, linkedInProfileUrl, preferLinkedInProfile } from "@/lib/linkedin";
 import { flagEmoji, parseLocation } from "@/lib/locations";
+import { repairSkillList } from "@/lib/skills";
 import { resolvePlace, suggestPlaces } from "@/lib/places";
 import { hydrateChapter, packChapter } from "@/lib/chapterMeta";
 import { faviconUrl, publicHttpsUrl, siteLabel } from "@/lib/companySite";
@@ -268,69 +268,98 @@ function CompanySitePrompt({
     return () => window.clearTimeout(timer);
   }, [company, companyUrl, saved]);
 
-  if (companyUrl) {
+  if (companyUrl && !showCustom) {
     return (
-      <div className="flex items-center gap-2 text-[11px]">
-        <img src={faviconUrl(companyUrl)} alt="" className="w-3.5 h-3.5 rounded-sm" />
-        <a href={companyUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#059669]">
-          {siteLabel(companyUrl)}
+      <>
+        <a
+          href={companyUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="order-first shrink-0"
+          aria-label={`Open ${siteLabel(companyUrl)}`}
+          title={siteLabel(companyUrl)}
+        >
+          <img src={faviconUrl(companyUrl)} alt="" className="w-4 h-4 rounded-sm" />
         </a>
-        <button type="button" onClick={() => onChange("")} className="font-bold text-slate-400 hover:text-[#0F172A] cursor-pointer">
-          Remove
+        <button
+          type="button"
+          onClick={() => {
+            setCustom("");
+            setShowCustom(true);
+          }}
+          className="text-[10px] font-bold text-slate-400 hover:text-[#0F172A] cursor-pointer shrink-0"
+        >
+          Change
         </button>
-      </div>
+      </>
     );
   }
 
-  const pending = suggestion && suggestion !== dismissed ? suggestion : "";
+  const pending = !showCustom && suggestion && suggestion !== dismissed ? suggestion : "";
+  const useCustom = (value: string) => {
+    const url = publicHttpsUrl(value);
+    if (!url) return;
+    onChange(url);
+    setCustom("");
+    setShowCustom(false);
+    setDismissed("");
+  };
+
   return (
-    <div className="space-y-1.5">
-      {looking && <p className="text-[11px] text-slate-400">Looking up a site for {company.trim()}…</p>}
+    <span className="inline-flex flex-wrap items-center gap-1.5 text-[11px] shrink-0">
+      {looking && <span className="text-slate-400">Finding a site…</span>}
       {pending && (
-        <div className="flex flex-wrap items-center gap-2 text-[11px]">
-          <img src={faviconUrl(pending)} alt="" className="w-3.5 h-3.5 rounded-sm" />
-          <span className="text-slate-600">Is {siteLabel(pending)} the right site?</span>
-          <button type="button" onClick={() => onChange(pending)} className="font-bold text-[#059669] cursor-pointer">
+        <>
+          <span className="text-slate-600">Is {siteLabel(pending)} right?</span>
+          <button type="button" onClick={() => useCustom(pending)} className="font-bold text-[#059669] cursor-pointer">
             Yes
           </button>
           <button
             type="button"
             onClick={() => {
               setDismissed(pending);
+              setCustom("");
               setShowCustom(true);
             }}
             className="font-bold text-slate-400 cursor-pointer"
           >
-            No
+            Other
           </button>
-        </div>
+        </>
       )}
-      {!pending && !looking && saved && (
-        <button type="button" onClick={() => setShowCustom(true)} className="text-[11px] font-bold text-slate-500 cursor-pointer">
-          Add company site
-        </button>
-      )}
-      {showCustom && (
+      {(showCustom || (!pending && !looking && saved && !companyUrl)) && (
         <form
-          className="flex gap-2"
+          className="inline-flex items-center gap-1.5"
           onSubmit={(e) => {
             e.preventDefault();
-            const url = publicHttpsUrl(custom);
-            if (url) onChange(url);
+            useCustom(custom);
           }}
         >
           <input
             value={custom}
             onChange={(e) => setCustom(e.target.value)}
-            placeholder="pairedright.com"
-            className="flex-1 text-[11px] px-2 py-1 rounded-lg border border-[#E2E8F0] bg-white focus:outline-none focus:border-[#059669]"
+            placeholder="google.com"
+            aria-label="Company site"
+            className="w-28 text-[11px] px-2 py-1 rounded-lg border border-[#E2E8F0] bg-white focus:outline-none focus:border-[#059669]"
           />
-          <button type="submit" className="text-[11px] font-bold text-[#059669] cursor-pointer">
+          <button type="submit" className="font-bold text-[#059669] cursor-pointer">
             Use
           </button>
+          {companyUrl && (
+            <button
+              type="button"
+              onClick={() => {
+                setShowCustom(false);
+                setCustom("");
+              }}
+              className="font-bold text-slate-400 cursor-pointer"
+            >
+              Cancel
+            </button>
+          )}
         </form>
       )}
-    </div>
+    </span>
   );
 }
 
@@ -446,6 +475,7 @@ export default function StudioPage() {
   const [signInOnly, setSignInOnly] = useState(false);
   const [allyOpen, setAllyOpen] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
+  const [chapterToRemove, setChapterToRemove] = useState<{ id: string; company: string } | null>(null);
   const [replaceBusy, setReplaceBusy] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [isReplayingProof, setIsReplayingProof] = useState(false);
@@ -683,7 +713,7 @@ export default function StudioPage() {
     if (Object.prototype.hasOwnProperty.call(parsed, "summaryStatement")) {
       setSummaryStatement(String(parsed.summaryStatement || ""));
     }
-    if (parsed.skills) setSkills(parsed.skills);
+    if (Array.isArray(parsed.skills)) setSkills(repairSkillList(parsed.skills));
     if (parsed.education) setEducation(parsed.education);
     if (Array.isArray(parsed.portfolioAssets)) setPortfolioAssets(parsed.portfolioAssets);
     if (parsed.preferredLayout) setPreferredLayout(parseDossierLayout(parsed.preferredLayout).id);
@@ -2258,7 +2288,7 @@ export default function StudioPage() {
                   ...(summaryStatement || summaryEditor ? [{ id: "summary", label: "Summary" }] : []),
                   ...(highlights.length > 0 ? [{ id: "highlights", label: "Highlights" }] : []),
                   { id: "experience", label: "Experience" },
-                  ...(skills.length > 0 ? [{ id: "skills", label: "Skills" }] : []),
+                  { id: "skills", label: "Skills" },
                   ...(education.length > 0 ? [{ id: "education", label: "Education" }] : []),
                   ...(sampleWorkOpen || portfolioAssets.length > 0 ? [{ id: "work-samples", label: "Sample work" }] : [])
                 ].map((section, index) => (
@@ -2822,12 +2852,7 @@ export default function StudioPage() {
                     >
                       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3.5 border-b border-[#E2E8F0]/70">
                         <div className="flex-1 space-y-1">
-                          <div className="flex items-center gap-2">
-                            {milestone.companyUrl && (
-                              <a href={milestone.companyUrl} target="_blank" rel="noreferrer" className="shrink-0" aria-label={`Open ${siteLabel(milestone.companyUrl)}`}>
-                                <img src={faviconUrl(milestone.companyUrl)} alt="" className="w-4 h-4 rounded-sm" />
-                              </a>
-                            )}
+                          <div className="flex flex-wrap items-center gap-2">
                             <input
                             type="text"
                             value={milestone.company}
@@ -2838,15 +2863,20 @@ export default function StudioPage() {
                                 prev.map((m) => (m.id === milestone.id ? { ...m, company: val } : m))
                               );
                             }}
-                            placeholder="Company Name (e.g. SCD Enterprises / PairedRight)"
+                            placeholder="Company name"
                             spellCheck={true}
-                            className={`flex-1 font-black text-base text-[#0F172A] focus:outline-none border-b border-transparent ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
+                            className={`min-w-[8rem] flex-1 font-black text-base text-[#0F172A] focus:outline-none border-b border-transparent ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
                           />
-                            {milestone.companyUrl && (
-                              <a href={milestone.companyUrl} target="_blank" rel="noreferrer" className="text-[#059669] shrink-0" aria-label={`Open ${milestone.company}`}>
-                                <ExternalLink className="w-3.5 h-3.5" />
-                              </a>
-                            )}
+                            <CompanySitePrompt
+                              company={milestone.company}
+                              companyUrl={milestone.companyUrl}
+                              saved={isPortfolioSaved}
+                              onChange={(url) =>
+                                setMilestones((prev) =>
+                                  prev.map((item) => (item.id === milestone.id ? { ...item, companyUrl: url } : item))
+                                )
+                              }
+                            />
                             {trustStatus.level > 0 && (
                               <span
                                 className="group/proof relative inline-flex items-center cursor-help shrink-0"
@@ -2883,36 +2913,24 @@ export default function StudioPage() {
                             spellCheck={true}
                             className={`w-full text-xs font-semibold text-slate-600 focus:outline-none border-b border-transparent ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
                           />
-                          <CompanySitePrompt
-                            company={milestone.company}
-                            companyUrl={milestone.companyUrl}
-                            saved={isPortfolioSaved}
-                            onChange={(url) =>
-                              setMilestones((prev) =>
-                                prev.map((item) => (item.id === milestone.id ? { ...item, companyUrl: url } : item))
-                              )
-                            }
-                          />
                         </div>
 
                         <div className="flex items-center gap-2.5 shrink-0 self-start lg:self-center">
-                          <div className="flex items-center gap-1.5 bg-slate-50 border border-[#E2E8F0] px-2.5 py-1 rounded-lg">
-                            <Calendar className="w-3 h-3 text-slate-400" />
-                            <input
-                              type="text"
-                              value={milestone.period}
-                              readOnly={!isPortfolioSaved}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setMilestones((prev) =>
-                                  prev.map((m) => (m.id === milestone.id ? { ...m, period: val } : m))
-                                );
-                              }}
-                              onBlur={() => setMilestones((prev) => sortChaptersByTenure(prev))}
-                              placeholder="e.g. May 2025 — Present"
-                              className="text-[11px] font-mono font-medium text-slate-600 focus:outline-none text-right w-44 bg-transparent"
-                            />
-                          </div>
+                          <input
+                            type="text"
+                            value={milestone.period}
+                            readOnly={!isPortfolioSaved}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setMilestones((prev) =>
+                                prev.map((m) => (m.id === milestone.id ? { ...m, period: val } : m))
+                              );
+                            }}
+                            onBlur={() => setMilestones((prev) => sortChaptersByTenure(prev))}
+                            placeholder="May 2025 — Present"
+                            aria-label="Dates"
+                            className={`w-36 text-[11px] font-medium text-slate-600 text-right bg-transparent focus:outline-none border-b border-transparent ${isPortfolioSaved ? "focus:border-[#059669]" : ""}`}
+                          />
 
                           <button
                             type="button"
@@ -2930,11 +2948,9 @@ export default function StudioPage() {
 
                           <button
                             type="button"
-                            onClick={() =>
-                              setMilestones((prev) => prev.filter((m) => m.id !== milestone.id))
-                            }
+                            onClick={() => setChapterToRemove({ id: milestone.id, company: milestone.company || "this chapter" })}
                             className="text-slate-300 hover:text-red-500 transition-colors p-1 cursor-pointer"
-                            title="Delete Milestone"
+                            title="Remove chapter"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -3044,7 +3060,7 @@ export default function StudioPage() {
               <div id="skills" style={{ order: dossierSectionRank(preferredLayout).skills }} className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                     <h3 className="font-extrabold text-xs uppercase tracking-wider text-[#0F172A]">
-                        Core Proficiencies & Technologies ({skills.length})
+                        Skills ({skills.length})
                     </h3>
                   </div>
                   <form
@@ -3552,6 +3568,39 @@ export default function StudioPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {chapterToRemove && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-lg space-y-5">
+            <div className="space-y-2">
+              <p className="text-[11px] font-bold uppercase tracking-widest text-amber-700">Warning</p>
+              <h3 className="font-black text-lg text-[#0F172A]">Remove {chapterToRemove.company}?</h3>
+              <p className="text-xs leading-relaxed text-slate-600">
+                This removes the chapter from your page, including any proof already attached to it.
+              </p>
+            </div>
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setChapterToRemove(null)}
+                className="px-4 py-2.5 rounded-xl border border-[#E2E8F0] bg-white text-xs font-bold text-[#0F172A] cursor-pointer"
+              >
+                Keep chapter
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMilestones((prev) => prev.filter((item) => item.id !== chapterToRemove.id));
+                  setChapterToRemove(null);
+                }}
+                className="px-4 py-2.5 rounded-xl border border-red-200 bg-white text-red-700 text-xs font-bold cursor-pointer"
+              >
+                Remove chapter
+              </button>
+            </div>
           </div>
         </div>
       )}

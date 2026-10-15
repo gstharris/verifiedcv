@@ -1,3 +1,5 @@
+import { splitSkillText } from "@/lib/skills";
+
 export interface ExtractedMilestone {
   id: string;
   company: string;
@@ -251,8 +253,7 @@ export function parseComprehensiveResume(rawText: string): ParsedDossierPayload 
 
   if (sectionLines.SKILLS.length > 0) {
     const rawSkillsText = sectionLines.SKILLS.join(" ");
-    const skillTokens = rawSkillsText
-      .split(/[,|•●;•\/\n]/)
+    const skillTokens = splitSkillText(rawSkillsText)
       .map(cleanEntityHeader)
       .filter((s) => s.length > 1 && s.length < 50 && !/^(Languages|Frameworks|Tools|Methodologies):?$/i.test(s));
 

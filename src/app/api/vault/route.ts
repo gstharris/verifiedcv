@@ -13,6 +13,7 @@ import {
 import { issueRestoreCode } from "@/lib/handleRestore";
 import { linkedInProfileUrl, preferLinkedInProfile } from "@/lib/linkedin";
 import { candidateSummary, decodeStoredHighlights, decodeStoredPage, encodeStoredPage, normalizePortfolioAsset, type PortfolioAsset } from "@/lib/portfolioAssets";
+import { repairSkillList } from "@/lib/skills";
 
 export const dynamic = "force-dynamic";
 
@@ -121,7 +122,7 @@ export async function GET(req: NextRequest) {
             phoneVerified: candidate.phone_verified,
             linkedinVerified: candidate.linkedin_verified
           },
-          skills: skillsRes.data?.map((s) => s.skill) || [],
+          skills: repairSkillList(skillsRes.data?.map((s) => s.skill) || []),
           education: educationRes.data || [],
           milestones:
             milestonesRes.data?.map((m) => ({
@@ -176,7 +177,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Handle not found in Vault." }, { status: 404 });
   }
 
-  return NextResponse.json(stripOwnerSecret(record));
+  const stored = stripOwnerSecret(record);
+  if (Array.isArray(stored.skills)) stored.skills = repairSkillList(stored.skills);
+  return NextResponse.json(stored);
 }
 
 export async function POST(req: NextRequest) {
