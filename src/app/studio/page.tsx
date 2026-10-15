@@ -16,6 +16,7 @@ import {
   ExternalLink,
   Sparkles,
   Award,
+  ChevronDown,
   ChevronRight,
   Clock,
   Layers,
@@ -404,6 +405,16 @@ export default function StudioPage() {
   const [highlights, setHighlights] = useState<string[]>([]);
   const [summaryEditor, setSummaryEditor] = useState(false);
   const [sampleWorkOpen, setSampleWorkOpen] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const addMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!addMenuOpen) return;
+    const close = (event: MouseEvent) => {
+      if (!addMenuRef.current?.contains(event.target as Node)) setAddMenuOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [addMenuOpen]);
   const [skillDraft, setSkillDraft] = useState("");
 
   const [contact, setContact] = useState<ContactInfo>({
@@ -2265,48 +2276,6 @@ export default function StudioPage() {
                 </div>
               </nav>
 
-              <div className="flex flex-wrap items-center gap-2">
-                {(!summaryStatement.trim() && !summaryEditor) || highlights.length === 0 || (portfolioAssets.length === 0 && !sampleWorkOpen) ? (
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Add a section</span>
-                ) : null}
-                {!summaryStatement.trim() && !summaryEditor && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSummaryEditor(true);
-                      window.setTimeout(() => document.getElementById("summary")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
-                    }}
-                    className="px-2.5 py-1 rounded-lg border border-[#E2E8F0] bg-white text-[11px] font-bold text-slate-600 hover:text-[#0F172A] cursor-pointer"
-                  >
-                    Summary
-                  </button>
-                )}
-                {highlights.length === 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setHighlights([""]);
-                      window.setTimeout(() => document.getElementById("highlights")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
-                    }}
-                    className="px-2.5 py-1 rounded-lg border border-[#E2E8F0] bg-white text-[11px] font-bold text-slate-600 hover:text-[#0F172A] cursor-pointer"
-                  >
-                    Highlights
-                  </button>
-                )}
-                {portfolioAssets.length === 0 && !sampleWorkOpen && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSampleWorkOpen(true);
-                      window.setTimeout(() => document.getElementById("work-samples")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
-                    }}
-                    className="px-2.5 py-1 rounded-lg border border-[#E2E8F0] bg-white text-[11px] font-bold text-slate-600 hover:text-[#0F172A] cursor-pointer"
-                  >
-                    Sample work
-                  </button>
-                )}
-              </div>
-
               {/* Candidate Identity & Contact Verification Strip */}
               <div id="identity-card" className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-3xl p-6 shadow-xs space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-100">
@@ -2767,14 +2736,75 @@ export default function StudioPage() {
                   <h3 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">
                     Experience ({milestones.length})
                   </h3>
-                  <button
-                    type="button"
-                    onClick={addEmptyMilestone}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white border border-[#E2E8F0] hover:bg-slate-50 px-3 py-1.5 rounded-lg shadow-2xs transition-colors cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-[#059669]" />
-                    <span>Add Chapter</span>
-                  </button>
+                  <div ref={addMenuRef} className="relative">
+                    <button
+                      type="button"
+                      aria-expanded={addMenuOpen}
+                      aria-haspopup="menu"
+                      onClick={() => setAddMenuOpen((open) => !open)}
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white border border-[#E2E8F0] hover:bg-slate-50 px-3 py-1.5 rounded-lg shadow-2xs transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-[#059669]" />
+                      <span>Add</span>
+                      <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${addMenuOpen ? "rotate-180" : ""}`} />
+                    </button>
+                    {addMenuOpen && (
+                      <div role="menu" className="absolute right-0 top-full z-30 mt-1 w-44 rounded-xl border border-[#E2E8F0] bg-white p-1 shadow-lg">
+                        {(
+                          [
+                            {
+                              id: "experience",
+                              label: "Experience",
+                              show: true,
+                              run: () => addEmptyMilestone()
+                            },
+                            {
+                              id: "summary",
+                              label: "Summary",
+                              show: !summaryStatement.trim() && !summaryEditor,
+                              run: () => {
+                                setSummaryEditor(true);
+                                window.setTimeout(() => document.getElementById("summary")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+                              }
+                            },
+                            {
+                              id: "highlights",
+                              label: "Highlights",
+                              show: highlights.length === 0,
+                              run: () => {
+                                setHighlights([""]);
+                                window.setTimeout(() => document.getElementById("highlights")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+                              }
+                            },
+                            {
+                              id: "work",
+                              label: "Sample work",
+                              show: portfolioAssets.length === 0 && !sampleWorkOpen,
+                              run: () => {
+                                setSampleWorkOpen(true);
+                                window.setTimeout(() => document.getElementById("work-samples")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+                              }
+                            }
+                          ] as const
+                        )
+                          .filter((option) => option.show)
+                          .map((option) => (
+                            <button
+                              key={option.id}
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                setAddMenuOpen(false);
+                                option.run();
+                              }}
+                              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-700 hover:bg-[#F8FAFC] hover:text-[#0F172A] cursor-pointer"
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="space-y-6">
