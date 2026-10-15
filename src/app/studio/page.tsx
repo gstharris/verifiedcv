@@ -52,6 +52,7 @@ import {
 import { getVerificationStatus } from "@/lib/verificationLevel";
 import { chapterProofItems, companyVerificationTooltip, endorsedClaimIndexes, firstChapterWithoutColleague, hasWorkEmailProof, mergeChapterProof, postSavePrompt } from "@/lib/verificationSignals";
 import { corporateEmailMatchesCompany } from "@/lib/corporateEmail";
+import { interpretStudioMessage } from "@/lib/allyIntent";
 import { interpretVerificationAsk } from "@/lib/chapterMatch";
 import { nextPortfolioVerificationStep, verificationStatusLine } from "@/lib/verificationQueue";
 import { dossierSectionRank, encodeDossierLayout, parseDossierLayout, publicRegistryLabel, type PortfolioAsset } from "@/lib/portfolioAssets";
@@ -1482,14 +1483,302 @@ export default function StudioPage() {
     });
   };
 
+  const say = (text: string) => {
+    setChatMessages((prev) => [...prev, { sender: "ally", text }]);
+  };
+
+  const show = (id: string) => {
+    window.setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+  };
+
+  const sendEmailCode = async () => {
+    setEmailVerifyError("");
+    if (!contact.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email)) {
+      setEmailVerifyError("Enter a valid email first.");
+      return "missing" as const;
+    }
+    const res = await fetch("/api/verify/email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: contact.email })
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      setEmailCodeSent(true);
+      say(`Check ${contact.email} for a 6-digit code.`);
+      window.setTimeout(() => document.getElementById("email-code")?.focus(), 50);
+      return "sent" as const;
+    }
+    setEmailVerifyError(data.error || "Could not send the email code.");
+    say(data.error || "Could not send the email code.");
+    return "error" as const;
+  };
+
+  const sendPhoneCode = async () => {
+    setPhoneVerifyError("");
+    if (!contact.phone.trim()) {
+      setPhoneVerifyError("Enter a phone number first.");
+      return "missing" as const;
+    }
+    const res = await fetch("/api/verify/phone", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ phone: contact.phone, handle })
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      setPhoneCodeSent(true);
+      say(`Check ${contact.phone} for a 6-digit SMS code.`);
+      window.setTimeout(() => document.getElementById("phone-code")?.focus(), 50);
+      return "sent" as const;
+    }
+    setPhoneVerifyError(data.error || "Could not send the SMS code.");
+    say(data.error || "Could not send the SMS code.");
+    return "error" as const;
+  };
+
+  const openNextStep = () => {
+    const prompt = actionPrompts[0];
+    if (!prompt || prompt.action === "continue_verification") {
+      handleActionPrompt("continue_verification");
+      return;
+    }
+    if (prompt.action === "upload_resume") {
+      fileInputRef.current?.click();
+      say("Choose a PDF, Word, or text resume.");
+      return;
+    }
+    setIsClaimModalOpen(true);
+    say("Opening save now. Your page goes live after this.");
+  };
+
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
 
     const query = chatInput.trim();
-    const normalized = query.toLowerCase();
     setChatMessages((prev) => [...prev, { sender: "user", text: query }]);
     setChatInput("");
+
+    const studioMessage = interpretStudioMessage(query);
+    if (studioMessage.type === "skills") {
+      requirePortfolioSaved(() => {
+        show("skills");
+        if (studioMessage.skill) {
+          const skill = studioMessage.skill;
+          if (skills.some((item) => item.toLowerCase() === skill.toLowerCase())) {
+            say(`${skill} is already on your skills.`);
+            return;
+          }
+          setSkills((prev) => [...prev, skill]);
+          say(`Added ${skill} to skills.`);
+          return;
+        }
+        window.setTimeout(() => document.getElementById("skill-input")?.focus(), 50);
+        say("Skills are open. Type one in the field and press Add, or remove one with the ×.");
+      });
+      return;
+    }
+    if (studioMessage.type === "sample_work") {
+      setSampleWorkOpen(true);
+      setSampleWorkAddSignal((current) => current + 1);
+      window.setTimeout(() => document.getElementById("work-samples")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+      say("Sample work is open. Pick a type and the fields appear under it.");
+      return;
+    }
+    if (studioMessage.type === "resume") {
+      fileInputRef.current?.click();
+      say(
+        milestones.length
+          ? "Choose a PDF, Word, or text file. A new resume replaces the chapters on this page."
+          : "Choose a PDF, Word, or text resume. I'll read it into your chapters."
+      );
+      return;
+    }
+    if (studioMessage.type === "education") {
+      if (education.length) {
+        show("education");
+        say("Education is on the page. Each row is the school, degree, and year from your resume.");
+        return;
+      }
+      say("Education appears when a resume includes a school. Upload one that lists it, or leave the section off.");
+      return;
+    }
+    if (studioMessage.type === "summary") {
+      requirePortfolioSaved(() => {
+        if (!summaryStatement.trim()) setSummaryEditor(true);
+        show("summary");
+        window.setTimeout(() => document.getElementById("summary-text")?.focus(), 50);
+        say("Summary is open. Write the short version of your work.");
+      });
+      return;
+    }
+    if (studioMessage.type === "headline" || studioMessage.type === "name" || studioMessage.type === "location") {
+      requirePortfolioSaved(() => {
+        show("identity-card");
+        if (studioMessage.type === "name") {
+          window.setTimeout(() => document.getElementById("candidate-name")?.focus(), 50);
+          say("Your name is ready at the top of the page.");
+          return;
+        }
+        if (studioMessage.type === "headline") {
+          window.setTimeout(() => document.getElementById("candidate-headline")?.focus(), 50);
+          say("The headline is ready under your name.");
+          return;
+        }
+        say("Location is on the contact row, next to LinkedIn.");
+      });
+      return;
+    }
+    if (studioMessage.type === "highlights") {
+      requirePortfolioSaved(() => {
+        if (!highlights.length) setHighlights([""]);
+        show("highlights");
+        say("Highlights are open. Add a line, or remove the section if you don't want it.");
+      });
+      return;
+    }
+    if (studioMessage.type === "chapters") {
+      requirePortfolioSaved(() => {
+        if (studioMessage.create) addEmptyMilestone();
+        show("experience");
+        say(
+          studioMessage.create
+            ? "A blank chapter is at the top of Experience. Replace the company, title, and dates."
+            : "Experience is open. Edit the company, title, dates, and lines on each chapter."
+        );
+      });
+      return;
+    }
+    if (studioMessage.type === "layout") {
+      if (sampleWorkOpen || portfolioAssets.length) {
+        show("work-samples");
+        say("Sample work can sit at the top or bottom of the dossier. The control is just above that section.");
+        return;
+      }
+      say("That control appears after sample work is on the page. Ask me to add sample work.");
+      return;
+    }
+    if (studioMessage.type === "identity") {
+      requirePortfolioSaved(() => {
+        show("identity-card");
+        if (studioMessage.field === "email") {
+          if (studioMessage.mode === "edit" || contact.emailVerified) {
+            if (contact.emailVerified) setEditingVerifiedField("email");
+            window.setTimeout(() => document.getElementById("contact-email")?.focus(), 50);
+            say(
+              contact.emailVerified
+                ? "That email is already verified. Change it here and the check comes off until you verify the new address."
+                : "The email field is ready. Update it, then I can send a code."
+            );
+            return;
+          }
+          void sendEmailCode().then((result) => {
+            if (result === "missing") {
+              document.getElementById("contact-email")?.focus();
+              say("Enter an email in the contact row. I put the cursor there.");
+            }
+          });
+          return;
+        }
+        if (studioMessage.field === "phone") {
+          if (studioMessage.mode === "edit" || contact.phoneVerified) {
+            if (contact.phoneVerified) setEditingVerifiedField("phone");
+            window.setTimeout(() => document.getElementById("contact-phone")?.focus(), 50);
+            say(
+              contact.phoneVerified
+                ? "That phone is already verified. Change it here and the check comes off until you verify the new number."
+                : "The phone field is ready. Update it, then I can send a code."
+            );
+            return;
+          }
+          void sendPhoneCode().then((result) => {
+            if (result === "missing") {
+              document.getElementById("contact-phone")?.focus();
+              say("Enter a phone number in the contact row. I put the cursor there.");
+            }
+          });
+          return;
+        }
+        if (contact.linkedinVerified && studioMessage.mode === "edit") {
+          setEditingVerifiedField("linkedin");
+          window.setTimeout(() => document.getElementById("contact-linkedin")?.focus(), 50);
+          say("The LinkedIn field is ready. Change the handle, then verify it again.");
+          return;
+        }
+        if (contact.linkedinVerified) {
+          say("LinkedIn is already confirmed. Use Edit on the contact row if the handle should change.");
+          return;
+        }
+        setLinkedinVerifyError("");
+        persistPortfolioLocally(true);
+        captureEvent("linkedin_verify_clicked", { handle: handle.toLowerCase().trim() });
+        say("Opening LinkedIn to confirm this profile.");
+        window.location.href = "/api/auth/linkedin?next=/studio";
+      });
+      return;
+    }
+    if (studioMessage.type === "work_email") {
+      requirePortfolioSaved(() => {
+        const chapter = firstChapterWithoutColleague(milestones) || milestones[0];
+        if (!chapter) {
+          say("Add a company chapter first, then we can verify a work email.");
+          return;
+        }
+        setTargetMilestone(chapter);
+        show(chapter.id);
+        openVerifyStep("corp");
+        say(`Opening work-email verification for ${chapter.company}.`);
+      });
+      return;
+    }
+    if (studioMessage.type === "review") {
+      const review = reviewResume({
+        summary: summaryStatement,
+        chapters: milestones.map((milestone) => ({ id: milestone.id, company: milestone.company, claims: milestone.claims }))
+      });
+      say(review.notes.join(" "));
+      if (review.focusId === "summary") show("summary");
+      else {
+        setHighlightedMilestoneId(review.focusId);
+        show(review.focusId);
+      }
+      return;
+    }
+    if (studioMessage.type === "document") {
+      handleActionPrompt("attach_docs");
+      return;
+    }
+    if (studioMessage.type === "colleague") {
+      handleActionPrompt("invite_peers");
+      return;
+    }
+    if (studioMessage.type === "save") {
+      if (isPortfolioSaved) {
+        say("Your portfolio is already saved. Edits update automatically.");
+        return;
+      }
+      if (!hasPortfolioContent({ milestones, summaryStatement, highlights, portfolioAssets })) {
+        say("Upload or paste a resume first, then I can save your portfolio.");
+        return;
+      }
+      setIsClaimModalOpen(true);
+      say("Opening save now. Your page goes live after this.");
+      return;
+    }
+    if (studioMessage.type === "next") {
+      openNextStep();
+      return;
+    }
+    if (studioMessage.type === "help" || studioMessage.type === "unknown") {
+      say(
+        isPortfolioSaved
+          ? "I can edit skills, add sample work, upload a resume, verify email, phone, or LinkedIn, or open a chapter. Say which one."
+          : "Upload a resume, or save this page. After that I can edit skills, add sample work, and start verification."
+      );
+      return;
+    }
 
     const verificationAsk = interpretVerificationAsk(query, milestones);
     if (verificationAsk.status === "match") {
@@ -1527,123 +1816,16 @@ export default function StudioPage() {
       ]);
       return;
     }
-    if (verificationAsk.status === "identity") {
-      requirePortfolioSaved(() => {
-        document.getElementById("identity-card")?.scrollIntoView({ behavior: "smooth", block: "center" });
-        if (verificationAsk.field === "email") document.getElementById("contact-email")?.focus();
-        if (verificationAsk.field === "phone") document.getElementById("contact-phone")?.focus();
-        if (verificationAsk.field === "linkedin") {
-          setChatMessages((prev) => [
-            ...prev,
-            { sender: "ally", text: "Use the LinkedIn control on your contact row. If it is already verified, changing the handle means verifying it again." }
-          ]);
-          return;
-        }
-        setChatMessages((prev) => [
-          ...prev,
-          { sender: "ally", text: `Use the Verify button next to your ${verificationAsk.field}.` }
-        ]);
-      });
-      return;
-    }
     if (verificationAsk.status === "next") {
-      handleActionPrompt("verify_portfolio");
+      openNextStep();
       return;
     }
 
-    if (
-      normalized.includes("sample work") ||
-      normalized.includes("add a project") ||
-      normalized.includes("add work") ||
-      normalized.includes("portfolio piece")
-    ) {
-      setSampleWorkOpen(true);
-      setSampleWorkAddSignal((current) => current + 1);
-      window.setTimeout(() => document.getElementById("work-samples")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
-      setChatMessages((prev) => [
-        ...prev,
-        { sender: "ally", text: "Choose what to add. The fields show up after you pick a type." }
-      ]);
-      return;
-    }
-
-    if (
-      normalized.includes("save") ||
-      normalized.includes("portfolio") ||
-      normalized.includes("handle") ||
-      normalized.includes("claim")
-    ) {
-      if (isPortfolioSaved) {
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            sender: "ally",
-            text: "Your portfolio is already saved. Edits update automatically."
-          }
-        ]);
-        return;
-      }
-      if (!hasPortfolioContent({ milestones, summaryStatement, highlights, portfolioAssets })) {
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            sender: "ally",
-            text: "Upload or paste a resume first, then I can save your portfolio."
-          }
-        ]);
-        return;
-      }
-      setIsClaimModalOpen(true);
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          sender: "ally",
-            text: "Opening save now. Your page goes live after this."
-        }
-      ]);
-      return;
-    }
-
-    if (normalized.includes("review") || normalized.includes("grammar") || normalized.includes("spelling") || normalized.includes("buzzword")) {
-      const review = reviewResume({
-        summary: summaryStatement,
-        chapters: milestones.map((milestone) => ({ id: milestone.id, company: milestone.company, claims: milestone.claims }))
-      });
-      setChatMessages((prev) => [...prev, { sender: "ally", text: review.notes.join(" ") }]);
-      if (review.focusId === "summary") {
-        document.getElementById("summary")?.scrollIntoView({ behavior: "smooth", block: "center" });
-      } else {
-        setHighlightedMilestoneId(review.focusId);
-        document.getElementById(review.focusId)?.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-      return;
-    }
-
-    if (normalized.includes("attach") || normalized.includes("document") || normalized.includes("w-2") || normalized.includes("w2")) {
-      handleActionPrompt("attach_docs");
-    } else if (normalized.includes("peer") || normalized.includes("colleague") || normalized.includes("invite") || normalized.includes("corroborat")) {
-      handleActionPrompt("invite_peers");
-    } else if (
-      normalized.includes("verify") ||
-      normalized.includes("validate") ||
-      normalized.includes("achievement") ||
-      normalized.includes("artifact") ||
-      normalized.includes("proof")
-    ) {
-      handleActionPrompt("verify_portfolio");
-    } else {
-      setTimeout(() => {
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            sender: "ally",
-            text: isPortfolioSaved
-              ? "Ask a colleague about one chapter. That is the most useful next step."
-              : "Review the chapters, then save to publish your page."
-          }
-        ]);
-      }, 400);
-    }
+    say(
+      isPortfolioSaved
+        ? "I can edit skills, add sample work, upload a resume, verify email, phone, or LinkedIn, or open a chapter. Say which one."
+        : "Upload a resume, or save this page. After that I can edit skills, add sample work, and start verification."
+    );
   };
 
   const handleClaimVaultCommit = async (e: React.FormEvent) => {
@@ -2426,6 +2608,7 @@ export default function StudioPage() {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-100">
                   <div className="space-y-1">
                     <input
+                      id="candidate-name"
                       type="text"
                       value={fullName}
                       readOnly={!isPortfolioSaved}
@@ -2435,6 +2618,7 @@ export default function StudioPage() {
                       className={`text-xl sm:text-2xl font-black text-[#0F172A] focus:outline-none border-b border-transparent ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
                     />
                     <input
+                      id="candidate-headline"
                       type="text"
                       value={headline}
                       readOnly={!isPortfolioSaved}
@@ -2494,28 +2678,9 @@ export default function StudioPage() {
                     ) : (
                       <button
                         type="button"
-                        onClick={async () => {
-                          requirePortfolioSaved(async () => {
-                            setEmailVerifyError("");
-                            if (!contact.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email)) {
-                              setEmailVerifyError("Enter a valid email first.");
-                              return;
-                            }
-                            const res = await fetch("/api/verify/email", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ email: contact.email })
-                            });
-                            const data = await res.json();
-                            if (res.ok && data.success) {
-                              setEmailCodeSent(true);
-                              setChatMessages((prev) => [
-                                ...prev,
-                                { sender: "ally", text: `Check ${contact.email} for a 6-digit code.` }
-                              ]);
-                            } else {
-                              setEmailVerifyError(data.error || "Could not send the email code.");
-                            }
+                        onClick={() => {
+                          requirePortfolioSaved(() => {
+                            void sendEmailCode();
                           });
                         }}
                         className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer shrink-0"
@@ -2561,25 +2726,9 @@ export default function StudioPage() {
                     ) : (
                       <button
                         type="button"
-                        onClick={async () => {
-                          requirePortfolioSaved(async () => {
-                            setPhoneVerifyError("");
-                            const res = await fetch("/api/verify/phone", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              credentials: "include",
-                              body: JSON.stringify({ phone: contact.phone, handle })
-                            });
-                            const data = await res.json();
-                            if (res.ok && data.success) {
-                              setPhoneCodeSent(true);
-                              setChatMessages((prev) => [
-                                ...prev,
-                                { sender: "ally", text: `Check ${contact.phone} for a 6-digit SMS code.` }
-                              ]);
-                            } else {
-                              setPhoneVerifyError(data.error || "Could not send the SMS code.");
-                            }
+                        onClick={() => {
+                          requirePortfolioSaved(() => {
+                            void sendPhoneCode();
                           });
                         }}
                         className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer shrink-0"
@@ -2682,6 +2831,7 @@ export default function StudioPage() {
                       Enter the 6-digit code sent to {contact.email}.
                     </p>
                     <input
+                      id="email-code"
                       type="text"
                       inputMode="numeric"
                       autoComplete="one-time-code"
@@ -2734,6 +2884,7 @@ export default function StudioPage() {
                       Enter the 6-digit code sent to {contact.phone}.
                     </p>
                     <input
+                      id="phone-code"
                       type="text"
                       inputMode="numeric"
                       autoComplete="one-time-code"
@@ -2814,6 +2965,7 @@ export default function StudioPage() {
                     </button>
                   </div>
                   <textarea
+                    id="summary-text"
                     rows={4}
                     value={summaryStatement}
                     readOnly={!isPortfolioSaved}
@@ -3141,6 +3293,7 @@ export default function StudioPage() {
                     }}
                   >
                     <input
+                      id="skill-input"
                       type="text"
                       value={skillDraft}
                       onChange={(e) => setSkillDraft(e.target.value)}
