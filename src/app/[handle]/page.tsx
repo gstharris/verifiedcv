@@ -112,7 +112,6 @@ export default function CandidateDossierPage() {
   const [dossier, setDossier] = useState<DossierData | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
-  const [openProofId, setOpenProofId] = useState<string | null>(null);
   const [aboutHover, setAboutHover] = useState(false);
   const [aboutPinned, setAboutPinned] = useState(false);
   const aboutOpen = aboutHover || aboutPinned;
@@ -313,9 +312,9 @@ export default function CandidateDossierPage() {
           </div>
 
           {dossier.contact && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs pt-3 border-t border-slate-100">
+            <div className="flex flex-col gap-4 pt-4 border-t border-slate-100 text-xs sm:flex-row sm:flex-wrap xl:flex-nowrap">
               {dossier.contact.email && (
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 flex-1 basis-full items-center gap-2 sm:basis-[calc(50%-0.5rem)] xl:basis-0">
                   <div className={`flex items-center justify-center w-6 h-6 rounded-full ${dossier.contact.emailVerified ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-50 text-slate-400'}`}>
                     <Mail className="w-3 h-3" />
                   </div>
@@ -324,16 +323,16 @@ export default function CandidateDossierPage() {
                 </div>
               )}
               {dossier.contact.phone && (
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 flex-1 basis-full items-center gap-2 sm:basis-[calc(50%-0.5rem)] xl:basis-0">
                   <div className={`flex items-center justify-center w-6 h-6 rounded-full ${dossier.contact.phoneVerified ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-50 text-slate-400'}`}>
                     <Phone className="w-3 h-3" />
                   </div>
-                  <span className={`font-medium ${dossier.contact.phoneVerified ? 'text-slate-900' : 'text-slate-500'}`}>{dossier.contact.phone}</span>
+                  <span className={`font-medium truncate ${dossier.contact.phoneVerified ? 'text-slate-900' : 'text-slate-500'}`}>{dossier.contact.phone}</span>
                   {dossier.contact.phoneVerified && <ProofMark label="Phone confirmed" />}
                 </div>
               )}
               {linkedInSlug && linkedInHref && (
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex min-w-0 flex-1 basis-full items-center gap-2 sm:basis-[calc(50%-0.5rem)] xl:basis-0">
                   <a
                     href={linkedInHref}
                     target="_blank"
@@ -349,7 +348,7 @@ export default function CandidateDossierPage() {
                 </div>
               )}
               {dossier.contact.location && (
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 flex-1 basis-full items-center gap-2 sm:basis-[calc(50%-0.5rem)] xl:basis-0">
                   <div className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-50 text-slate-400">
                     {resolvePlace(dossier.contact.location)?.countryCode ? (
                       <span className="text-sm leading-none">{flagEmoji(resolvePlace(dossier.contact.location)?.countryCode || "")}</span>
@@ -357,7 +356,7 @@ export default function CandidateDossierPage() {
                       <MapPin className="w-3 h-3" />
                     )}
                   </div>
-                  <span className="font-medium text-slate-500">{resolvePlace(dossier.contact.location)?.label || parseLocation(dossier.contact.location)?.label || dossier.contact.location}</span>
+                  <span className="font-medium text-slate-500 truncate">{resolvePlace(dossier.contact.location)?.label || parseLocation(dossier.contact.location)?.label || dossier.contact.location}</span>
                 </div>
               )}
             </div>
@@ -368,11 +367,11 @@ export default function CandidateDossierPage() {
         {(() => {
           const pageTemplate = parseDossierLayout(dossier.preferredLayout);
           const assets = dossier.portfolioAssets || [];
-          const showWork = pageTemplate.placement !== "hidden" && assets.length > 0;
+          const showWork = assets.length > 0;
           const gallery = showWork ? <PortfolioAssetsGallery assets={assets} /> : null;
           const workFirst = showWork && pageTemplate.placement === "top";
           const highlights = (dossier.highlights || []).map((line) => String(line || "").trim()).filter(Boolean);
-          const showSummary = Boolean(dossier.summaryStatement) && pageTemplate.template === "summary";
+          const showSummary = Boolean(String(dossier.summaryStatement || "").trim());
           return (
             <>
               {workFirst && gallery}
@@ -400,11 +399,6 @@ export default function CandidateDossierPage() {
             <h2 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">
               Experience ({chapters.length})
             </h2>
-            {chapters.some((milestone) => publicChapterLabel(getVerificationLevel(milestone))) && (
-              <span className="text-[11px] font-semibold text-slate-400">
-                Open a chapter mark to see what was checked
-              </span>
-            )}
           </div>
 
           <div className="space-y-5">
@@ -429,20 +423,22 @@ export default function CandidateDossierPage() {
                         <span className="font-black text-base text-[#0F172A]">{m.company}</span>
                       )}
                       {chapterLabel && (
-                        <button
-                          type="button"
-                          onClick={() => setOpenProofId((current) => (current === m.id ? null : m.id))}
-                          className="shrink-0 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded cursor-pointer"
-                          aria-expanded={openProofId === m.id}
-                        >
-                          {chapterLabel}
-                        </button>
+                        <span className="group/proof relative inline-flex shrink-0">
+                          <button
+                            type="button"
+                            className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded cursor-help"
+                          >
+                            {chapterLabel}
+                          </button>
+                          {proofDetail && (
+                            <span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-56 rounded-lg bg-slate-900 px-3 py-2 text-left text-[10px] font-semibold leading-relaxed text-white shadow-xl group-hover/proof:block group-focus-within/proof:block">
+                              {proofDetail}
+                            </span>
+                          )}
+                        </span>
                       )}
                     </div>
                     <span className="text-xs font-semibold text-slate-600 block">{m.role}</span>
-                    {openProofId === m.id && proofDetail && (
-                      <p className="text-[11px] text-slate-500 leading-relaxed pt-1">{proofDetail}</p>
-                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-mono font-medium text-slate-500 bg-slate-50 border border-[#E2E8F0] px-2.5 py-1 rounded-lg">

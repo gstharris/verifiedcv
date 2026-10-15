@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -38,6 +38,23 @@ export default function VerifiedCVLandingPage() {
     const ref = corroboratorRefFromSearch(new URLSearchParams(window.location.search));
     if (ref) writeCorroboratorRef(ref);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/vault?mine=1", { credentials: "include" });
+        if (!cancelled && (res.ok || res.status === 404)) {
+          router.replace("/studio");
+        }
+      } catch {
+        // Guests stay on the start page.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   React.useEffect(() => {
     const handleCount = DEMO_HANDLES.length;
@@ -107,23 +124,6 @@ export default function VerifiedCVLandingPage() {
     }
 
     router.push("/studio");
-  };
-
-  const openStudio = async () => {
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 2500);
-    try {
-      const res = await fetch("/api/vault?mine=1", { credentials: "include", signal: controller.signal });
-      if (res.status !== 401) {
-        router.push("/studio");
-        return;
-      }
-    } catch {
-      // Stay on the start page when studio cannot be opened.
-    } finally {
-      window.clearTimeout(timer);
-    }
-    document.getElementById("start")?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -216,19 +216,11 @@ export default function VerifiedCVLandingPage() {
 
           <div className="flex items-center gap-3">
             <Link
-              className="text-xs font-bold text-slate-700 hover:text-slate-950 px-2.5 py-1.5 rounded-lg transition-colors"
+              className="inline-flex items-center px-3.5 py-1.5 rounded-xl bg-[#059669] hover:bg-emerald-600 text-white text-xs font-bold transition-all shadow-xs"
               href="/studio?signin=1"
             >
-              Sign In
+              Sign in
             </Link>
-            <button
-              type="button"
-              onClick={openStudio}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer group"
-            >
-              <span>Open Studio</span>
-              <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform text-emerald-400" />
-            </button>
           </div>
         </div>
       </header>
@@ -288,7 +280,7 @@ export default function VerifiedCVLandingPage() {
                   type="submit"
                   disabled={isProcessing || !chatInput.trim()}
                   className="absolute right-2.5 bottom-3.5 p-2 rounded-lg bg-[#0F172A] hover:bg-slate-800 text-white transition-all cursor-pointer disabled:opacity-40"
-                  title="Parse and Open Studio"
+                  title="Parse resume"
                 >
                   {isProcessing ? (
                     <Clock className="w-3.5 h-3.5 animate-spin" />
@@ -600,10 +592,10 @@ export default function VerifiedCVLandingPage() {
           <div className="pt-2">
             <button
               type="button"
-              onClick={openStudio}
+              onClick={() => document.getElementById("start")?.scrollIntoView({ behavior: "smooth", block: "center" })}
               className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#059669] hover:bg-emerald-600 text-white font-black text-xs transition-all shadow-xs cursor-pointer group"
             >
-              <span>Open Studio</span>
+              <span>Upload a resume</span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
             </button>
           </div>
@@ -623,8 +615,8 @@ export default function VerifiedCVLandingPage() {
             <Link className="hover:text-slate-950 transition-colors" href="/">
               Home
             </Link>
-            <Link className="hover:text-slate-950 transition-colors" href="/studio">
-              Candidate Studio
+            <Link className="hover:text-slate-950 transition-colors" href="/studio?signin=1">
+              Sign in
             </Link>
             <span className="text-slate-400">© {new Date().getFullYear()} verifiedcv.app</span>
           </div>

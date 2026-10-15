@@ -22,9 +22,8 @@ export function getVerificationStatus(counts: VerificationCounts): VerificationS
   return { level: 0, label: "On your profile" };
 }
 
-export function publicChapterLabel(level: number): "Corroborated" | "Multi-source" | null {
-  if (level >= 2) return "Multi-source";
-  if (level === 1) return "Corroborated";
+export function publicChapterLabel(level: number): "Verification" | null {
+  if (level >= 1) return "Verification";
   return null;
 }
 

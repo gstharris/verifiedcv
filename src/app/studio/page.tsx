@@ -50,12 +50,12 @@ import {
   unverifiedContact,
   writeStudioRecord
 } from "@/lib/studioPortfolio";
-import { getVerificationStatus } from "@/lib/verificationLevel";
+import { getVerificationStatus, publicChapterLabel } from "@/lib/verificationLevel";
 import { corroborationHeadline } from "@/lib/corroborationDisplay";
 import { companyVerificationTooltip, endorsedClaimIndexes, firstChapterWithoutColleague, postSavePrompt } from "@/lib/verificationSignals";
 import { corporateEmailMatchesCompany } from "@/lib/corporateEmail";
 import { nextPortfolioVerificationStep, verificationStatusLine } from "@/lib/verificationQueue";
-import { dossierSectionRank, parseDossierLayout, publicRegistryLabel, type PortfolioAsset } from "@/lib/portfolioAssets";
+import { dossierSectionRank, encodeDossierLayout, parseDossierLayout, publicRegistryLabel, type PortfolioAsset } from "@/lib/portfolioAssets";
 import { LOOP_EVENTS, consumeCorroboratorRef } from "@/lib/corroborationLoop";
 import { linkedInHandle, linkedInProfileUrl, preferLinkedInProfile } from "@/lib/linkedin";
 import { flagEmoji, parseLocation } from "@/lib/locations";
@@ -64,7 +64,7 @@ import { hydrateChapter, packChapter } from "@/lib/chapterMeta";
 import { faviconUrl, publicHttpsUrl, siteLabel } from "@/lib/companySite";
 import { sortChaptersByTenure } from "@/lib/tenureOverlap";
 import { reviewResume } from "@/lib/resumeReview";
-import PortfolioStudioPanel, { DossierLayoutControl } from "@/components/PortfolioStudioPanel";
+import PortfolioStudioPanel from "@/components/PortfolioStudioPanel";
 import { captureEvent, identifyHandle } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 
@@ -402,6 +402,8 @@ export default function StudioPage() {
   const [portfolioAssets, setPortfolioAssets] = useState<PortfolioAsset[]>([]);
   const [preferredLayout, setPreferredLayout] = useState("summary:bottom");
   const [highlights, setHighlights] = useState<string[]>([]);
+  const [summaryEditor, setSummaryEditor] = useState(false);
+  const [sampleWorkOpen, setSampleWorkOpen] = useState(false);
   const [skillDraft, setSkillDraft] = useState("");
 
   const [contact, setContact] = useState<ContactInfo>({
@@ -437,6 +439,7 @@ export default function StudioPage() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [isReplayingProof, setIsReplayingProof] = useState(false);
   const skipNextAutosaveRef = useRef(true);
+  const loggingOutRef = useRef(false);
 
   // Peer Corroboration Modal State
   const [isVerifyHubOpen, setIsVerifyHubOpen] = useState(false);
@@ -653,6 +656,7 @@ export default function StudioPage() {
   });
 
   const persistPortfolioLocally = (saved: boolean, payload = buildPortfolioPayload()) => {
+    if (loggingOutRef.current) return;
     writeStudioRecord(STUDIO_DRAFT_KEY, payload);
     if (saved) {
       writeStudioRecord(STUDIO_SAVED_KEY, payload);
@@ -665,13 +669,24 @@ export default function StudioPage() {
     if (Array.isArray(parsed.milestones)) setMilestones(incomingChapters(parsed.milestones));
     if (parsed.fullName) setFullName(parsed.fullName);
     if (parsed.headline) setHeadline(parsed.headline);
-    if (parsed.summaryStatement) setSummaryStatement(parsed.summaryStatement);
+    if (Object.prototype.hasOwnProperty.call(parsed, "summaryStatement")) {
+      setSummaryStatement(String(parsed.summaryStatement || ""));
+    }
     if (parsed.skills) setSkills(parsed.skills);
     if (parsed.education) setEducation(parsed.education);
     if (Array.isArray(parsed.portfolioAssets)) setPortfolioAssets(parsed.portfolioAssets);
     if (parsed.preferredLayout) setPreferredLayout(parseDossierLayout(parsed.preferredLayout).id);
     if (Array.isArray(parsed.highlights)) setHighlights(parsed.highlights.map((line: unknown) => String(line || "")));
-    if (parsed.contact) setContact((prev) => ({ ...prev, ...parsed.contact }));
+    if (parsed.contact) {
+      setContact((prev) => ({
+        ...prev,
+        ...parsed.contact,
+        linkedin: preferLinkedInProfile(prev.linkedin, parsed.contact.linkedin || "") || parsed.contact.linkedin || prev.linkedin,
+        emailVerified: parsed.contact.emailVerified ?? prev.emailVerified,
+        phoneVerified: parsed.contact.phoneVerified ?? prev.phoneVerified,
+        linkedinVerified: parsed.contact.linkedinVerified ?? prev.linkedinVerified
+      }));
+    }
     if (parsed.handle) setHandle(String(parsed.handle).toLowerCase().trim());
     setActiveTab("canvas");
     setPortfolioStarted(true);
@@ -679,11 +694,6 @@ export default function StudioPage() {
 
   useEffect(() => {
     if (!user) return;
-    const saved = readStudioRecord<{ milestones?: unknown[]; summaryStatement?: string; highlights?: unknown[]; portfolioAssets?: unknown[] }>(STUDIO_SAVED_KEY);
-    if (saved && hasPortfolioContent(saved)) {
-      setVaultChecked(true);
-      return;
-    }
     const vaultTimer = window.setTimeout(() => setVaultChecked(true), 8000);
     let cancelled = false;
     (async () => {
@@ -698,8 +708,11 @@ export default function StudioPage() {
           if (!cancelled) setVaultChecked(true);
           return;
         }
+        skipNextAutosaveRef.current = true;
         applyPortfolioRecord(data);
         setIsPortfolioSaved(true);
+        writeStudioRecord(STUDIO_SAVED_KEY, data);
+        writeStudioRecord(STUDIO_DRAFT_KEY, data);
         if (!cancelled) setVaultChecked(true);
       } catch {
         if (!cancelled) setVaultChecked(true);
@@ -932,7 +945,7 @@ export default function StudioPage() {
     const pendingRaw = localStorage.getItem("vcv_pending_payload");
 
     if (saved && hasPortfolioContent(saved)) {
-      skipNextAutosaveRef.current = !(Array.isArray(saved.portfolioAssets) && saved.portfolioAssets.length > 0);
+      skipNextAutosaveRef.current = true;
       applyPortfolioRecord(saved);
       setIsPortfolioSaved(true);
       setSaveStatus("saved");
@@ -1077,6 +1090,7 @@ export default function StudioPage() {
   }, [chatMessages]);
 
   useEffect(() => {
+    if (loggingOutRef.current) return;
     const payload = {
       handle: handle.toLowerCase().trim(),
       email: contact.email,
@@ -1092,14 +1106,14 @@ export default function StudioPage() {
       milestones: sortChaptersByTenure(milestones).map((milestone) => packChapter(milestone))
     };
     if (!hasPortfolioContent(payload)) return;
-    persistPortfolioLocally(isPortfolioSaved, payload);
-
-    if (!isPortfolioSaved) return;
     if (skipNextAutosaveRef.current) {
       skipNextAutosaveRef.current = false;
       setSaveStatus("saved");
       return;
     }
+    persistPortfolioLocally(isPortfolioSaved, payload);
+
+    if (!isPortfolioSaved) return;
 
     setSaveStatus("saving");
     const timeout = setTimeout(async () => {
@@ -1907,6 +1921,20 @@ export default function StudioPage() {
       setReplaceBusy(false);
     }
   };
+
+  const logOut = async () => {
+    loggingOutRef.current = true;
+    skipNextAutosaveRef.current = true;
+    clearStudioPortfolioStorage();
+    try {
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+      await supabase.auth.signOut();
+    } finally {
+      clearStudioPortfolioStorage();
+      window.location.replace("/");
+    }
+  };
+
   const corroboratedCount = milestones.reduce((acc, m) => acc + (m.verifications?.length || 0), 0);
   const verifiedSignalsCount =
     (contact.emailVerified ? 1 : 0) +
@@ -1973,12 +2001,16 @@ export default function StudioPage() {
               </Link>
               <button
                 type="button"
-                onClick={async () => {
-                  await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
-                  await supabase.auth.signOut();
-                  clearStudioPortfolioStorage();
-                  window.location.href = "/studio";
-                }}
+                onClick={() => setReplaceOpen(true)}
+                className="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-lg bg-white hover:bg-slate-50 border border-[#E2E8F0] text-[#0F172A] text-xs font-bold transition-all cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Replace resume</span>
+                <span className="sm:hidden">Replace</span>
+              </button>
+              <button
+                type="button"
+                onClick={logOut}
                 className="text-xs font-semibold text-slate-500 hover:text-[#0F172A] cursor-pointer"
               >
                 Log out
@@ -2000,12 +2032,7 @@ export default function StudioPage() {
           {user && !isPortfolioSaved && (
             <button
               type="button"
-              onClick={async () => {
-                await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
-                await supabase.auth.signOut();
-                clearStudioPortfolioStorage();
-                window.location.href = "/studio";
-              }}
+              onClick={logOut}
               className="text-xs font-semibold text-slate-500 hover:text-[#0F172A] cursor-pointer"
             >
               Log out
@@ -2217,12 +2244,12 @@ export default function StudioPage() {
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 {[
                   { id: "identity-card", label: "You" },
-                  ...(summaryStatement ? [{ id: "summary", label: "Summary" }] : []),
-                  ...(highlights.some((line) => line.trim()) ? [{ id: "highlights", label: "Highlights" }] : []),
+                  ...(summaryStatement || summaryEditor ? [{ id: "summary", label: "Summary" }] : []),
+                  ...(highlights.length > 0 ? [{ id: "highlights", label: "Highlights" }] : []),
                   { id: "experience", label: "Experience" },
                   ...(skills.length > 0 ? [{ id: "skills", label: "Skills" }] : []),
                   ...(education.length > 0 ? [{ id: "education", label: "Education" }] : []),
-                  { id: "work-samples", label: "Sample work" }
+                  ...(sampleWorkOpen || portfolioAssets.length > 0 ? [{ id: "work-samples", label: "Sample work" }] : [])
                 ].map((section, index) => (
                   <span key={section.id} className="inline-flex items-center gap-2">
                     {index > 0 && <span className="text-slate-300 text-[11px]">/</span>}
@@ -2236,13 +2263,49 @@ export default function StudioPage() {
                   </span>
                 ))}
                 </div>
-                <DossierLayoutControl
-                  layout={preferredLayout}
-                  saved={isPortfolioSaved}
-                  assetCount={portfolioAssets.length}
-                  onLayoutChange={setPreferredLayout}
-                />
               </nav>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {(!summaryStatement.trim() && !summaryEditor) || highlights.length === 0 || (portfolioAssets.length === 0 && !sampleWorkOpen) ? (
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Add a section</span>
+                ) : null}
+                {!summaryStatement.trim() && !summaryEditor && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSummaryEditor(true);
+                      window.setTimeout(() => document.getElementById("summary")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+                    }}
+                    className="px-2.5 py-1 rounded-lg border border-[#E2E8F0] bg-white text-[11px] font-bold text-slate-600 hover:text-[#0F172A] cursor-pointer"
+                  >
+                    Summary
+                  </button>
+                )}
+                {highlights.length === 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHighlights([""]);
+                      window.setTimeout(() => document.getElementById("highlights")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+                    }}
+                    className="px-2.5 py-1 rounded-lg border border-[#E2E8F0] bg-white text-[11px] font-bold text-slate-600 hover:text-[#0F172A] cursor-pointer"
+                  >
+                    Highlights
+                  </button>
+                )}
+                {portfolioAssets.length === 0 && !sampleWorkOpen && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSampleWorkOpen(true);
+                      window.setTimeout(() => document.getElementById("work-samples")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+                    }}
+                    className="px-2.5 py-1 rounded-lg border border-[#E2E8F0] bg-white text-[11px] font-bold text-slate-600 hover:text-[#0F172A] cursor-pointer"
+                  >
+                    Sample work
+                  </button>
+                )}
+              </div>
 
               {/* Candidate Identity & Contact Verification Strip */}
               <div id="identity-card" className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-3xl p-6 shadow-xs space-y-4">
@@ -2268,7 +2331,7 @@ export default function StudioPage() {
                     />
                   </div>
 
-                  <div className="flex flex-col items-start gap-2 self-start sm:self-auto">
+                  <div className="flex items-start self-start sm:self-auto">
                   <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${
                     isPortfolioSaved
                       ? "bg-emerald-50 border-emerald-200 text-[#059669]"
@@ -2277,15 +2340,6 @@ export default function StudioPage() {
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>{isPortfolioSaved ? "Portfolio Saved" : "Save to edit"}</span>
                   </span>
-                  {isPortfolioSaved && (
-                    <button
-                      type="button"
-                      onClick={() => setReplaceOpen(true)}
-                      className="text-[11px] font-bold text-slate-500 hover:text-red-600 cursor-pointer"
-                    >
-                      Replace resume
-                    </button>
-                  )}
                   </div>
                 </div>
 
@@ -2424,7 +2478,7 @@ export default function StudioPage() {
                   <div className="p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 flex-1 min-w-0">
                       <LinkedInIcon className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                      {linkedInHandle(contact.linkedin) ? (
+                      {contact.linkedinVerified && editingVerifiedField !== "linkedin" && linkedInHandle(contact.linkedin) ? (
                         <a
                           href={linkedInProfileUrl(contact.linkedin)}
                           target="_blank"
@@ -2434,28 +2488,57 @@ export default function StudioPage() {
                           {linkedInHandle(contact.linkedin)}
                         </a>
                       ) : (
-                        <span className="text-xs font-medium truncate text-slate-400">Not confirmed</span>
+                        <input
+                          id="contact-linkedin"
+                          type="text"
+                          value={contact.linkedin}
+                          readOnly={!isPortfolioSaved}
+                          onChange={(e) => {
+                            const next = e.target.value;
+                            const sameHandle = linkedInHandle(next) !== "" && linkedInHandle(next) === linkedInHandle(contact.linkedin);
+                            setContact({
+                              ...contact,
+                              linkedin: next,
+                              linkedinVerified: Boolean(contact.linkedinVerified && sameHandle)
+                            });
+                          }}
+                          onBlur={() => {
+                            if (contact.linkedinVerified) setEditingVerifiedField(null);
+                          }}
+                          placeholder="LinkedIn handle"
+                          className="w-full text-xs bg-transparent focus:outline-none font-medium"
+                        />
                       )}
                     </div>
                     {contact.linkedinVerified && <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        requirePortfolioSaved(() => {
+                    {contact.linkedinVerified && editingVerifiedField !== "linkedin" ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingVerifiedField("linkedin");
                           setLinkedinVerifyError("");
-                          persistPortfolioLocally(true);
-                          captureEvent("linkedin_verify_clicked", { handle: handle.toLowerCase().trim() });
-                          window.location.href = "/api/auth/linkedin?next=/studio";
-                        });
-                      }}
-                      className={
-                        contact.linkedinVerified
-                          ? "text-[10px] font-bold text-slate-500 hover:text-[#0F172A] cursor-pointer shrink-0"
-                          : "text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer shrink-0"
-                      }
-                    >
-                      {contact.linkedinVerified ? "Edit" : "Verify"}
-                    </button>
+                          setTimeout(() => document.getElementById("contact-linkedin")?.focus(), 0);
+                        }}
+                        className="text-[10px] font-bold text-slate-500 hover:text-[#0F172A] cursor-pointer shrink-0"
+                      >
+                        Edit
+                      </button>
+                    ) : !contact.linkedinVerified ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          requirePortfolioSaved(() => {
+                            setLinkedinVerifyError("");
+                            persistPortfolioLocally(true);
+                            captureEvent("linkedin_verify_clicked", { handle: handle.toLowerCase().trim() });
+                            window.location.href = "/api/auth/linkedin?next=/studio";
+                          });
+                        }}
+                        className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer shrink-0"
+                      >
+                        Verify
+                      </button>
+                    ) : null}
                   </div>
 
                   <LocationField
@@ -2472,6 +2555,11 @@ export default function StudioPage() {
                 {editingVerifiedField === "phone" && contact.phoneVerified && (
                   <p className="text-[11px] font-semibold text-slate-600">
                     This phone is verified. Change it and the check comes off until you verify the new number.
+                  </p>
+                )}
+                {editingVerifiedField === "linkedin" && (
+                  <p className="text-[11px] font-semibold text-slate-600">
+                    LinkedIn is confirmed. If you change this handle, you will need to verify it again.
                   </p>
                 )}
                 {emailCodeSent && !contact.emailVerified && (
@@ -2591,7 +2679,7 @@ export default function StudioPage() {
               </div>
 
               {/* Summary */}
-              {summaryStatement && (
+              {(summaryStatement || summaryEditor) && (
                 <div id="summary" style={{ order: dossierSectionRank(preferredLayout).summary }} className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                     <div className="flex items-center gap-2">
@@ -2600,9 +2688,16 @@ export default function StudioPage() {
                         Summary
                       </h3>
                     </div>
-                    {parseDossierLayout(preferredLayout).template !== "summary" && (
-                      <span className="text-[10px] font-semibold text-slate-400">Not on this page template</span>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSummaryStatement("");
+                        setSummaryEditor(false);
+                      }}
+                      className="text-[10px] font-bold text-slate-400 hover:text-red-500 cursor-pointer"
+                    >
+                      Remove
+                    </button>
                   </div>
                   <textarea
                     rows={4}
@@ -2618,21 +2713,30 @@ export default function StudioPage() {
               )}
 
               {/* Milestones Card Stream */}
-              {highlights.length > 0 ? (
+              {highlights.length > 0 && (
                 <div id="highlights" style={{ order: dossierSectionRank(preferredLayout).highlights }} className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="font-extrabold text-xs uppercase tracking-wider text-[#0F172A]">Highlights</h3>
                       <p className="text-[11px] text-slate-500 mt-1">Optional. Use lines from the resume, or write your own. A line can stand on its own or combine more than one chapter.</p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setHighlights((prev) => [...prev, ""])}
-                      className="inline-flex items-center gap-1 text-[11px] font-bold text-[#059669] cursor-pointer shrink-0"
-                    >
-                      <Plus className="w-3 h-3" />
-                      Add
-                    </button>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setHighlights((prev) => [...prev, ""])}
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-[#059669] cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" />
+                        Add
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setHighlights([])}
+                        className="text-[10px] font-bold text-slate-400 hover:text-red-500 cursor-pointer"
+                      >
+                        Remove section
+                      </button>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     {highlights.map((line, index) => (
@@ -2655,16 +2759,6 @@ export default function StudioPage() {
                       </div>
                     ))}
                   </div>
-                </div>
-              ) : (
-                <div style={{ order: dossierSectionRank(preferredLayout).highlights }}>
-                  <button
-                    type="button"
-                    onClick={() => setHighlights([""])}
-                    className="text-[11px] font-bold text-slate-500 hover:text-[#0F172A] cursor-pointer"
-                  >
-                    Add highlights
-                  </button>
                 </div>
               )}
 
@@ -2733,7 +2827,7 @@ export default function StudioPage() {
                                 )}
                               >
                                 <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
-                                  {trustStatus.label}
+                                  {publicChapterLabel(trustStatus.level)}
                                 </span>
                                 <span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-56 rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-semibold leading-relaxed text-white shadow-xl group-hover/proof:block">
                                   {companyVerificationTooltip(
@@ -2993,10 +3087,31 @@ export default function StudioPage() {
                 </div>
               )}
 
-              <div id="work-samples" style={{ order: dossierSectionRank(preferredLayout).work }} className="scroll-mt-14 space-y-2">
-              {parseDossierLayout(preferredLayout).placement === "hidden" && (
-                <p className="text-[11px] font-semibold text-slate-400">Not on the public page.</p>
-              )}
+              {(sampleWorkOpen || portfolioAssets.length > 0) && (
+              <div id="work-samples" style={{ order: dossierSectionRank(preferredLayout).work }} className="scroll-mt-14 space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">On the dossier</span>
+                  <div className="inline-flex p-0.5 rounded-lg bg-white border border-[#E2E8F0]">
+                    {(["top", "bottom"] as const).map((placement) => {
+                      const active = parseDossierLayout(preferredLayout).placement === "top" ? placement === "top" : placement === "bottom";
+                      return (
+                        <button
+                          key={placement}
+                          type="button"
+                          onClick={() => {
+                            const current = parseDossierLayout(preferredLayout);
+                            setPreferredLayout(encodeDossierLayout(current.template, placement));
+                          }}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer ${
+                            active ? "bg-emerald-50 text-[#059669]" : "text-slate-500 hover:text-[#0F172A]"
+                          }`}
+                        >
+                          {placement === "top" ? "Top of dossier" : "Bottom of dossier"}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               <PortfolioStudioPanel
                 assets={portfolioAssets}
                 handle={handle}
@@ -3004,6 +3119,7 @@ export default function StudioPage() {
                 onAssetsChange={setPortfolioAssets}
               />
               </div>
+              )}
             </div>
           )}
           </div>
@@ -3035,9 +3151,9 @@ export default function StudioPage() {
                 <div className="space-y-3">
                   <div className="px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs">
                     <span className="text-slate-500">Current status: </span>
-                    <span className="font-bold text-[#0F172A]">{currentStatus.label}</span>
+                    <span className="font-bold text-[#0F172A]">{publicChapterLabel(currentStatus.level) || currentStatus.label}</span>
                     <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                      A work email, an employment document, and a colleague are different kinds of proof. One of them marks this chapter Corroborated. Two mark it Multi-source.
+                      A work email, an employment document, and a colleague are different kinds of proof. Hover Verification on a chapter to see what was checked.
                     </p>
                   </div>
 

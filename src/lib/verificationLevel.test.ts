@@ -13,15 +13,15 @@ describe("company verification levels", () => {
   it("calls one independent source Corroborated", () => {
     expect(getVerificationStatus({ peers: 1, docs: 0, registry: false }).label).toBe("Corroborated");
     expect(getVerificationStatus({ peers: 0, docs: 1, registry: false }).label).toBe("Corroborated");
-    expect(publicChapterLabel(1)).toBe("Corroborated");
+    expect(publicChapterLabel(1)).toBe("Verification");
   });
 
   it("calls two independent sources Multi-source", () => {
     expect(getVerificationStatus({ peers: 2, docs: 0, registry: false }).label).toBe("Multi-source");
     expect(getVerificationStatus({ peers: 1, docs: 1, registry: false }).label).toBe("Multi-source");
     expect(getVerificationStatus({ peers: 3, docs: 0, registry: false }).label).toBe("Multi-source");
-    expect(publicChapterLabel(2)).toBe("Multi-source");
-    expect(publicChapterLabel(3)).toBe("Multi-source");
+    expect(publicChapterLabel(2)).toBe("Verification");
+    expect(publicChapterLabel(3)).toBe("Verification");
   });
 
   it("does not let a registry flag raise the public label", () => {
