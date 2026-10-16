@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase as rawSupabase } from "@/lib/supabase";
+import { getSupabaseAdmin, supabase as rawSupabase } from "@/lib/supabase";
 import { createClient } from "@/lib/supabase/server";
-import { getVaultStore, saveToVaultStore } from "@/lib/store";
+import { clearFileDraftsAfterPublish, getVaultStore, saveToVaultStore } from "@/lib/store";
+import { DOSSIER_DRAFTS_KEY, EXPLICIT_PUBLISH_HEADER, PUBLIC_CANDIDATE_COLUMNS, draftDeleteIsMissingTable, isExplicitPublish, publicVaultRecord } from "@/lib/dossierDraft";
 import { BETA_COOKIE, isBetaEnforced } from "@/lib/betaAccess";
 import { getAppUrl } from "@/lib/appUrl";
 import {
@@ -16,16 +17,6 @@ import { candidateSummary, decodeStoredHighlights, decodeStoredPage, encodeStore
 import { repairSkillList } from "@/lib/skills";
 
 export const dynamic = "force-dynamic";
-
-const CANDIDATE_PUBLIC_COLUMNS =
-  "handle, full_name, headline, summary_statement, bio_summary, email, phone, linkedin, location, email_verified, phone_verified, linkedin_verified, preferred_layout";
-
-function stripOwnerSecret(record: Record<string, unknown>) {
-  const rest = { ...record };
-  delete rest.ownerTokenHash;
-  delete rest.owner_token_hash;
-  return rest;
-}
 
 function missingOwnerColumn(message?: string) {
   return Boolean(message && message.toLowerCase().includes("owner_token_hash"));
@@ -51,15 +42,18 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  if (!handle) {
-    return NextResponse.json({ error: "Handle parameter required." }, { status: 400 });
+  if (!handle || handle === DOSSIER_DRAFTS_KEY) {
+    return NextResponse.json(
+      { error: handle ? "Handle not found in Vault." : "Handle parameter required." },
+      { status: handle ? 404 : 400 }
+    );
   }
 
   if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
     try {
       const { data: candidate, error: candidateError } = await rawSupabase
         .from("candidates")
-        .select(CANDIDATE_PUBLIC_COLUMNS)
+        .select(PUBLIC_CANDIDATE_COLUMNS)
         .eq("handle", handle)
         .single();
 
@@ -177,7 +171,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Handle not found in Vault." }, { status: 404 });
   }
 
-  const stored = stripOwnerSecret(record);
+  const stored = publicVaultRecord(record);
   if (Array.isArray(stored.skills)) stored.skills = repairSkillList(stored.skills);
   return NextResponse.json(stored);
 }
@@ -200,6 +194,7 @@ export async function POST(req: NextRequest) {
     }
 
     const cookie = getHandleOwnerFromRequest(req);
+    let authUserId: string | null = null;
     let tokenToSet: string | null = null;
     let isNewClaim = false;
     let restoreEmailed = false;
@@ -208,6 +203,7 @@ export async function POST(req: NextRequest) {
       try {
         const supabase = await createClient();
         const { data: { user } } = await supabase.auth.getUser();
+        authUserId = user?.id || null;
 
         const { data: existing, error: existingError } = await rawSupabase
           .from("candidates")
@@ -262,6 +258,13 @@ export async function POST(req: NextRequest) {
               isNewClaim = decision.isNewClaim;
             }
           }
+        }
+
+        if (existing?.handle && !isExplicitPublish(req.headers.get(EXPLICIT_PUBLISH_HEADER))) {
+          return NextResponse.json(
+            { error: "This dossier is already live. Use Publish changes to update it." },
+            { status: 409 }
+          );
         }
 
         if (!existing?.handle && incomingEmail) {
@@ -513,11 +516,13 @@ export async function POST(req: NextRequest) {
     }
 
     saveToVaultStore(handle, dossierRecord);
+    const draftCleared = await clearPublishedDraft(authUserId, handle);
 
     const response = NextResponse.json({
       success: true,
       handle,
       restoreEmailed,
+      draftCleared,
       dossierUrl: `${getAppUrl()}/${handle}`
     });
     if (tokenToSet) {
@@ -528,4 +533,15 @@ export async function POST(req: NextRequest) {
     const message = err instanceof Error ? err.message : "Vault commit error";
     return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+async function clearPublishedDraft(authUserId: string | null, handle: string) {
+  clearFileDraftsAfterPublish({ authUserId, handle });
+  if (!authUserId || !process.env.SUPABASE_SERVICE_ROLE_KEY) return true;
+  const admin = getSupabaseAdmin();
+  if (!admin) return true;
+  const { error } = await admin.from("dossier_drafts").delete().eq("auth_user_id", authUserId);
+  if (!error || draftDeleteIsMissingTable(error.message, error.code)) return true;
+  console.error("Could not delete dossier draft after publish:", error.message);
+  return false;
 }

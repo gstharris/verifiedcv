@@ -64,6 +64,8 @@ describe("studio chat intents", () => {
     expect(interpretStudioMessage("verify my work email").type).toBe("work_email");
     expect(interpretStudioMessage("save and publish").type).toBe("save");
     expect(interpretStudioMessage("review grammar").type).toBe("review");
+    expect(interpretStudioMessage("review changes").type).toBe("review_changes");
+    expect(interpretStudioMessage("publish changes").type).toBe("review_changes");
     expect(interpretStudioMessage("where is education").type).toBe("education");
   });
 });

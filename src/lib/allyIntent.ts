@@ -18,6 +18,7 @@ export type StudioMessage =
   | { type: "colleague" }
   | { type: "document" }
   | { type: "review" }
+  | { type: "review_changes" }
   | { type: "work_email" }
   | { type: "identity"; field: "email" | "phone" | "linkedin"; mode: "verify" | "edit" };
 
@@ -161,6 +162,8 @@ export function interpretStudioMessage(text: string): StudioMessage {
   if (hasWord(words, ["highlight", "highlights"])) return { type: "highlights" };
 
   if (resumeUpload(words)) return { type: "resume" };
+
+  if (hasPhrase(words, "review changes") || hasPhrase(words, "publish changes")) return { type: "review_changes" };
 
   if (hasWord(words, ["grammar", "spelling", "buzzword", "buzzwords"]) || hasWord(words, ["review"])) {
     return { type: "review" };

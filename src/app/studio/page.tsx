@@ -8,8 +8,6 @@ import {
   CheckCircle2,
   Lock,
   ArrowRight,
-  Bot,
-  Send,
   Users,
   Check,
   Plus,
@@ -53,6 +51,8 @@ import { getVerificationStatus } from "@/lib/verificationLevel";
 import { chapterProofItems, companyVerificationTooltip, endorsedClaimIndexes, firstChapterWithoutColleague, hasWorkEmailProof, mergeChapterProof, postSavePrompt } from "@/lib/verificationSignals";
 import { corporateEmailMatchesCompany } from "@/lib/corporateEmail";
 import { interpretStudioMessage } from "@/lib/allyIntent";
+import { suggestStudioActions, unknownStudioReply, type StudioAction, type StudioActionPlan } from "@/lib/studioActions";
+import { NextActionDock } from "@/components/studio/NextActionDock";
 import { interpretVerificationAsk } from "@/lib/chapterMatch";
 import { nextPortfolioVerificationStep, verificationStatusLine } from "@/lib/verificationQueue";
 import { dossierSectionRank, encodeDossierLayout, parseDossierLayout, publicRegistryLabel, type PortfolioAsset } from "@/lib/portfolioAssets";
@@ -62,6 +62,12 @@ import { flagEmoji, parseLocation } from "@/lib/locations";
 import { repairSkillList } from "@/lib/skills";
 import { resolvePlace, suggestPlaces } from "@/lib/places";
 import { hydrateChapter, packChapter } from "@/lib/chapterMeta";
+import { hasUnpublishedChanges, summarizeDossierChanges, type DossierSnapshot } from "@/lib/dossierChanges";
+import { draftDeleteBlocksCancel, EXPLICIT_PUBLISH_HEADER } from "@/lib/dossierDraft";
+import { publishDraft } from "@/lib/publishDraft";
+import { mergePeerVerifications, mergeReplacedContact, overlayChapterProof, patchVaultIdentity, withIdentity } from "@/lib/studioSync";
+import { ReviewChangesDialog } from "@/components/studio/ReviewChangesDialog";
+import { UndoBanner } from "@/components/studio/UndoBanner";
 import { faviconUrl, publicHttpsUrl, siteLabel } from "@/lib/companySite";
 import { sortChaptersByTenure } from "@/lib/tenureOverlap";
 import { reviewResume } from "@/lib/resumeReview";
@@ -474,20 +480,45 @@ export default function StudioPage() {
   const [hasSession, setHasSession] = useState(false);
   const [vaultChecked, setVaultChecked] = useState(false);
   const [signInOnly, setSignInOnly] = useState(false);
-  const [allyOpen, setAllyOpen] = useState(false);
+  const [dockExpanded, setDockExpanded] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
+  const [sourcePasteOpen, setSourcePasteOpen] = useState(false);
+  const [sourceNotice, setSourceNotice] = useState<{ text: string; error?: boolean } | null>(null);
+  const [sectionToRemove, setSectionToRemove] = useState<"summary" | "highlights" | null>(null);
   const [chapterToRemove, setChapterToRemove] = useState<{ id: string; company: string } | null>(null);
+  const [undoNotice, setUndoNotice] = useState<
+    | { kind: "skill"; index: number; value: string }
+    | { kind: "highlight"; index: number; value: string }
+    | { kind: "achievement"; milestoneId: string; index: number; value: string }
+    | null
+  >(null);
   const [proofToRemove, setProofToRemove] = useState<{
     milestoneId: string;
     kind: "verification" | "document";
     id: string;
     label: string;
   } | null>(null);
-  const [replaceBusy, setReplaceBusy] = useState(false);
+  const replaceSourceRef = useRef(false);
+  const undoTimerRef = useRef<number | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [publishedSnapshot, setPublishedSnapshot] = useState<DossierSnapshot | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewError, setReviewError] = useState("");
   const [isReplayingProof, setIsReplayingProof] = useState(false);
   const skipNextAutosaveRef = useRef(true);
+  const restoredDraftRef = useRef(false);
+  const autosaveAbortRef = useRef<AbortController | null>(null);
   const loggingOutRef = useRef(false);
+  const publishedSnapshotRef = useRef<DossierSnapshot | null>(null);
+  const editorPayloadRef = useRef<DossierSnapshot | null>(null);
+  const serverDraftRef = useRef(false);
+
+  const rememberPublished = (next: DossierSnapshot | null) => {
+    publishedSnapshotRef.current = next;
+    setPublishedSnapshot(next);
+  };
 
   // Peer Corroboration Modal State
   const [isVerifyHubOpen, setIsVerifyHubOpen] = useState(false);
@@ -598,23 +629,25 @@ export default function StudioPage() {
             
             if (!prev.linkedinVerified && isPortfolioSaved) {
               const savedRec = readStudioRecord<any>(STUDIO_SAVED_KEY);
-              const draftRec = readStudioRecord<any>(STUDIO_DRAFT_KEY);
-              const base = savedRec && hasPortfolioContent(savedRec) ? savedRec : draftRec;
-              if (base && hasPortfolioContent(base)) {
-                const synced = {
-                  ...base,
-                  contact: { ...base.contact, ...nextContact },
-                  linkedinSub: user.user_metadata?.sub || user.id,
-                  linkedin: base.linkedin || base.contact?.linkedin || user.user_metadata?.email || ""
-                };
-                skipNextAutosaveRef.current = true;
-                writeStudioRecord(STUDIO_SAVED_KEY, synced);
-                fetch("/api/vault", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  credentials: "include",
-                  body: JSON.stringify(synced)
-                }).catch(() => {});
+              const linkedinSub = user.user_metadata?.sub || user.id;
+              const linkedin = nextContact.linkedin || savedRec?.contact?.linkedin || "";
+              if (savedRec?.handle && linkedin) {
+                const identity = { ...nextContact, linkedin, linkedinVerified: true };
+                writeStudioRecord(STUDIO_SAVED_KEY, withIdentity(savedRec, { ...savedRec.contact, ...identity }, linkedinSub));
+                const draftRec = readStudioRecord<any>(STUDIO_DRAFT_KEY);
+                if (draftRec) writeStudioRecord(STUDIO_DRAFT_KEY, withIdentity(draftRec, { ...draftRec.contact, ...identity }, linkedinSub));
+                const current = publishedSnapshotRef.current;
+                if (current) {
+                  const next = withIdentity(current, { ...(current.contact || {}), ...identity }, linkedinSub);
+                  publishedSnapshotRef.current = next;
+                  setPublishedSnapshot(next);
+                }
+                void patchVaultIdentity({
+                  handle: String(savedRec.handle).toLowerCase().trim(),
+                  linkedin,
+                  linkedinVerified: true,
+                  linkedinSub
+                });
               }
             }
           }
@@ -659,8 +692,8 @@ export default function StudioPage() {
     }
   ]);
   const [chatInput, setChatInput] = useState("");
-  const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const studioPlanRef = useRef<StudioActionPlan | null>(null);
 
   const nextVerifyStep = nextPortfolioVerificationStep({
     emailVerified: contact.emailVerified,
@@ -678,17 +711,6 @@ export default function StudioPage() {
     contact.phoneVerified ||
     milestones.some((milestone) => getVerificationLevel(milestone).level > 0);
 
-  const actionPrompts = React.useMemo(() => {
-    if (!isPortfolioSaved) {
-      if (!hasPortfolioContent({ milestones, summaryStatement, highlights, portfolioAssets })) {
-        return [{ label: "Upload a resume", action: "upload_resume" }];
-      }
-      return [{ label: "Save and publish", action: "save_portfolio" }];
-    }
-    const label = nextVerifyStep.id === "done" ? "Ask a colleague" : nextVerifyStep.title;
-    return [{ label, action: "continue_verification" }];
-  }, [isPortfolioSaved, milestones, nextVerifyStep, summaryStatement]);
-
   const buildPortfolioPayload = () => ({
     handle: handle.toLowerCase().trim(),
     email: contact.email,
@@ -703,6 +725,7 @@ export default function StudioPage() {
     portfolioAssets,
     milestones: sortChaptersByTenure(milestones).map((milestone) => packChapter(milestone))
   });
+  editorPayloadRef.current = buildPortfolioPayload();
 
   const persistPortfolioLocally = (saved: boolean, payload = buildPortfolioPayload()) => {
     if (loggingOutRef.current) return;
@@ -741,27 +764,128 @@ export default function StudioPage() {
     setPortfolioStarted(true);
   };
 
+  const publishedBaseline = (parsed: any): DossierSnapshot => ({
+    ...parsed,
+    skills: Array.isArray(parsed?.skills) ? repairSkillList(parsed.skills) : parsed?.skills,
+    highlights: Array.isArray(parsed?.highlights) ? parsed.highlights.map((line: unknown) => String(line || "")) : parsed?.highlights,
+    milestones: Array.isArray(parsed?.milestones)
+      ? incomingChapters(parsed.milestones).map((milestone) => packChapter(milestone))
+      : parsed?.milestones
+  });
+
+  useEffect(() => {
+    if (!isPortfolioSaved) return;
+    const saved = readStudioRecord<DossierSnapshot>(STUDIO_SAVED_KEY);
+    const currentHandle = String(saved?.handle || handle || "").toLowerCase().trim();
+    if (saved?.handle && !publishedSnapshotRef.current) rememberPublished(saved);
+    const baselineAtStart = publishedSnapshotRef.current;
+    if (currentHandle.length < 2) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/vault?handle=${encodeURIComponent(currentHandle)}`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (!data?.handle || cancelled) return;
+        if (String(data.handle).toLowerCase().trim() !== currentHandle) return;
+        const baseline = publishedBaseline(data);
+        if (cancelled) return;
+        if (baselineAtStart && publishedSnapshotRef.current !== baselineAtStart) return;
+        rememberPublished(baseline);
+        writeStudioRecord(STUDIO_SAVED_KEY, baseline);
+      } catch {
+        // The local saved copy remains the comparison baseline.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // The live handle is fixed once the page exists. A draft handle edit must not swap the baseline.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPortfolioSaved]);
+
   useEffect(() => {
     if (!user) return;
     const vaultTimer = window.setTimeout(() => setVaultChecked(true), 8000);
     let cancelled = false;
+    const adoptServerDraft = async () => {
+      const draftRes = await fetch("/api/vault/draft", { credentials: "include" });
+      if (!draftRes.ok || cancelled) return;
+      const body = await draftRes.json().catch(() => null);
+      const payload = body?.payload;
+      if (!payload || typeof payload !== "object" || !hasPortfolioContent(payload) || cancelled) return;
+      skipNextAutosaveRef.current = true;
+      serverDraftRef.current = true;
+      applyPortfolioRecord(payload);
+      writeStudioRecord(STUDIO_DRAFT_KEY, payload);
+    };
     (async () => {
       try {
         const res = await fetch("/api/vault?mine=1", { credentials: "include" });
-        if (!res.ok || cancelled) {
+        if (cancelled) return;
+        if (!res.ok) {
+          if (res.status === 404) {
+            rememberPublished(null);
+            setIsPortfolioSaved(false);
+          }
+          await adoptServerDraft();
           if (!cancelled) setVaultChecked(true);
           return;
         }
         const data = await res.json();
         if (!data?.handle || cancelled) {
+          if (!cancelled) {
+            rememberPublished(null);
+            setIsPortfolioSaved(false);
+          }
+          await adoptServerDraft();
           if (!cancelled) setVaultChecked(true);
           return;
         }
-        skipNextAutosaveRef.current = true;
-        applyPortfolioRecord(data);
+        const baseline = publishedBaseline(data);
+        rememberPublished(baseline);
+        writeStudioRecord(STUDIO_SAVED_KEY, baseline);
         setIsPortfolioSaved(true);
-        writeStudioRecord(STUDIO_SAVED_KEY, data);
-        writeStudioRecord(STUDIO_DRAFT_KEY, data);
+        const draftRes = await fetch("/api/vault/draft", { credentials: "include" });
+        if (cancelled) return;
+        if (draftRes.ok) {
+          const body = await draftRes.json().catch(() => null);
+          const payload = body?.payload;
+          const draftHandle = String(body?.handle || payload?.handle || "").toLowerCase().trim();
+          const samePage = !draftHandle || draftHandle === String(data.handle).toLowerCase().trim();
+          if (payload && typeof payload === "object" && samePage) {
+            skipNextAutosaveRef.current = true;
+            serverDraftRef.current = true;
+            applyPortfolioRecord(payload);
+            writeStudioRecord(STUDIO_DRAFT_KEY, payload);
+            setSaveStatus("saved");
+            setVaultChecked(true);
+            return;
+          }
+        }
+        const local = readStudioRecord<DossierSnapshot>(STUDIO_DRAFT_KEY);
+        if (local && hasPortfolioContent(local) && hasUnpublishedChanges(baseline, local)) {
+          skipNextAutosaveRef.current = true;
+          applyPortfolioRecord(local);
+          setSaveStatus("saving");
+          const put = await fetch("/api/vault/draft", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ handle: data.handle, payload: local })
+          });
+          serverDraftRef.current = put.ok;
+          if (!cancelled) setSaveStatus(put.ok ? "saved" : "error");
+        } else if (!hasUnpublishedChanges(baseline, editorPayloadRef.current)) {
+          skipNextAutosaveRef.current = true;
+          serverDraftRef.current = false;
+          applyPortfolioRecord(baseline);
+          writeStudioRecord(STUDIO_DRAFT_KEY, baseline);
+          setSaveStatus("saved");
+        } else {
+          skipNextAutosaveRef.current = true;
+          setSaveStatus("saved");
+        }
         if (!cancelled) setVaultChecked(true);
       } catch {
         if (!cancelled) setVaultChecked(true);
@@ -785,7 +909,7 @@ export default function StudioPage() {
       ]);
       return;
     }
-    persistPortfolioLocally(true);
+    persistPortfolioLocally(false);
     onReady();
   };
 
@@ -843,16 +967,22 @@ export default function StudioPage() {
           ? data.milestones.find((milestone: Milestone) => milestone.id === milestoneId)
           : null;
         if (!fresh || cancelled) return;
-        setMilestones((prev) =>
-          prev.map((milestone) => {
+        const mergeFreshProof = <T extends { id?: string; artifacts?: unknown[]; verifications?: unknown[] }>(chapters: T[]) =>
+          chapters.map((milestone) => {
             if (milestone.id !== milestoneId) return milestone;
             return {
               ...milestone,
-              artifacts: mergeChapterProof(milestone.artifacts || [], fresh.artifacts || [], removedProofIdsRef.current),
-              verifications: mergeChapterProof(milestone.verifications || [], fresh.verifications || [], removedProofIdsRef.current)
+              artifacts: mergeChapterProof((milestone.artifacts || []) as { id?: string }[], fresh.artifacts || [], removedProofIdsRef.current),
+              verifications: mergeChapterProof((milestone.verifications || []) as { id?: string }[], fresh.verifications || [], removedProofIdsRef.current)
             };
-          })
-        );
+          });
+        setMilestones((prev) => mergeFreshProof(prev));
+        setPublishedSnapshot((prev) => {
+          if (!prev?.milestones) return prev;
+          const next = { ...prev, milestones: mergeFreshProof(prev.milestones) };
+          publishedSnapshotRef.current = next;
+          return next;
+        });
       } catch {
         // The open window still shows whatever proof is already on the chapter.
       }
@@ -863,8 +993,23 @@ export default function StudioPage() {
   }, [isVerifyHubOpen, targetMilestone?.id]);
 
 
+  const applyReplacedSource = (data: any) => {
+    setMilestones(incomingChapters(data.milestones));
+    setSummaryStatement(String(data.summaryStatement || ""));
+    setSummaryEditor(Boolean(String(data.summaryStatement || "").trim()));
+    setHighlights(Array.isArray(data.highlights) ? data.highlights.map((line) => String(line || "")) : []);
+    setSkills(Array.isArray(data.skills) ? repairSkillList(data.skills) : []);
+    setEducation(Array.isArray(data.education) ? data.education : []);
+    if (data.headline) setHeadline(String(data.headline));
+    setContact((prev) => mergeReplacedContact(prev, data.contact));
+    setPortfolioStarted(true);
+    setActiveTab("canvas");
+    setSourcePasteOpen(false);
+  };
+
   const executeIngest = async (text: string) => {
     setIsProcessing(true);
+    if (replaceSourceRef.current) setSourceNotice({ text: "Reading your resume…" });
     setChatMessages((prev) => [
       ...prev,
       { sender: "ally", text: "Analyzing career history, contact details, and dates..." }
@@ -881,6 +1026,18 @@ export default function StudioPage() {
 
       const data = await res.json();
       if (res.ok && data.milestones && data.milestones.length > 0) {
+        if (replaceSourceRef.current) {
+          replaceSourceRef.current = false;
+          applyReplacedSource(data);
+          captureEvent("resume_parsed", { source: "replace_paste", chapters: data.milestones.length });
+          const count = data.milestones.length;
+          setSourceNotice({
+            text: `Replaced your draft with ${count} ${count === 1 ? "chapter" : "chapters"}. Your live dossier stays as it is until you publish.`
+          });
+          say("The new source is in your draft. Your live dossier stays as it is until you publish.");
+          window.setTimeout(() => document.getElementById("experience")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+          return;
+        }
         setMilestones(incomingChapters(data.milestones));
         if (data.fullName) setFullName(data.fullName);
         if (data.headline) setHeadline(data.headline);
@@ -910,11 +1067,19 @@ export default function StudioPage() {
             text: "Upload successful. Please review your resume below and edit as necessary. Once it looks good, save your portfolio to begin verification."
           }
         ]);
+      } else if (replaceSourceRef.current) {
+        replaceSourceRef.current = false;
+        setSourceNotice({ text: data.error || "Could not read that text. Your draft is unchanged.", error: true });
       } else {
         alert(data.error || "Failed to parse text input.");
       }
     } catch {
-      alert("Network communication error with /api/parse.");
+      if (replaceSourceRef.current) {
+        replaceSourceRef.current = false;
+        setSourceNotice({ text: "Could not read that text. Your draft is unchanged.", error: true });
+      } else {
+        alert("Network communication error with /api/parse.");
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -984,24 +1149,25 @@ export default function StudioPage() {
                 profileUrl: user.user_metadata?.url
               }, prev.linkedin)
             };
-            const base = saved && hasPortfolioContent(saved) ? saved : draft;
-            if (base && hasPortfolioContent(base)) {
-              const synced = {
-                ...base,
-                contact: { ...base.contact, ...nextContact },
-                linkedinSub: user.user_metadata?.sub || user.id
-              };
-              writeStudioRecord(STUDIO_DRAFT_KEY, synced);
-              if (saved) {
-                skipNextAutosaveRef.current = true;
-                writeStudioRecord(STUDIO_SAVED_KEY, synced);
-                fetch("/api/vault", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  credentials: "include",
-                  body: JSON.stringify(synced)
-                }).catch(() => {});
+            const linkedinSub = user.user_metadata?.sub || user.id;
+            const identity = { ...nextContact, linkedinVerified: true };
+            if (draft && hasPortfolioContent(draft)) {
+              writeStudioRecord(STUDIO_DRAFT_KEY, withIdentity(draft, { ...draft.contact, ...identity }, linkedinSub));
+            }
+            if (saved?.handle) {
+              writeStudioRecord(STUDIO_SAVED_KEY, withIdentity(saved, { ...saved.contact, ...identity }, linkedinSub));
+              const current = publishedSnapshotRef.current;
+              if (current) {
+                const next = withIdentity(current, { ...(current.contact || {}), ...identity }, linkedinSub);
+                publishedSnapshotRef.current = next;
+                setPublishedSnapshot(next);
               }
+              void patchVaultIdentity({
+                handle: String(saved.handle).toLowerCase().trim(),
+                linkedin: identity.linkedin,
+                linkedinVerified: true,
+                linkedinSub
+              });
             }
             return nextContact;
           });
@@ -1027,7 +1193,9 @@ export default function StudioPage() {
 
     if (saved && hasPortfolioContent(saved)) {
       skipNextAutosaveRef.current = true;
-      applyPortfolioRecord(saved);
+      const useDraft = Boolean(draft && hasPortfolioContent(draft) && hasUnpublishedChanges(saved, draft));
+      rememberPublished(saved);
+      applyPortfolioRecord(useDraft ? draft : saved);
       setIsPortfolioSaved(true);
       setSaveStatus("saved");
       setChatMessages([
@@ -1098,25 +1266,26 @@ export default function StudioPage() {
               email: prev.email || data.profile.email || prev.email,
               ...linkedInFields(data.profile, prev.linkedin)
             };
-            const base = saved && hasPortfolioContent(saved) ? saved : draft;
-            if (base && hasPortfolioContent(base)) {
-              const synced = {
-                ...base,
-                contact: { ...base.contact, ...nextContact },
-                email: nextContact.email,
-                linkedinSub: data.profile.sub
-              };
-              writeStudioRecord(STUDIO_DRAFT_KEY, synced);
-              if (saved) {
-                skipNextAutosaveRef.current = true;
-                writeStudioRecord(STUDIO_SAVED_KEY, synced);
-                fetch("/api/vault", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  credentials: "include",
-                  body: JSON.stringify(synced)
-                }).catch(() => {});
+            const linkedinSub = data.profile.sub;
+            const identity = { ...nextContact, linkedinVerified: true };
+            if (draft && hasPortfolioContent(draft)) {
+              writeStudioRecord(STUDIO_DRAFT_KEY, withIdentity(draft, { ...draft.contact, ...identity }, linkedinSub));
+            }
+            if (saved?.handle) {
+              writeStudioRecord(STUDIO_SAVED_KEY, withIdentity(saved, { ...saved.contact, ...identity }, linkedinSub));
+              const current = publishedSnapshotRef.current;
+              if (current) {
+                const next = withIdentity(current, { ...(current.contact || {}), ...identity }, linkedinSub);
+                publishedSnapshotRef.current = next;
+                setPublishedSnapshot(next);
               }
+              void patchVaultIdentity({
+                handle: String(saved.handle).toLowerCase().trim(),
+                linkedin: identity.linkedin,
+                email: identity.email,
+                linkedinVerified: true,
+                linkedinSub
+              });
             }
             return nextContact;
           });
@@ -1165,12 +1334,6 @@ export default function StudioPage() {
   }, [highlights, isPortfolioSaved, milestones, nextVerifyStep.detail, nextVerifyStep.title, portfolioAssets, summaryStatement]);
 
   useEffect(() => {
-    if (chatScrollRef.current) {
-      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-    }
-  }, [chatMessages]);
-
-  useEffect(() => {
     if (loggingOutRef.current) return;
     const payload = {
       handle: handle.toLowerCase().trim(),
@@ -1186,33 +1349,66 @@ export default function StudioPage() {
       portfolioAssets,
       milestones: sortChaptersByTenure(milestones).map((milestone) => packChapter(milestone))
     };
-    if (!hasPortfolioContent(payload)) return;
-    if (skipNextAutosaveRef.current) {
+    if (!hasPortfolioContent(payload) && !isPortfolioSaved) return;
+    const snapshotReady = Boolean(publishedSnapshotRef.current);
+    if (restoredDraftRef.current && (!snapshotReady || !hasUnpublishedChanges(publishedSnapshotRef.current, payload))) {
+      restoredDraftRef.current = false;
       skipNextAutosaveRef.current = false;
       setSaveStatus("saved");
       return;
     }
-    persistPortfolioLocally(isPortfolioSaved, payload);
+    if (skipNextAutosaveRef.current) {
+      const pendingEdit = snapshotReady && hasUnpublishedChanges(publishedSnapshotRef.current, payload);
+      skipNextAutosaveRef.current = false;
+      if (!pendingEdit) {
+        setSaveStatus("saved");
+        return;
+      }
+    }
+    persistPortfolioLocally(false, payload);
 
-    if (!isPortfolioSaved) return;
+    if (!user) return;
+    if (isPortfolioSaved && !snapshotReady && !vaultChecked) return;
+
+    const dirty = !isPortfolioSaved || hasUnpublishedChanges(publishedSnapshotRef.current, payload);
+    if (!dirty) {
+      setSaveStatus("saved");
+      if (!serverDraftRef.current) return;
+      const timeout = setTimeout(() => {
+        serverDraftRef.current = false;
+        writeStudioRecord(STUDIO_DRAFT_KEY, publishedSnapshotRef.current);
+        void fetch("/api/vault/draft", { method: "DELETE", credentials: "include" }).catch(() => undefined);
+      }, 800);
+      return () => clearTimeout(timeout);
+    }
 
     setSaveStatus("saving");
+    autosaveAbortRef.current?.abort();
+    const controller = new AbortController();
+    autosaveAbortRef.current = controller;
     const timeout = setTimeout(async () => {
       try {
-        const res = await fetch("/api/vault", {
-          method: "POST",
+        const res = await fetch("/api/vault/draft", {
+          method: "PUT",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify(payload)
+          body: JSON.stringify({ handle: payload.handle, payload }),
+          signal: controller.signal
         });
+        if (controller.signal.aborted) return;
+        if (res.ok) serverDraftRef.current = true;
         setSaveStatus(res.ok ? "saved" : "error");
-      } catch {
+      } catch (err) {
+        if (controller.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
         setSaveStatus("error");
       }
     }, 800);
 
-    return () => clearTimeout(timeout);
-  }, [contact, education, fullName, handle, headline, highlights, isPortfolioSaved, milestones, portfolioAssets, preferredLayout, skills, summaryStatement]);
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [contact, education, fullName, handle, headline, highlights, isPortfolioSaved, milestones, portfolioAssets, preferredLayout, publishedSnapshot, skills, summaryStatement, user, vaultChecked]);
 
   useEffect(() => {
     if (!handle || handle.length < 2) {
@@ -1258,7 +1454,14 @@ export default function StudioPage() {
         );
         const currentCount = milestones.reduce((acc, m) => acc + (m.verifications?.length || 0), 0);
         if (nextCount > currentCount) {
-          setMilestones(incomingChapters(data.milestones));
+          const liveChapters = data.milestones as Milestone[];
+          setMilestones((prev) => mergePeerVerifications(prev, liveChapters));
+          setPublishedSnapshot((prev) => {
+            if (!prev?.milestones) return prev;
+            const next = { ...prev, milestones: mergePeerVerifications(prev.milestones, liveChapters) };
+            publishedSnapshotRef.current = next;
+            return next;
+          });
           setWaitingForPeer(false);
           setChatMessages((prev) => [
             ...prev,
@@ -1282,9 +1485,12 @@ export default function StudioPage() {
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0 || isProcessing) return;
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || isProcessing) return;
+    const replacing = replaceSourceRef.current;
     setIsProcessing(true);
+    if (replacing) setSourceNotice({ text: "Reading your resume…" });
 
     try {
       const formData = new FormData();
@@ -1297,6 +1503,18 @@ export default function StudioPage() {
 
       const data = await res.json();
       if (res.ok && data.milestones && data.milestones.length > 0) {
+        if (replacing) {
+          replaceSourceRef.current = false;
+          applyReplacedSource(data);
+          captureEvent("resume_parsed", { source: "replace_upload", chapters: data.milestones.length });
+          const count = data.milestones.length;
+          setSourceNotice({
+            text: `Replaced your draft with ${count} ${count === 1 ? "chapter" : "chapters"}. Your live dossier stays as it is until you publish.`
+          });
+          say("The new source is in your draft. Your live dossier stays as it is until you publish.");
+          window.setTimeout(() => document.getElementById("experience")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+          return;
+        }
         setMilestones(incomingChapters(data.milestones));
         if (data.fullName) setFullName(data.fullName);
         if (data.headline) setHeadline(data.headline);
@@ -1327,11 +1545,19 @@ export default function StudioPage() {
             text: `Parsed ${data.milestones.length} career chapters from ${file.name}. Review them, then save to publish your page.`
           }
         ]);
+      } else if (replacing) {
+        replaceSourceRef.current = false;
+        setSourceNotice({ text: data.error || "Could not read that file. Your draft is unchanged.", error: true });
       } else {
         alert(data.error || "File parsing failed.");
       }
     } catch {
-      alert("Error uploading document.");
+      if (replacing) {
+        replaceSourceRef.current = false;
+        setSourceNotice({ text: "Could not read that file. Your draft is unchanged.", error: true });
+      } else {
+        alert("Error uploading document.");
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -1340,18 +1566,49 @@ export default function StudioPage() {
   const handleActionPrompt = (actionType: string) => {
     if (actionType === "upload_resume") {
       fileInputRef.current?.click();
+      say("Choose a PDF, Word, or text resume.");
+      return;
+    }
+    if (actionType === "paste_resume") {
+      setActiveTab("paste");
+      say("Paste the resume text, then parse it into this page.");
+      return;
+    }
+    if (actionType === "review_changes") {
+      if (!changeSummary.hasChanges || saveStatus === "saving") {
+        say(saveStatus === "saving" ? "Still saving your draft." : "Your editor matches the live dossier.");
+        return;
+      }
+      openReview();
+      return;
+    }
+    if (actionType === "add_sample_work") {
+      setSampleWorkOpen(true);
+      setSampleWorkAddSignal((current) => current + 1);
+      window.setTimeout(() => document.getElementById("work-samples")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+      say("Sample work is open. Pick a type and the fields appear under it.");
+      return;
+    }
+    if (actionType === "edit_summary") {
+      requirePortfolioSaved(() => {
+        if (!summaryStatement.trim()) setSummaryEditor(true);
+        show("summary");
+        window.setTimeout(() => document.getElementById("summary-text")?.focus(), 50);
+        say(isPortfolioSaved ? "Summary is open. It stays in your draft until you publish." : "Summary is open. Write the short version of your work.");
+      });
       return;
     }
     if (actionType === "review_resume") {
       setChatMessages((prev) => [
         ...prev,
         { sender: "user", text: "Review & Edit Resume" },
-        { sender: "ally", text: "Scroll through your career chapters on the right. You can edit titles, dates, and claims. We recommend keeping only the most impactful, factual deliverables." }
+        { sender: "ally", text: "Scroll through your career chapters. You can edit titles, dates, and claims. We recommend keeping only the most impactful, factual deliverables." }
       ]);
       return;
     }
     if (actionType === "save_portfolio") {
       setIsClaimModalOpen(true);
+      say("Opening save now. Your page goes live after this.");
       return;
     }
 
@@ -1484,6 +1741,7 @@ export default function StudioPage() {
   };
 
   const say = (text: string) => {
+    setDockExpanded(true);
     setChatMessages((prev) => [...prev, { sender: "ally", text }]);
   };
 
@@ -1539,23 +1797,15 @@ export default function StudioPage() {
   };
 
   const openNextStep = () => {
-    const prompt = actionPrompts[0];
-    if (!prompt || prompt.action === "continue_verification") {
-      handleActionPrompt("continue_verification");
-      return;
-    }
-    if (prompt.action === "upload_resume") {
-      fileInputRef.current?.click();
-      say("Choose a PDF, Word, or text resume.");
-      return;
-    }
-    setIsClaimModalOpen(true);
-    say("Opening save now. Your page goes live after this.");
+    const primary = studioPlanRef.current?.primary;
+    if (!primary) return;
+    handleActionPrompt(primary.id);
   };
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
+    setDockExpanded(true);
 
     const query = chatInput.trim();
     setChatMessages((prev) => [...prev, { sender: "user", text: query }]);
@@ -1572,7 +1822,7 @@ export default function StudioPage() {
             return;
           }
           setSkills((prev) => [...prev, skill]);
-          say(`Added ${skill} to skills.`);
+          say(isPortfolioSaved ? `Added ${skill} to your draft. It stays off the live dossier until you publish.` : `Added ${skill} to skills.`);
           return;
         }
         window.setTimeout(() => document.getElementById("skill-input")?.focus(), 50);
@@ -1588,12 +1838,13 @@ export default function StudioPage() {
       return;
     }
     if (studioMessage.type === "resume") {
+      if (isPortfolioSaved) {
+        setReplaceOpen(true);
+        say("Replace source puts the new resume in your draft. Your live dossier stays as it is until you publish.");
+        return;
+      }
       fileInputRef.current?.click();
-      say(
-        milestones.length
-          ? "Choose a PDF, Word, or text file. A new resume replaces the chapters on this page."
-          : "Choose a PDF, Word, or text resume. I'll read it into your chapters."
-      );
+      say("Choose a PDF, Word, or text resume. I'll read it into your chapters.");
       return;
     }
     if (studioMessage.type === "education") {
@@ -1610,7 +1861,7 @@ export default function StudioPage() {
         if (!summaryStatement.trim()) setSummaryEditor(true);
         show("summary");
         window.setTimeout(() => document.getElementById("summary-text")?.focus(), 50);
-        say("Summary is open. Write the short version of your work.");
+        say(isPortfolioSaved ? "Summary is open. It stays in your draft until you publish." : "Summary is open. Write the short version of your work.");
       });
       return;
     }
@@ -1635,7 +1886,7 @@ export default function StudioPage() {
       requirePortfolioSaved(() => {
         if (!highlights.length) setHighlights([""]);
         show("highlights");
-        say("Highlights are open. Add a line, or remove the section if you don't want it.");
+        say(isPortfolioSaved ? "Highlights are open. Add a line in your draft." : "Highlights are open. Add a line here.");
       });
       return;
     }
@@ -1645,8 +1896,12 @@ export default function StudioPage() {
         show("experience");
         say(
           studioMessage.create
-            ? "A blank chapter is at the top of Experience. Replace the company, title, and dates."
-            : "Experience is open. Edit the company, title, dates, and lines on each chapter."
+            ? isPortfolioSaved
+              ? "A blank chapter is at the top of Experience. It stays in your draft until you publish."
+              : "A blank chapter is at the top of Experience. Replace the company, title, and dates."
+            : isPortfolioSaved
+              ? "Experience is open. Edits stay in your draft until you publish."
+              : "Experience is open. Edit the company, title, dates, and lines on each chapter."
         );
       });
       return;
@@ -1712,7 +1967,7 @@ export default function StudioPage() {
           return;
         }
         setLinkedinVerifyError("");
-        persistPortfolioLocally(true);
+        persistPortfolioLocally(false);
         captureEvent("linkedin_verify_clicked", { handle: handle.toLowerCase().trim() });
         say("Opening LinkedIn to confirm this profile.");
         window.location.href = "/api/auth/linkedin?next=/studio";
@@ -1754,9 +2009,13 @@ export default function StudioPage() {
       handleActionPrompt("invite_peers");
       return;
     }
+    if (studioMessage.type === "review_changes") {
+      handleActionPrompt("review_changes");
+      return;
+    }
     if (studioMessage.type === "save") {
       if (isPortfolioSaved) {
-        say("Your portfolio is already saved. Edits update automatically.");
+        say("Your portfolio is already live. Use Review changes when you want the live dossier to update.");
         return;
       }
       if (!hasPortfolioContent({ milestones, summaryStatement, highlights, portfolioAssets })) {
@@ -1772,11 +2031,7 @@ export default function StudioPage() {
       return;
     }
     if (studioMessage.type === "help" || studioMessage.type === "unknown") {
-      say(
-        isPortfolioSaved
-          ? "I can edit skills, add sample work, upload a resume, verify email, phone, or LinkedIn, or open a chapter. Say which one."
-          : "Upload a resume, or save this page. After that I can edit skills, add sample work, and start verification."
-      );
+      say(unknownStudioReply(studioPlanRef.current?.primary.label || "Save and publish", isPortfolioSaved));
       return;
     }
 
@@ -1821,11 +2076,7 @@ export default function StudioPage() {
       return;
     }
 
-    say(
-      isPortfolioSaved
-        ? "I can edit skills, add sample work, upload a resume, verify email, phone, or LinkedIn, or open a chapter. Say which one."
-        : "Upload a resume, or save this page. After that I can edit skills, add sample work, and start verification."
-    );
+    say(unknownStudioReply(studioPlanRef.current?.primary.label || "Save and publish", isPortfolioSaved));
   };
 
   const handleClaimVaultCommit = async (e: React.FormEvent) => {
@@ -1873,7 +2124,7 @@ export default function StudioPage() {
     try {
       const res = await fetch("/api/vault", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", [EXPLICIT_PUBLISH_HEADER]: "1" },
         credentials: "include",
         body: JSON.stringify(dossierPayload)
       });
@@ -1881,6 +2132,8 @@ export default function StudioPage() {
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         skipNextAutosaveRef.current = true;
+        rememberPublished(dossierPayload);
+        serverDraftRef.current = false;
         persistPortfolioLocally(true, dossierPayload);
         setIsPortfolioSaved(true);
         setSaveStatus("saved");
@@ -1919,29 +2172,40 @@ export default function StudioPage() {
   };
 
   const updateVaultStore = async (updatedMilestones: Milestone[]) => {
-    if (!isPortfolioSaved || !handle) return;
-    const dossierPayload = {
+    const snapshot = publishedSnapshotRef.current;
+    if (!isPortfolioSaved || !handle || !snapshot) return;
+    const proofMilestones = overlayChapterProof(snapshot.milestones || [], updatedMilestones);
+    const proofPayload = {
+      ...snapshot,
       handle: handle.toLowerCase().trim(),
-      email: contact.email,
-      fullName,
-      headline,
-      summaryStatement,
-      contact,
-      skills,
-      education,
-      preferredLayout,
-      highlights,
-      portfolioAssets,
+      milestones: sortChaptersByTenure(proofMilestones).map((milestone) => packChapter(milestone))
+    };
+    const draftPayload = {
+      ...buildPortfolioPayload(),
       milestones: sortChaptersByTenure(updatedMilestones).map((milestone) => packChapter(milestone))
     };
     try {
-      persistPortfolioLocally(true, dossierPayload);
-      await fetch("/api/vault", {
+      const res = await fetch("/api/vault", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", [EXPLICIT_PUBLISH_HEADER]: "1" },
         credentials: "include",
-        body: JSON.stringify(dossierPayload)
+        body: JSON.stringify(proofPayload)
       });
+      if (!res.ok) return;
+      rememberPublished(proofPayload);
+      writeStudioRecord(STUDIO_SAVED_KEY, proofPayload);
+      writeStudioRecord(STUDIO_DRAFT_KEY, draftPayload);
+      if (hasUnpublishedChanges(proofPayload, draftPayload)) {
+        const draftRes = await fetch("/api/vault/draft", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ handle: proofPayload.handle, payload: draftPayload })
+        });
+        if (draftRes.ok) serverDraftRef.current = true;
+      } else {
+        serverDraftRef.current = false;
+      }
     } catch (err) {
       console.warn("Failed to background sync vault:", err);
     }
@@ -1994,21 +2258,27 @@ export default function StudioPage() {
       }
       const record = await vaultRes.json();
       skipNextAutosaveRef.current = true;
-      applyPortfolioRecord(record);
-      persistPortfolioLocally(true, {
-        handle: record.handle || claimed,
-        email: record.contact?.email || contact.email,
-        fullName: record.fullName,
-        headline: record.headline,
-        summaryStatement: record.summaryStatement,
-        contact: record.contact,
-        skills: record.skills,
-        education: record.education,
-        preferredLayout: record.preferredLayout,
-        highlights: record.highlights || [],
-        portfolioAssets: record.portfolioAssets,
-        milestones: record.milestones
-      });
+      const baseline = publishedBaseline(record);
+      rememberPublished(baseline);
+      applyPortfolioRecord(baseline);
+      writeStudioRecord(STUDIO_SAVED_KEY, baseline);
+      const draftRes = await fetch("/api/vault/draft", { credentials: "include" });
+      if (draftRes.ok) {
+        const body = await draftRes.json().catch(() => null);
+        const payload = body?.payload;
+        const draftHandle = String(body?.handle || payload?.handle || "").toLowerCase().trim();
+        if (payload && typeof payload === "object" && (!draftHandle || draftHandle === claimed)) {
+          serverDraftRef.current = true;
+          applyPortfolioRecord(payload);
+          writeStudioRecord(STUDIO_DRAFT_KEY, payload);
+        } else {
+          serverDraftRef.current = false;
+          writeStudioRecord(STUDIO_DRAFT_KEY, baseline);
+        }
+      } else {
+        serverDraftRef.current = false;
+        writeStudioRecord(STUDIO_DRAFT_KEY, baseline);
+      }
       setIsPortfolioSaved(true);
       setSaveStatus("saved");
       setHandleStatus("owned");
@@ -2172,16 +2442,65 @@ export default function StudioPage() {
     );
   };
 
-  const deleteClaimFromMilestone = (milestoneId: string, claimIndex: number) => {
+  const scheduleUndo = (
+    next:
+      | { kind: "skill"; index: number; value: string }
+      | { kind: "highlight"; index: number; value: string }
+      | { kind: "achievement"; milestoneId: string; index: number; value: string }
+  ) => {
+    if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current);
+    setUndoNotice(next);
+    undoTimerRef.current = window.setTimeout(() => {
+      setUndoNotice(null);
+      undoTimerRef.current = null;
+    }, 6000);
+  };
+
+  const undoLastRemoval = () => {
+    const current = undoNotice;
+    if (!current) return;
+    if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = null;
+    setUndoNotice(null);
+    if (current.kind === "skill") {
+      setSkills((prev) => {
+        const next = [...prev];
+        next.splice(Math.min(current.index, next.length), 0, current.value);
+        return next;
+      });
+      return;
+    }
+    if (current.kind === "highlight") {
+      setHighlights((prev) => {
+        const next = [...prev];
+        next.splice(Math.min(current.index, next.length), 0, current.value);
+        return next;
+      });
+      return;
+    }
     setMilestones((prev) =>
-      prev.map((m) => {
-        if (m.id !== milestoneId) return m;
+      prev.map((milestone) => {
+        if (milestone.id !== current.milestoneId) return milestone;
+        const claims = [...milestone.claims];
+        claims.splice(Math.min(current.index, claims.length), 0, current.value);
+        return { ...milestone, claims };
+      })
+    );
+  };
+
+  const deleteClaimFromMilestone = (milestoneId: string, claimIndex: number) => {
+    const value = milestones.find((milestone) => milestone.id === milestoneId)?.claims[claimIndex];
+    if (value === undefined) return;
+    setMilestones((prev) =>
+      prev.map((milestone) => {
+        if (milestone.id !== milestoneId) return milestone;
         return {
-          ...m,
-          claims: m.claims.filter((_, idx) => idx !== claimIndex)
+          ...milestone,
+          claims: milestone.claims.filter((_, idx) => idx !== claimIndex)
         };
       })
     );
+    scheduleUndo({ kind: "achievement", milestoneId, index: claimIndex, value });
   };
 
   const canPublish = hasPortfolioContent({ milestones, summaryStatement, highlights, portfolioAssets });
@@ -2189,75 +2508,30 @@ export default function StudioPage() {
   const waitingForStudio = !hasWork && (!authChecked || (hasSession && !vaultChecked));
 
   useEffect(() => {
+    return () => {
+      if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
     if (waitingForStudio || signInOnly || hasSession || hasWork) return;
     router.replace("/");
   }, [hasSession, hasWork, router, signInOnly, waitingForStudio]);
 
-  const confirmReplaceResume = async () => {
-    const currentHandle = handle.toLowerCase().trim();
-    if (!currentHandle) return;
-    setReplaceBusy(true);
-    try {
-      const res = await fetch("/api/vault/reset", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ handle: currentHandle, clearContent: true })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        alert(data.error || "Could not clear the public page.");
-        return;
-      }
-      setMilestones([]);
-      setSummaryStatement("");
-      setHighlights([]);
-      setSkills([]);
-      setEducation([]);
-      setPortfolioAssets([]);
-      setHeadline("");
-      setContact((prev) => ({
-        ...prev,
-        location: "",
-        emailVerified: false,
-        phoneVerified: false,
-        linkedinVerified: false
-      }));
-      setPortfolioStarted(true);
-      const kept = {
-        handle: currentHandle,
-        email: contact.email,
-        fullName,
-        headline: "",
-        summaryStatement: "",
-        highlights: [],
-        skills: [],
-        education: [],
-        portfolioAssets: [],
-        milestones: [],
-        preferredLayout,
-        contact: {
-          ...contact,
-          location: "",
-          emailVerified: false,
-          phoneVerified: false,
-          linkedinVerified: false
-        }
-      };
-      writeStudioRecord(STUDIO_SAVED_KEY, kept);
-      writeStudioRecord(STUDIO_DRAFT_KEY, kept);
-      setChatMessages([
-        {
-          sender: "ally",
-          text: `verifiedcv.app/${currentHandle} is empty. Upload the resume that should replace it. Proof you add later starts over.`
-        }
-      ]);
-      setReplaceOpen(false);
-      setAllyOpen(true);
-      fileInputRef.current?.click();
-    } finally {
-      setReplaceBusy(false);
-    }
+  const beginReplaceUpload = () => {
+    replaceSourceRef.current = true;
+    captureEvent("source_replace_confirmed", { source: "upload" });
+    setReplaceOpen(false);
+    setSourcePasteOpen(false);
+    fileInputRef.current?.click();
+  };
+
+  const beginReplacePaste = () => {
+    replaceSourceRef.current = true;
+    captureEvent("source_replace_confirmed", { source: "paste" });
+    setReplaceOpen(false);
+    setSourcePasteOpen(true);
+    window.setTimeout(() => document.getElementById("replace-source-paste")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
 
   const logOut = async () => {
@@ -2286,9 +2560,166 @@ export default function StudioPage() {
   const totalVerified = level1Count + level2Count + level3Count;
   const portfolioScore = milestones.length > 0 ? Math.round((totalVerified / milestones.length) * 100) : 0;
 
+  const changeSummary = React.useMemo(() => {
+    if (!isPortfolioSaved || !publishedSnapshot) {
+      return { changes: [], overflow: 0, overflowLabel: "", hasChanges: false };
+    }
+    return summarizeDossierChanges(publishedSnapshot, buildPortfolioPayload());
+  }, [contact, education, fullName, handle, headline, highlights, isPortfolioSaved, milestones, portfolioAssets, preferredLayout, publishedSnapshot, skills, summaryStatement]);
+
+  const studioPlan = React.useMemo(
+    () =>
+      suggestStudioActions({
+        hasLivePage: isPortfolioSaved,
+        hasContent: hasPortfolioContent({ milestones, summaryStatement, highlights, portfolioAssets }),
+        hasUnpublishedChanges: changeSummary.hasChanges,
+        hasSummary: Boolean(summaryStatement.trim()),
+        hasSampleWork: portfolioAssets.length > 0,
+        canAskColleague: Boolean(firstChapterWithoutColleague(milestones)),
+        nextStep: { id: nextVerifyStep.id, title: nextVerifyStep.title }
+      }),
+    [changeSummary.hasChanges, highlights, isPortfolioSaved, milestones, nextVerifyStep.id, nextVerifyStep.title, portfolioAssets, summaryStatement]
+  );
+  studioPlanRef.current = studioPlan;
+
+  const runStudioAction = (action: StudioAction) => {
+    handleActionPrompt(action.id);
+  };
+
+  const retryDraftSave = async () => {
+    if (!user) return;
+    const payload = buildPortfolioPayload();
+    setSaveStatus("saving");
+    try {
+      const res = await fetch("/api/vault/draft", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ handle: payload.handle, payload })
+      });
+      if (res.ok) serverDraftRef.current = true;
+      setSaveStatus(res.ok ? "saved" : "error");
+    } catch {
+      setSaveStatus("error");
+    }
+  };
+
+  const openReview = () => {
+    if (!changeSummary.hasChanges || saveStatus === "saving") return;
+    setReviewError("");
+    setCancelConfirmOpen(false);
+    setReviewOpen(true);
+  };
+
+  const publishChanges = async () => {
+    const snapshot = publishedSnapshotRef.current;
+    if (!snapshot || !changeSummary.hasChanges) return;
+    setReviewBusy(true);
+    setReviewError("");
+    const merged = publishDraft(snapshot, buildPortfolioPayload());
+    try {
+      const res = await fetch("/api/vault", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", [EXPLICIT_PUBLISH_HEADER]: "1" },
+        credentials: "include",
+        body: JSON.stringify(merged)
+      });
+      if (!res.ok) {
+        setReviewError("Could not publish changes.");
+        return;
+      }
+      skipNextAutosaveRef.current = true;
+      serverDraftRef.current = false;
+      rememberPublished(merged);
+      applyPortfolioRecord(merged);
+      writeStudioRecord(STUDIO_SAVED_KEY, merged);
+      writeStudioRecord(STUDIO_DRAFT_KEY, merged);
+      setSaveStatus("saved");
+      setReviewOpen(false);
+      setCancelConfirmOpen(false);
+      captureEvent("changes_published", { handle: handle.toLowerCase().trim() });
+    } catch {
+      setReviewError("Could not publish changes.");
+    } finally {
+      setReviewBusy(false);
+    }
+  };
+
+  const restorePublishedEditor = (snapshot: DossierSnapshot) => {
+    autosaveAbortRef.current?.abort();
+    autosaveAbortRef.current = null;
+    restoredDraftRef.current = true;
+    skipNextAutosaveRef.current = true;
+    serverDraftRef.current = false;
+    applyPortfolioRecord(snapshot);
+    setFullName(String(snapshot.fullName || ""));
+    setHeadline(String(snapshot.headline || ""));
+    setSummaryStatement(String(snapshot.summaryStatement || ""));
+    setSummaryEditor(Boolean(String(snapshot.summaryStatement || "").trim()));
+    if (snapshot.contact) {
+      setContact({
+        email: String(snapshot.contact.email || ""),
+        phone: String(snapshot.contact.phone || ""),
+        location: String(snapshot.contact.location || ""),
+        linkedin: String(snapshot.contact.linkedin || ""),
+        emailVerified: Boolean(snapshot.contact.emailVerified),
+        phoneVerified: Boolean(snapshot.contact.phoneVerified),
+        linkedinVerified: Boolean(snapshot.contact.linkedinVerified)
+      });
+    }
+    writeStudioRecord(STUDIO_SAVED_KEY, snapshot);
+    writeStudioRecord(STUDIO_DRAFT_KEY, snapshot);
+    setSaveStatus("saved");
+    setReviewError("");
+    setReviewOpen(false);
+    setCancelConfirmOpen(false);
+  };
+
+  const cancelChanges = async () => {
+    const snapshot = publishedSnapshotRef.current;
+    if (!snapshot) {
+      setReviewError("Could not cancel changes.");
+      return;
+    }
+    setReviewBusy(true);
+    setReviewError("");
+    const serverDraftKnown = serverDraftRef.current;
+    try {
+      if (user || serverDraftKnown) {
+        const res = await fetch("/api/vault/draft", { method: "DELETE", credentials: "include" });
+        if (draftDeleteBlocksCancel(res.status, serverDraftKnown)) {
+          setReviewError("Could not cancel changes.");
+          return;
+        }
+      }
+      restorePublishedEditor(snapshot);
+    } catch {
+      if (serverDraftKnown) {
+        setReviewError("Could not cancel changes.");
+        return;
+      }
+      restorePublishedEditor(snapshot);
+    } finally {
+      setReviewBusy(false);
+    }
+  };
+
+  const headerStatus = !isPortfolioSaved
+    ? ""
+    : saveStatus === "saving"
+      ? "Saving…"
+      : saveStatus === "error"
+        ? "Couldn’t save draft"
+        : !publishedSnapshot
+          ? ""
+          : changeSummary.hasChanges
+            ? "Unpublished changes"
+            : "Live";
+
   return (
     <div className="h-screen overflow-hidden bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col antialiased selection:bg-emerald-100">
-      <header className="shrink-0 sticky top-0 z-50 bg-white border-b border-[#E2E8F0] h-14 px-4 sm:px-6 flex items-center justify-between gap-2">
+      <header className="shrink-0 sticky top-0 z-50 bg-white border-b border-[#E2E8F0]">
+        <div className="flex min-h-14 flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-2 sm:px-6">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <Link href="/" className="flex items-center gap-2 group">
             <VerifiedCVLogo className="w-6 h-6 group-hover:scale-105 transition-transform" />
@@ -2300,7 +2731,7 @@ export default function StudioPage() {
           </span>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
           {(canPublish || portfolioStarted) && !isPortfolioSaved && (
             <button
               type="button"
@@ -2325,16 +2756,35 @@ export default function StudioPage() {
 
           {isPortfolioSaved ? (
             <>
-              <span className="hidden sm:inline text-[11px] font-semibold text-slate-400">
-                {saveStatus === "saving" ? "Saving..." : saveStatus === "error" ? "Save failed" : "All changes saved"}
-              </span>
+              {headerStatus && (
+                <span className="text-[11px] font-semibold text-slate-500">{headerStatus}</span>
+              )}
+              {saveStatus === "error" && (
+                <button
+                  type="button"
+                  onClick={() => void retryDraftSave()}
+                  className="text-xs font-bold text-[#0F172A] cursor-pointer"
+                >
+                  Retry
+                </button>
+              )}
+              {changeSummary.hasChanges && (
+                <button
+                  type="button"
+                  onClick={openReview}
+                  disabled={saveStatus === "saving"}
+                  className="inline-flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-xl bg-[#059669] hover:bg-[#047857] text-white text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  Review changes
+                </button>
+              )}
               <Link
                 href={`/${handle.toLowerCase().trim()}`}
                 target="_blank"
                 aria-label="View live dossier"
                 className="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#059669] text-xs font-bold transition-all shadow-2xs cursor-pointer"
               >
-                <span className="hidden sm:inline">View Live Dossier</span>
+                <span>View live dossier</span>
                 <ExternalLink className="w-3.5 h-3.5" />
               </Link>
               <button
@@ -2343,7 +2793,7 @@ export default function StudioPage() {
                 className="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-lg bg-white hover:bg-slate-50 border border-[#E2E8F0] text-[#0F172A] text-xs font-bold transition-all cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Replace resume</span>
+                <span className="hidden sm:inline">Replace source</span>
                 <span className="sm:hidden">Replace</span>
               </button>
               <button
@@ -2362,8 +2812,7 @@ export default function StudioPage() {
                 className="inline-flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-xl bg-[#059669] hover:bg-emerald-600 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
               >
                 <UserCheck className="w-3.5 h-3.5" />
-                <span className="sm:hidden">Save</span>
-                <span className="hidden sm:inline">Save Portfolio</span>
+                Save and publish
               </button>
             )
           )}
@@ -2377,6 +2826,7 @@ export default function StudioPage() {
             </button>
           )}
         </div>
+        </div>
       </header>
 
       <input
@@ -2387,92 +2837,24 @@ export default function StudioPage() {
         onChange={handleFileUpload}
       />
 
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
-        {hasWork && (
-        <aside className="order-2 flex w-full shrink-0 flex-col border-t border-[#E2E8F0] bg-white md:order-1 md:h-full md:w-[320px] md:border-t-0 md:border-r">
-          <button
-            type="button"
-            className="md:hidden flex w-full items-center gap-2.5 px-4 py-3 text-left"
-            onClick={() => setAllyOpen((open) => !open)}
-            aria-expanded={allyOpen}
-          >
-            <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#059669]">
-              <Bot className="w-4 h-4" />
-            </div>
-            <span className="text-xs font-black text-[#0F172A]">Ally</span>
-            <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-600">{actionPrompts[0]?.label}</span>
-          </button>
-          <div className={`${allyOpen ? "flex" : "hidden"} md:flex min-h-0 max-h-[46vh] md:max-h-none md:h-full md:flex-1 flex-col overflow-hidden`}>
-          <div className="hidden md:flex p-4 border-b border-[#E2E8F0] items-center gap-2.5 bg-[#F8FAFC]">
-            <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#059669]">
-              <Bot className="w-4 h-4" />
-            </div>
-            <h3 className="text-xs font-black text-[#0F172A]">Ally</h3>
-          </div>
+      {hasWork && (
+        <NextActionDock
+          primary={studioPlan.primary}
+          suggestions={studioPlan.suggestions}
+          messages={chatMessages}
+          input={chatInput}
+          onInput={setChatInput}
+          onSubmit={handleSendMessage}
+          onAction={runStudioAction}
+          expanded={dockExpanded}
+          onToggle={() => setDockExpanded((open) => !open)}
+          processing={isProcessing}
+        />
+      )}
 
-          <div ref={chatScrollRef} className="min-h-0 flex-1 overflow-y-auto p-4 space-y-3">
-            {chatMessages.map((msg, idx) => (
-              <div
-                key={idx}
-                className={`text-xs leading-relaxed p-3 rounded-xl ${
-                  msg.sender === "ally"
-                    ? "bg-[#F8FAFC] border border-[#E2E8F0] text-slate-700"
-                    : "bg-[#0F172A] text-white ml-4 shadow-2xs"
-                }`}
-              >
-                {msg.text}
-              </div>
-            ))}
-            {isProcessing && (
-              <div className="bg-[#F8FAFC] border border-[#E2E8F0] text-slate-500 text-xs p-3 rounded-xl flex items-center gap-2">
-                <Clock className="w-3.5 h-3.5 animate-spin text-[#059669]" />
-                <span>Reading your resume...</span>
-              </div>
-            )}
-          </div>
-
-          <div className="p-2.5 border-t border-[#E2E8F0] bg-[#F8FAFC] space-y-1.5">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block px-1">
-              Next step
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              {actionPrompts.map((p, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleActionPrompt(p.action)}
-                  className="text-[11px] font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-[#E2E8F0] px-2.5 py-1 rounded-lg transition-all shadow-2xs cursor-pointer text-left"
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <form onSubmit={handleSendMessage} className="p-3 border-t border-[#E2E8F0] bg-white">
-            <div className="relative flex items-center">
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Ask Ally what to do next..."
-                className="w-full text-xs pl-3 pr-8 py-2 rounded-lg border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-sans bg-slate-50/50"
-              />
-              <button
-                type="submit"
-                className="absolute right-2 p-1 text-slate-400 hover:text-slate-800 transition-colors cursor-pointer"
-              >
-                <Send className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </form>
-          </div>
-        </aside>
-        )}
-
-        {/* LIVE CANVAS */}
-        <main className="order-1 min-h-0 flex-1 overflow-y-auto w-full md:order-2">
-          <div className="p-4 sm:p-8 max-w-5xl mx-auto space-y-8 antialiased">
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        <main className="min-h-0 flex-1 overflow-y-auto w-full">
+          <div className="mx-auto max-w-5xl space-y-8 p-4 pb-24 antialiased sm:p-8 sm:pb-28 md:pb-44">
           {waitingForStudio || (!hasWork && !hasSession && !signInOnly) ? (
             <p className="pt-16 text-center text-sm font-semibold text-slate-500">
               {waitingForStudio ? "Opening your studio…" : "Taking you to the start page…"}
@@ -2601,9 +2983,54 @@ export default function StudioPage() {
                   </span>
                 ))}
                 </div>
+                {sourceNotice && (
+                  <p className={`text-[11px] font-semibold leading-relaxed ${sourceNotice.error ? "text-amber-700" : "text-[#047857]"}`}>
+                    {sourceNotice.text}
+                  </p>
+                )}
               </nav>
 
               {/* Candidate Identity & Contact Verification Strip */}
+              {sourcePasteOpen && (
+                <div id="replace-source-paste" className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-3xl p-6 shadow-xs space-y-3">
+                  <div className="space-y-1">
+                    <h3 className="font-extrabold text-xs uppercase tracking-wider text-[#0F172A]">Paste a new source</h3>
+                    <p className="text-xs text-slate-600">This replaces the resume text in your draft. Your live dossier stays as it is until you publish.</p>
+                  </div>
+                  <textarea
+                    rows={8}
+                    value={pasteBuffer}
+                    onChange={(e) => setPasteBuffer(e.target.value)}
+                    spellCheck={true}
+                    autoCorrect="on"
+                    lang="en"
+                    placeholder="Paste resume text with contact headers and pipe-delimited experience chapters..."
+                    className="w-full text-xs p-4 rounded-xl border border-[#E2E8F0] focus:outline-none focus:border-[#059669] font-mono bg-[#F8FAFC] leading-relaxed"
+                  />
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        replaceSourceRef.current = false;
+                        setSourcePasteOpen(false);
+                        setPasteBuffer("");
+                      }}
+                      className="px-4 py-2.5 rounded-xl border border-[#E2E8F0] bg-white text-xs font-bold text-[#0F172A] cursor-pointer"
+                    >
+                      Keep my resume
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isProcessing || !pasteBuffer.trim()}
+                      onClick={() => void handleManualPasteSubmit()}
+                      className="px-4 py-2.5 rounded-xl bg-[#059669] hover:bg-[#047857] text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+                    >
+                      {isProcessing ? "Reading…" : "Use this text"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div id="identity-card" className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-3xl p-6 shadow-xs space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-100">
                   <div className="space-y-1">
@@ -2630,14 +3057,16 @@ export default function StudioPage() {
                   </div>
 
                   <div className="flex items-start self-start sm:self-auto">
+                  {(!isPortfolioSaved || publishedSnapshot) && (
                   <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${
-                    isPortfolioSaved
+                    isPortfolioSaved && !changeSummary.hasChanges
                       ? "bg-emerald-50 border-emerald-200 text-[#059669]"
                       : "bg-amber-50 border-amber-200 text-amber-800"
                   }`}>
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>{isPortfolioSaved ? "Portfolio Saved" : "Save to edit"}</span>
+                    <span>{isPortfolioSaved ? (changeSummary.hasChanges ? "Unpublished changes" : "Live") : "Save to edit"}</span>
                   </span>
+                  )}
                   </div>
                 </div>
 
@@ -2792,7 +3221,7 @@ export default function StudioPage() {
                         onClick={() => {
                           requirePortfolioSaved(() => {
                             setLinkedinVerifyError("");
-                            persistPortfolioLocally(true);
+                            persistPortfolioLocally(false);
                             captureEvent("linkedin_verify_clicked", { handle: handle.toLowerCase().trim() });
                             window.location.href = "/api/auth/linkedin?next=/studio";
                           });
@@ -2856,15 +3285,19 @@ export default function StudioPage() {
                           setContact(nextContact);
                           setEmailCodeSent(false);
                           setEmailCode("");
-                          const dossierPayload = { ...buildPortfolioPayload(), contact: nextContact };
-                          persistPortfolioLocally(true, dossierPayload);
+                          persistPortfolioLocally(false, { ...buildPortfolioPayload(), contact: nextContact });
                           if (isPortfolioSaved) {
-                            fetch("/api/vault", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              credentials: "include",
-                              body: JSON.stringify(dossierPayload)
-                            }).catch(() => undefined);
+                            const ok = await patchVaultIdentity({
+                              handle: handle.toLowerCase().trim(),
+                              email: nextContact.email,
+                              emailVerified: true
+                            });
+                            const snapshot = publishedSnapshotRef.current;
+                            if (ok && snapshot) {
+                              const next = withIdentity(snapshot, { ...(snapshot.contact || {}), email: nextContact.email, emailVerified: true });
+                              rememberPublished(next);
+                              writeStudioRecord(STUDIO_SAVED_KEY, next);
+                            }
                           }
                           setChatMessages((prev) => [...prev, { sender: "ally", text: "Email confirmed." }]);
                           captureEvent("email_verified", { handle: handle.toLowerCase().trim() });
@@ -2910,15 +3343,19 @@ export default function StudioPage() {
                           setContact(nextContact);
                           setPhoneCodeSent(false);
                           setPhoneCode("");
-                          const dossierPayload = { ...buildPortfolioPayload(), contact: nextContact };
-                          persistPortfolioLocally(true, dossierPayload);
+                          persistPortfolioLocally(false, { ...buildPortfolioPayload(), contact: nextContact });
                           if (isPortfolioSaved) {
-                            fetch("/api/vault", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              credentials: "include",
-                              body: JSON.stringify(dossierPayload)
-                            }).catch(() => undefined);
+                            const ok = await patchVaultIdentity({
+                              handle: handle.toLowerCase().trim(),
+                              phone: nextContact.phone,
+                              phoneVerified: true
+                            });
+                            const snapshot = publishedSnapshotRef.current;
+                            if (ok && snapshot) {
+                              const next = withIdentity(snapshot, { ...(snapshot.contact || {}), phone: nextContact.phone, phoneVerified: true });
+                              rememberPublished(next);
+                              writeStudioRecord(STUDIO_SAVED_KEY, next);
+                            }
                           }
                           setChatMessages((prev) => [...prev, { sender: "ally", text: "Phone confirmed." }]);
                           captureEvent("phone_verified", { handle: handle.toLowerCase().trim() });
@@ -2955,10 +3392,7 @@ export default function StudioPage() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        setSummaryStatement("");
-                        setSummaryEditor(false);
-                      }}
+                      onClick={() => setSectionToRemove("summary")}
                       className="text-[10px] font-bold text-slate-400 hover:text-red-500 cursor-pointer"
                     >
                       Remove
@@ -2997,7 +3431,7 @@ export default function StudioPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setHighlights([])}
+                        onClick={() => setSectionToRemove("highlights")}
                         className="text-[10px] font-bold text-slate-400 hover:text-red-500 cursor-pointer"
                       >
                         Remove section
@@ -3017,7 +3451,11 @@ export default function StudioPage() {
                         />
                         <button
                           type="button"
-                          onClick={() => setHighlights((prev) => prev.filter((_, itemIndex) => itemIndex !== index))}
+                          aria-label="Remove highlight"
+                          onClick={() => {
+                            scheduleUndo({ kind: "highlight", index, value: line });
+                            setHighlights((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
+                          }}
                           className="text-[10px] font-bold text-slate-400 hover:text-red-500 cursor-pointer"
                         >
                           Remove
@@ -3311,7 +3749,11 @@ export default function StudioPage() {
                         <span>{skill}</span>
                         <button
                           type="button"
-                          onClick={() => setSkills((prev) => prev.filter((_, i) => i !== idx))}
+                          aria-label={`Remove ${skill}`}
+                          onClick={() => {
+                            scheduleUndo({ kind: "skill", index: idx, value: skill });
+                            setSkills((prev) => prev.filter((_, i) => i !== idx));
+                          }}
                           className="text-slate-400 hover:text-red-500"
                         >
                           <X className="w-3 h-3" />
@@ -3871,7 +4313,9 @@ export default function StudioPage() {
               <p className="text-[11px] font-bold uppercase tracking-widest text-amber-700">Warning</p>
               <h3 className="font-black text-lg text-[#0F172A]">Remove {chapterToRemove.company}?</h3>
               <p className="text-xs leading-relaxed text-slate-600">
-                This removes the chapter from your page, including any proof already attached to it.
+                {isPortfolioSaved
+                  ? "This removes the chapter from your draft. Proof on it stays on your live dossier until you publish."
+                  : "This removes the chapter from this page, including any proof attached to it."}
               </p>
             </div>
             <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
@@ -3897,38 +4341,118 @@ export default function StudioPage() {
         </div>
       )}
 
+      <ReviewChangesDialog
+        open={reviewOpen && changeSummary.hasChanges}
+        changes={changeSummary.changes}
+        overflowLabel={changeSummary.overflowLabel}
+        busy={reviewBusy}
+        error={reviewError}
+        confirmCancel={cancelConfirmOpen}
+        onKeepEditing={() => {
+          setReviewOpen(false);
+          setCancelConfirmOpen(false);
+          setReviewError("");
+        }}
+        onRequestCancel={() => {
+          setReviewError("");
+          setCancelConfirmOpen(true);
+        }}
+        onDismissCancel={() => {
+          setCancelConfirmOpen(false);
+          setReviewError("");
+        }}
+        onConfirmCancel={() => void cancelChanges()}
+        onPublish={() => void publishChanges()}
+      />
+
+      {sectionToRemove && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-lg space-y-5">
+            <div className="space-y-2">
+              <h3 className="font-black text-lg text-[#0F172A]">
+                {sectionToRemove === "summary" ? "Remove summary?" : "Remove highlights?"}
+              </h3>
+              <p className="text-xs leading-relaxed text-slate-600">
+                {isPortfolioSaved
+                  ? "This removes it from your draft. It stays on your live dossier until you publish."
+                  : "This removes it from this page."}
+              </p>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSectionToRemove(null)}
+                className="px-4 py-2.5 rounded-xl border border-[#E2E8F0] bg-white text-xs font-bold text-[#0F172A] cursor-pointer"
+              >
+                {sectionToRemove === "summary" ? "Keep summary" : "Keep highlights"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (sectionToRemove === "summary") {
+                    setSummaryStatement("");
+                    setSummaryEditor(false);
+                  } else {
+                    setHighlights([]);
+                  }
+                  setSectionToRemove(null);
+                }}
+                className="px-4 py-2.5 rounded-xl border border-red-200 bg-white text-red-700 text-xs font-bold cursor-pointer"
+              >
+                {sectionToRemove === "summary" ? "Remove summary" : "Remove highlights"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {replaceOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-lg space-y-5">
             <div className="space-y-2">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-amber-700">Warning</p>
-              <h3 className="font-black text-lg text-[#0F172A]">Replace your resume?</h3>
+              <h3 className="font-black text-lg text-[#0F172A]">Replace source?</h3>
               <p className="text-xs leading-relaxed text-slate-600">
-                Replacing your resume deletes every verification on this profile. That cannot be undone.
-                Your public page at verifiedcv.app/{handle.toLowerCase().trim() || "your-handle"} will be cleared.
-                You keep the handle, and the page stays empty until you publish a new resume.
+                This replaces the resume or pasted text in your draft. Your live dossier stays as it is until you publish. Publishing can remove chapters, and proof on removed chapters goes with them.
               </p>
             </div>
-            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setReplaceOpen(false)}
-                disabled={replaceBusy}
                 className="px-4 py-2.5 rounded-xl border border-[#E2E8F0] bg-white text-xs font-bold text-[#0F172A] cursor-pointer"
               >
                 Keep my resume
               </button>
               <button
                 type="button"
-                onClick={confirmReplaceResume}
-                disabled={replaceBusy}
-                className="px-4 py-2.5 rounded-xl border border-red-200 bg-white text-red-700 text-xs font-bold cursor-pointer disabled:opacity-50"
+                onClick={beginReplacePaste}
+                className="px-4 py-2.5 rounded-xl border border-[#E2E8F0] bg-white text-xs font-bold text-[#0F172A] cursor-pointer"
               >
-                {replaceBusy ? "Clearing…" : "Replace resume"}
+                Paste text
+              </button>
+              <button
+                type="button"
+                onClick={beginReplaceUpload}
+                className="px-4 py-2.5 rounded-xl border border-red-200 bg-white text-red-700 text-xs font-bold cursor-pointer"
+              >
+                Upload
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {undoNotice && (
+        <UndoBanner
+          label={
+            undoNotice.kind === "skill"
+              ? "Skill removed"
+              : undoNotice.kind === "highlight"
+                ? "Highlight removed"
+                : "Achievement removed"
+          }
+          onUndo={undoLastRemoval}
+        />
       )}
 
       {/* SIGNUP & HANDLE CLAIM MODAL */}
@@ -3938,7 +4462,7 @@ export default function StudioPage() {
             <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
               <div className="flex items-center gap-2">
                 <VerifiedCVLogo className="w-6 h-6" />
-                <h3 className="font-black text-sm text-[#0F172A]">{canPublish ? "Save your portfolio" : "Sign in"}</h3>
+                <h3 className="font-black text-sm text-[#0F172A]">{canPublish ? "Save and publish" : "Sign in"}</h3>
               </div>
               <button
                 type="button"
@@ -4038,7 +4562,7 @@ export default function StudioPage() {
             ) : (
             <form onSubmit={handleClaimVaultCommit} className="space-y-4 text-xs antialiased">
               <p className="text-slate-500 leading-relaxed">
-                After you save, you can edit any field. Later changes are saved automatically.
+                After you save, this page goes live. Later edits stay private until you publish them.
               </p>
               <div>
                 <label className="font-bold text-slate-700 block mb-1">Full Legal Name</label>
@@ -4138,7 +4662,7 @@ export default function StudioPage() {
                     <Clock className="w-4 h-4 animate-spin" />
                   ) : (
                     <>
-                      <span>Save Portfolio</span>
+                      <span>Save and publish</span>
                       <ArrowRight className="w-4 h-4 text-emerald-400" />
                     </>
                   )}
