@@ -61,6 +61,22 @@ export function deleteFileDraft(authUserId: string) {
   }
 }
 
+export function deleteVaultHandles(handles: string[]) {
+  try {
+    const store = getVaultStore();
+    let changed = false;
+    for (const handle of handles) {
+      const key = handle.toLowerCase().trim();
+      if (!key || key === DOSSIER_DRAFTS_KEY || !(key in store)) continue;
+      delete store[key];
+      changed = true;
+    }
+    if (changed) writeVaultStore(store);
+  } catch (err) {
+    console.error("Error deleting vault handles:", err);
+  }
+}
+
 export function clearFileDraftsAfterPublish(opts: { authUserId?: string | null; handle?: string | null }) {
   try {
     writeVaultStore(deleteDraftsForPublish(getVaultStore(), opts));
