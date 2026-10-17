@@ -10,6 +10,7 @@ import {
   identityColumnsAreNarrow,
   draftDeleteBlocksCancel,
   isExplicitPublish,
+  requestPublishesLive,
   parseIdentityPatch,
   publicVaultRecord,
   sanitizeDraftPayload,
@@ -38,7 +39,8 @@ describe("dossier draft storage", () => {
       summaryStatement: "Live",
       ownerTokenHash: "secret",
       draft: { summaryStatement: "Hidden" },
-      draftPayload: { summaryStatement: "Hidden" }
+      draftPayload: { summaryStatement: "Hidden" },
+      explicitPublish: true
     });
 
     expect(stored).toEqual({ handle: "gharris", summaryStatement: "Live" });
@@ -164,6 +166,13 @@ describe("identity patch", () => {
     expect(isExplicitPublish("1")).toBe(true);
     expect(isExplicitPublish(null)).toBe(false);
     expect(isExplicitPublish("true")).toBe(false);
+  });
+
+  it("accepts a publish flag in the body when the header is missing", () => {
+    expect(requestPublishesLive(null, { explicitPublish: true })).toBe(true);
+    expect(requestPublishesLive("1", {})).toBe(true);
+    expect(requestPublishesLive(null, { explicitPublish: "1" })).toBe(false);
+    expect(requestPublishesLive(null, null)).toBe(false);
   });
 
   it("lets a local-only draft cancel when the server has nothing to delete", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergePeerVerifications, mergeReplacedContact, overlayChapterProof, withIdentity } from "./studioSync";
+import { chapterHasProof, keepPublishedIdentity, mergePeerVerifications, mergeReplacedContact, overlayChapterProof, replaceResumeChapters, withIdentity } from "./studioSync";
 
 describe("mergePeerVerifications", () => {
   it("copies verifications onto the matching chapter and leaves its text alone", () => {
@@ -106,5 +106,70 @@ describe("mergeReplacedContact", () => {
       ...current,
       phone: "4155550100"
     });
+  });
+});
+
+describe("keepPublishedIdentity", () => {
+  it("fills a blank name, handle, and LinkedIn from the live page", () => {
+    const carried = keepPublishedIdentity(
+      {
+        handle: "",
+        fullName: "",
+        summaryStatement: "Pasted summary",
+        contact: {
+          email: "graham@example.com",
+          phone: "5125550100",
+          linkedin: "",
+          location: "Austin",
+          emailVerified: false,
+          phoneVerified: false,
+          linkedinVerified: false
+        }
+      },
+      {
+        handle: "gharris",
+        fullName: "Graham Harris",
+        contact: {
+          email: "graham@example.com",
+          emailVerified: true,
+          linkedin: "https://www.linkedin.com/in/gharris",
+          linkedinVerified: true,
+          location: "Austin"
+        }
+      }
+    );
+
+    expect(carried.handle).toBe("gharris");
+    expect(carried.fullName).toBe("Graham Harris");
+    expect(carried.contact).toMatchObject({
+      email: "graham@example.com",
+      emailVerified: true,
+      linkedin: "https://www.linkedin.com/in/gharris",
+      linkedinVerified: true,
+      phone: "5125550100"
+    });
+  });
+});
+
+describe("replaceResumeChapters", () => {
+  it("keeps a verified chapter when the new resume names that company exactly", () => {
+    const verified = {
+      id: "live-yahoo",
+      company: "Yahoo Inc.",
+      role: "Senior Director",
+      verifications: [{ id: "v1" }],
+      artifacts: [{ id: "a1" }]
+    };
+    const replaced = replaceResumeChapters(
+      [verified, { id: "old", company: "Ge-on", verifications: [], artifacts: [] }],
+      [
+        { id: "new-yahoo", company: "  yahoo inc. ", role: "Parsed role", verifications: [] },
+        { id: "new-yard", company: "Yard", role: "Founder", verifications: [] }
+      ]
+    );
+
+    expect(replaced.map((chapter) => chapter.id)).toEqual(["live-yahoo", "new-yard"]);
+    expect(chapterHasProof(replaced[0])).toBe(true);
+    expect(replaced[0]).toMatchObject({ role: "Senior Director" });
   });
 });

@@ -69,6 +69,32 @@ describe("publishDraft", () => {
     expect(published.linkedinSub).toBe("live-sub");
   });
 
+  it("keeps the live handle, name, and blank contact fields when the draft omitted them", () => {
+    const published = publishDraft(
+      {
+        handle: "gharris",
+        fullName: "Graham Harris",
+        contact: { email: "graham@example.com", emailVerified: true, linkedin: "gharris", linkedinVerified: true, location: "Austin" }
+      },
+      {
+        handle: "",
+        fullName: "",
+        summaryStatement: "Pasted summary",
+        contact: { email: "graham@example.com", emailVerified: false, linkedin: "", location: "" }
+      }
+    );
+
+    expect(published.handle).toBe("gharris");
+    expect(published.fullName).toBe("Graham Harris");
+    expect(published.contact).toMatchObject({
+      email: "graham@example.com",
+      emailVerified: true,
+      linkedin: "gharris",
+      linkedinVerified: true,
+      location: "Austin"
+    });
+  });
+
   it("drops a verification flag when that contact value changed", () => {
     const live: DossierSnapshot = {
       contact: {

@@ -43,6 +43,10 @@ function mergeProof(liveItems: unknown, draftItems: unknown) {
   return merged;
 }
 
+function filled(value: unknown, fallback: unknown) {
+  return clean(value) || clean(fallback);
+}
+
 function withLiveFlags(liveContact: DossierContact, draftContact: DossierContact): DossierContact {
   const liveIdentity = contactIdentity(liveContact);
   const draftIdentity = contactIdentity(draftContact);
@@ -77,9 +81,19 @@ export function publishDraft(
 ): DossierSnapshot {
   const published = live || {};
   const next = structuredClone(draft || {}) as DossierSnapshot;
+  if (!clean(next.handle)) next.handle = clean(published.handle);
+  if (!clean(next.fullName)) next.fullName = clean(published.fullName);
+  const liveContact = published.contact || {};
   const draftContact = { ...(next.contact || {}) };
-  next.contact = withLiveFlags(published.contact || {}, draftContact);
-  if (clean(draftContact.email)) next.email = clean(draftContact.email);
+  const contact = {
+    ...draftContact,
+    email: filled(draftContact.email, liveContact.email),
+    phone: filled(draftContact.phone, liveContact.phone),
+    linkedin: filled(draftContact.linkedin, liveContact.linkedin),
+    location: filled(draftContact.location, liveContact.location)
+  };
+  next.contact = withLiveFlags(liveContact, contact);
+  if (clean(next.contact.email)) next.email = clean(next.contact.email);
 
   if (!clean(next.linkedinSub) && clean(published.linkedinSub)) {
     next.linkedinSub = published.linkedinSub;

@@ -68,7 +68,8 @@ import { hydrateChapter, packChapter } from "@/lib/chapterMeta";
 import { hasUnpublishedChanges, summarizeDossierChanges, type DossierSnapshot } from "@/lib/dossierChanges";
 import { draftDeleteBlocksCancel, EXPLICIT_PUBLISH_HEADER } from "@/lib/dossierDraft";
 import { publishDraft } from "@/lib/publishDraft";
-import { mergePeerVerifications, mergeReplacedContact, overlayChapterProof, patchVaultIdentity, withIdentity } from "@/lib/studioSync";
+import { publishFailureMessage } from "@/lib/publishResult";
+import { chapterHasProof, hasKeptIdentity, keepPublishedIdentity, mergePeerVerifications, mergeReplacedContact, overlayChapterProof, patchVaultIdentity, replaceResumeChapters, withIdentity } from "@/lib/studioSync";
 import { ReviewChangesDialog } from "@/components/studio/ReviewChangesDialog";
 import { UndoBanner } from "@/components/studio/UndoBanner";
 import { faviconUrl, publicHttpsUrl, siteLabel } from "@/lib/companySite";
@@ -1022,7 +1023,25 @@ export default function StudioPage() {
         writeStudioRecord(STUDIO_SAVED_KEY, baseline);
         setIsPortfolioSaved(true);
         if (pendingReviewRef.current) {
-          setHandle(String(data.handle || "").toLowerCase().trim());
+          const liveContact = {
+            email: String(data.contact?.email || ""),
+            phone: String(data.contact?.phone || ""),
+            linkedin: String(data.contact?.linkedin || ""),
+            location: String(data.contact?.location || ""),
+            emailVerified: Boolean(data.contact?.emailVerified),
+            phoneVerified: Boolean(data.contact?.phoneVerified),
+            linkedinVerified: Boolean(data.contact?.linkedinVerified)
+          };
+          setHandle((current) => String(data.handle || "").toLowerCase().trim() || current.trim());
+          setFullName((current) => String(data.fullName || "").trim() || current.trim());
+          setContact((current) => mergeReplacedContact(liveContact, current));
+          setPortfolioAssets((current) =>
+            current.length > 0 || !Array.isArray(data.portfolioAssets) ? current : data.portfolioAssets
+          );
+          if (Array.isArray(data.milestones)) {
+            const liveChapters = incomingChapters(data.milestones);
+            setMilestones((current) => replaceResumeChapters(liveChapters, current));
+          }
           skipNextAutosaveRef.current = true;
           setSaveStatus("saved");
           if (!cancelled) setVaultChecked(true);
@@ -1036,11 +1055,12 @@ export default function StudioPage() {
           const draftHandle = String(body?.handle || payload?.handle || "").toLowerCase().trim();
           const samePage = !draftHandle || draftHandle === String(data.handle).toLowerCase().trim();
           if (payload && typeof payload === "object" && samePage) {
+            const carried = keepPublishedIdentity(payload, baseline);
             skipNextAutosaveRef.current = true;
             serverDraftRef.current = true;
             sessionDraftRef.current = false;
-            applyPortfolioRecord(payload);
-            writeStudioRecord(STUDIO_DRAFT_KEY, payload);
+            applyPortfolioRecord(carried);
+            writeStudioRecord(STUDIO_DRAFT_KEY, carried);
             discardSessionStudioRecords();
             setSaveStatus("saved");
             setVaultChecked(true);
@@ -1049,16 +1069,18 @@ export default function StudioPage() {
         }
         const local = readStudioRecord<DossierSnapshot>(STUDIO_DRAFT_KEY);
         if (local && hasPortfolioContent(local) && hasUnpublishedChanges(baseline, local)) {
+          const carried = keepPublishedIdentity(local, baseline);
           skipNextAutosaveRef.current = true;
           sessionDraftRef.current = false;
-          applyPortfolioRecord(local);
+          applyPortfolioRecord(carried);
+          writeStudioRecord(STUDIO_DRAFT_KEY, carried);
           discardSessionStudioRecords();
           setSaveStatus("saving");
           const put = await fetch("/api/vault/draft", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
-            body: JSON.stringify({ handle: data.handle, payload: local })
+            body: JSON.stringify({ handle: data.handle, payload: carried })
           });
           serverDraftRef.current = put.ok;
           if (!cancelled) setSaveStatus(put.ok ? "saved" : "error");
@@ -1174,13 +1196,15 @@ export default function StudioPage() {
 
 
   const applyReplacedSource = (data: any) => {
-    setMilestones(incomingChapters(data.milestones));
+    const incoming = incomingChapters(data.milestones);
+    setMilestones((current) => replaceResumeChapters(current, incoming));
     setSummaryStatement(String(data.summaryStatement || ""));
     setSummaryEditor(Boolean(String(data.summaryStatement || "").trim()));
     setHighlights(Array.isArray(data.highlights) ? data.highlights.map((line) => String(line || "")) : []);
     setSkills(Array.isArray(data.skills) ? repairSkillList(data.skills) : []);
     setEducation(Array.isArray(data.education) ? data.education : []);
-    if (data.headline) setHeadline(String(data.headline));
+    setHeadline(String(data.headline || ""));
+    setFullName((current) => current.trim() || String(data.fullName || ""));
     setContact((prev) => mergeReplacedContact(prev, data.contact));
     setPortfolioStarted(true);
     setActiveTab("canvas");
@@ -1381,6 +1405,12 @@ export default function StudioPage() {
     } else if (draft && hasPortfolioContent(draft)) {
       sessionDraftRef.current = true;
       applyPortfolioRecord(draft);
+    } else if (draft && hasKeptIdentity(draft)) {
+      if (draft.fullName) setFullName(String(draft.fullName));
+      if (draft.handle) setHandle(String(draft.handle).toLowerCase().trim());
+      if (draft.contact) {
+        setContact((prev) => mergeReplacedContact(prev, draft.contact));
+      }
       setChatMessages([
         {
           sender: "ally",
@@ -1653,26 +1683,14 @@ export default function StudioPage() {
     const highlightsIn = Array.isArray(data.highlights) ? data.highlights.map((line) => String(line || "")) : [];
     const skillsIn = Array.isArray(data.skills) ? repairSkillList(data.skills) : [];
     const educationIn = Array.isArray(data.education) ? data.education as EducationRecord[] : [];
-    setMilestones(milestonesIn);
-    if (data.fullName) setFullName(data.fullName);
-    if (data.headline) setHeadline(data.headline);
+    setMilestones((current) => replaceResumeChapters(current, milestonesIn));
+    setFullName((current) => current.trim() || String(data.fullName || ""));
+    setHeadline(String(data.headline || ""));
     setSummaryStatement(String(data.summaryStatement || ""));
     setHighlights(highlightsIn);
     setSkills(skillsIn);
     setEducation(educationIn);
-    if (data.contact) {
-      setContact((prev) => ({
-        ...prev,
-        ...data.contact,
-        email: data.contact?.email || prev.email,
-        phone: data.contact?.phone || prev.phone,
-        location: data.contact?.location || prev.location,
-        linkedin: preferLinkedInProfile(prev.linkedin, data.contact?.linkedin || "") || prev.linkedin,
-        emailVerified: prev.emailVerified || Boolean(data.contact?.emailVerified),
-        phoneVerified: prev.phoneVerified || Boolean(data.contact?.phoneVerified),
-        linkedinVerified: prev.linkedinVerified || Boolean(data.contact?.linkedinVerified)
-      }));
-    }
+    setContact((prev) => mergeReplacedContact(prev, data.contact));
     setPortfolioStarted(true);
     setActiveTab("canvas");
     console.info(JSON.stringify(resumeImportLog(source, {
@@ -1696,34 +1714,49 @@ export default function StudioPage() {
       hasLocation: Boolean(contact.location?.trim()),
       serverDraft: serverDraftRef.current
     }));
-    setMilestones([]);
+    const keptChapters = milestones.filter((chapter) => chapterHasProof(chapter));
+    const reduced = {
+      handle: handle.toLowerCase().trim(),
+      email: contact.email,
+      fullName,
+      headline: "",
+      summaryStatement: "",
+      contact,
+      skills: [],
+      education: [],
+      preferredLayout,
+      highlights: [],
+      portfolioAssets: [],
+      milestones: savedChapters(keptChapters)
+    };
+    setMilestones(keptChapters);
     setSummaryStatement("");
     setHighlights([]);
     setSkills([]);
     setEducation([]);
     setPortfolioAssets([]);
-    setFullName("");
     setHeadline("");
-    setHandle("");
-    setContact({
-      email: "",
-      phone: "",
-      location: "",
-      linkedin: "",
-      emailVerified: false,
-      phoneVerified: false,
-      linkedinVerified: false
-    });
     setPasteBuffer("");
     setSourceNotice(null);
     autosaveAbortRef.current?.abort();
-    setIsPortfolioSaved(false);
-    setPortfolioStarted(false);
+    setPortfolioStarted(keptChapters.length > 0);
     setSaveStatus("idle");
-    clearStudioPortfolioStorage();
     localStorage.removeItem("vcv_pending_payload");
-    serverDraftRef.current = false;
-    if (user) {
+    writeStudioRecord(STUDIO_DRAFT_KEY, reduced);
+    const keepServerDraft = hasPortfolioContent(reduced);
+    serverDraftRef.current = keepServerDraft;
+    if (user && keepServerDraft) {
+      void fetch("/api/vault/draft", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ handle: reduced.handle, payload: reduced })
+      }).then((res) => {
+        console.info(JSON.stringify({ event: "clear_canvas_reset", draftDeleted: false, status: res.status }));
+      }).catch(() => {
+        console.info(JSON.stringify({ event: "clear_canvas_reset", draftDeleted: false }));
+      });
+    } else if (user) {
       void fetch("/api/vault/draft", { method: "DELETE", credentials: "include" })
         .then((res) => {
           console.info(JSON.stringify({ event: "clear_canvas_reset", draftDeleted: res.ok, status: res.status }));
@@ -2369,7 +2402,7 @@ export default function StudioPage() {
         method: "POST",
         headers: { "Content-Type": "application/json", [EXPLICIT_PUBLISH_HEADER]: "1" },
         credentials: "include",
-        body: JSON.stringify(dossierPayload)
+        body: JSON.stringify({ ...dossierPayload, explicitPublish: true })
       });
 
       const data = await res.json().catch(() => ({}));
@@ -2432,7 +2465,7 @@ export default function StudioPage() {
         method: "POST",
         headers: { "Content-Type": "application/json", [EXPLICIT_PUBLISH_HEADER]: "1" },
         credentials: "include",
-        body: JSON.stringify(proofPayload)
+        body: JSON.stringify({ ...proofPayload, explicitPublish: true })
       });
       if (!res.ok) return;
       rememberPublished(proofPayload);
@@ -2872,28 +2905,50 @@ export default function StudioPage() {
     if (!snapshot || !changeSummary.hasChanges) return;
     setReviewBusy(true);
     setReviewError("");
-    const merged = publishDraft(snapshot, buildPortfolioPayload());
     try {
+      const merged = publishDraft(snapshot, buildPortfolioPayload());
       const res = await fetch("/api/vault", {
         method: "POST",
         headers: { "Content-Type": "application/json", [EXPLICIT_PUBLISH_HEADER]: "1" },
         credentials: "include",
-        body: JSON.stringify(merged)
+        body: JSON.stringify({ ...merged, explicitPublish: true })
       });
+      const body = await res.json().catch(() => null);
       if (!res.ok) {
-        setReviewError("Could not publish changes.");
+        setReviewError(publishFailureMessage(body));
         return;
       }
+      const keptEmail = body?.emailKept ? String(snapshot.contact?.email || snapshot.email || "") : "";
+      const publishedRecord = keptEmail
+        ? {
+            ...merged,
+            email: keptEmail,
+            contact: {
+              ...(merged.contact || {}),
+              email: keptEmail,
+              emailVerified: Boolean(snapshot.contact?.emailVerified)
+            }
+          }
+        : merged;
       skipNextAutosaveRef.current = true;
       serverDraftRef.current = false;
-      rememberPublished(merged);
-      applyPortfolioRecord(merged);
-      writeStudioRecord(STUDIO_SAVED_KEY, merged);
-      writeStudioRecord(STUDIO_DRAFT_KEY, merged);
+      rememberPublished(publishedRecord);
+      applyPortfolioRecord(publishedRecord);
+      try {
+        writeStudioRecord(STUDIO_SAVED_KEY, publishedRecord);
+        writeStudioRecord(STUDIO_DRAFT_KEY, publishedRecord);
+      } catch {
+        // The live page is already updated. A full browser store must not look like a failed publish.
+      }
       setSaveStatus("saved");
       setReviewOpen(false);
       setCancelConfirmOpen(false);
-      captureEvent("changes_published", { handle: handle.toLowerCase().trim() });
+      if (typeof body?.emailNotice === "string" && body.emailNotice.trim()) say(body.emailNotice.trim());
+      try {
+        captureEvent("changes_published", { handle: handle.toLowerCase().trim() });
+      } catch {
+        // Analytics must not undo a publish that already succeeded.
+      }
     } catch {
       setReviewError("Could not publish changes.");
     } finally {
