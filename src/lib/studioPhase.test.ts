@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveStudioPhase, type StudioPhaseInput } from "./studioPhase";
+import { resolveStudioPhase, studioMobileChrome, type StudioPhase, type StudioPhaseInput } from "./studioPhase";
 
 function phase(overrides: Partial<StudioPhaseInput> = {}) {
   return resolveStudioPhase({
@@ -60,5 +60,25 @@ describe("resolveStudioPhase", () => {
         hasUnpublishedChanges: true
       })
     ).toBe("live_dirty");
+  });
+});
+
+describe("studioMobileChrome", () => {
+  it("keeps one sticky primary on the phone for upload and editor states", () => {
+    const sticky: StudioPhase[] = ["empty", "draft", "live", "live_dirty"];
+    for (const item of sticky) {
+      expect(studioMobileChrome(item).stickyPrimary).toBe(true);
+    }
+    expect(studioMobileChrome("empty").stickyOnly).toBe(true);
+    expect(studioMobileChrome("draft").stickyOnly).toBe(false);
+    expect(studioMobileChrome("loading").stickyPrimary).toBe(false);
+    expect(studioMobileChrome("sign_in").stickyPrimary).toBe(false);
+  });
+
+  it("moves live-page secondary actions into the phone overflow", () => {
+    expect(studioMobileChrome("live").liveOverflow).toBe(true);
+    expect(studioMobileChrome("live_dirty").liveOverflow).toBe(true);
+    expect(studioMobileChrome("draft").liveOverflow).toBe(false);
+    expect(studioMobileChrome("empty").liveOverflow).toBe(false);
   });
 });

@@ -44,7 +44,8 @@ export function NextActionDock({
   expanded,
   onToggle,
   processing,
-  note
+  note,
+  mobileOnly = false
 }: {
   primary: StudioAction;
   suggestions: StudioAction[];
@@ -57,6 +58,7 @@ export function NextActionDock({
   onToggle: () => void;
   processing: boolean;
   note?: string;
+  mobileOnly?: boolean;
 }) {
   const suggestionsList = suggestions.length > 0 && (
     <div className="flex flex-wrap gap-x-3 gap-y-1">
@@ -101,7 +103,7 @@ export function NextActionDock({
     <>
       <section
         aria-label="Ally"
-        className="fixed bottom-4 left-4 z-30 hidden w-[320px] flex-col gap-3 rounded-2xl border border-[#E2E8F0] bg-white p-3 shadow-lg md:flex"
+        className={`fixed bottom-4 left-4 z-30 w-[320px] flex-col gap-3 rounded-2xl border border-[#E2E8F0] bg-white p-3 shadow-lg ${mobileOnly ? "hidden" : "hidden md:flex"}`}
       >
         <div className="flex items-center justify-between gap-3">
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Ally</p>
@@ -120,7 +122,7 @@ export function NextActionDock({
         {ask}
       </section>
 
-      <section aria-label="Ally" className="fixed inset-x-0 bottom-0 z-30 md:hidden">
+      <section aria-label="Ally" className="fixed inset-x-0 bottom-0 z-30 pb-[env(safe-area-inset-bottom)] md:hidden">
         {expanded && (
           <div className="max-h-[50vh] overflow-y-auto border-t border-[#E2E8F0] bg-white px-4 py-3 shadow-lg">
             <div className="space-y-3">
@@ -136,7 +138,7 @@ export function NextActionDock({
           <button
             type="button"
             onClick={() => onAction(primary)}
-            className="min-w-0 flex-1 truncate rounded-xl border border-[#E2E8F0] bg-white px-3 py-2.5 text-xs font-bold text-[#0F172A] hover:bg-[#F8FAFC] cursor-pointer"
+            className="min-w-0 flex-1 truncate rounded-xl bg-[#059669] px-3 py-2.5 text-xs font-bold text-white hover:bg-[#047857] cursor-pointer"
           >
             {primary.label}
           </button>

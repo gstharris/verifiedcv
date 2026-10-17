@@ -34,3 +34,12 @@ export function resolveStudioPhase(input: StudioPhaseInput): StudioPhase {
   if (input.hasReviewableContent) return "draft";
   return "empty";
 }
+
+export function studioMobileChrome(phase: StudioPhase) {
+  const editor = phase === "draft" || phase === "live" || phase === "live_dirty";
+  return {
+    stickyPrimary: editor || phase === "empty",
+    stickyOnly: phase === "empty",
+    liveOverflow: phase === "live" || phase === "live_dirty"
+  };
+}
