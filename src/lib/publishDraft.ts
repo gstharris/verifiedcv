@@ -79,7 +79,17 @@ export function publishDraft(
   const next = structuredClone(draft || {}) as DossierSnapshot;
   const draftContact = { ...(next.contact || {}) };
   next.contact = withLiveFlags(published.contact || {}, draftContact);
+  if (!clean(next.fullName) && clean(published.fullName)) next.fullName = clean(published.fullName);
+  if (!clean(next.handle) && clean(published.handle)) next.handle = clean(published.handle).toLowerCase();
   if (clean(draftContact.email)) next.email = clean(draftContact.email);
+  else if (clean(published.contact?.email)) {
+    next.contact = {
+      ...(next.contact || {}),
+      email: clean(published.contact?.email),
+      emailVerified: Boolean(published.contact?.emailVerified)
+    };
+    next.email = clean(published.email) || clean(published.contact?.email);
+  }
 
   if (!clean(next.linkedinSub) && clean(published.linkedinSub)) {
     next.linkedinSub = published.linkedinSub;
