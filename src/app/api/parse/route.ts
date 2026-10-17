@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { extractText } from "unpdf";
-import { parseComprehensiveResume } from "./parseResume";
+import { parseComprehensiveResume, resumeParseLog } from "./parseResume";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
     }
 
     const result = parseComprehensiveResume(textContent);
+    console.info(JSON.stringify(resumeParseLog(result)));
 
     return NextResponse.json({
       success: true,

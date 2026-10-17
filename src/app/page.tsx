@@ -22,6 +22,7 @@ import {
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 import { captureEvent } from "@/lib/analytics";
 import { corroboratorRefFromSearch, writeCorroboratorRef } from "@/lib/corroborationLoop";
+import { resumeImportHasContent } from "@/app/api/parse/parseResume";
 
 export default function VerifiedCVLandingPage() {
   const router = useRouter();
@@ -72,18 +73,28 @@ export default function VerifiedCVLandingPage() {
     highlights?: string[];
     skills?: unknown[];
     education?: unknown[];
+    contact?: {
+      email?: string;
+      phone?: string;
+      location?: string;
+      linkedin?: string;
+      emailVerified?: boolean;
+      phoneVerified?: boolean;
+      linkedinVerified?: boolean;
+    };
   }) => {
     if (typeof window !== "undefined") {
       localStorage.setItem(
         "vcv_pending_payload",
         JSON.stringify({
           milestones: data.milestones || [],
-          fullName: data.fullName || "Graham Harris",
-          headline: data.headline || "Head of Product Management • AI Platforms",
+          fullName: data.fullName || "",
+          headline: data.headline || "",
           summaryStatement: data.summaryStatement || "",
           highlights: data.highlights || [],
           skills: data.skills || [],
-          education: data.education || []
+          education: data.education || [],
+          contact: data.contact || {}
         })
       );
     }
@@ -105,8 +116,8 @@ export default function VerifiedCVLandingPage() {
       });
 
       const data = await res.json();
-      if (res.ok && data.milestones && data.milestones.length > 0) {
-        captureEvent("resume_parsed", { source: "landing_paste", chapters: data.milestones.length });
+      if (res.ok && resumeImportHasContent(data)) {
+        captureEvent("resume_parsed", { source: "landing_paste", chapters: data.milestones?.length || 0 });
         forwardPayloadToStudio(data);
         return;
       }
@@ -141,8 +152,8 @@ export default function VerifiedCVLandingPage() {
       });
 
       const data = await res.json();
-      if (res.ok && data.milestones && data.milestones.length > 0) {
-        captureEvent("resume_parsed", { source: "landing_upload", chapters: data.milestones.length });
+      if (res.ok && resumeImportHasContent(data)) {
+        captureEvent("resume_parsed", { source: "landing_upload", chapters: data.milestones?.length || 0 });
         forwardPayloadToStudio(data);
         return;
       } else {

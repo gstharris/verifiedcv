@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   extractAtomicAchievements,
-  parseComprehensiveResume
+  parseComprehensiveResume,
+  resumeImportLog,
+  resumeParseLog
 } from "./parseResume";
 
 const CANONICAL_RESUME = `
@@ -152,6 +154,117 @@ Stanford University | M.S. Computer Science | 2019
     expect(
       parsed.education.some((e) => /stanford university/i.test(e.institution))
     ).toBe(true);
+  });
+});
+
+describe("plain resume import", () => {
+  const plainResume = `
+Ada Lovelace
+ada@example.com
+(415) 555-0134
+https://www.linkedin.com/in/ada-lovelace
+San Francisco, CA
+
+HIGHLIGHTS
+● Built the first published algorithm for a general-purpose machine.
+
+EXPERIENCE
+Analytical Engines
+Head of Computation
+March 2018 - Present
+● Designed the instruction sequence that kept the engine correct.
+
+Babbage Works
+Collaborator
+2014 - 2018
+● Delivered the difference engine notes for the laboratory team.
+
+SKILLS
+Mathematics, Algorithms, Scientific Writing
+`.trim();
+
+  it("reads contact, stacked jobs, skills, and highlights without pipe headers", () => {
+    const parsed = parseComprehensiveResume(plainResume);
+    expect(parsed.fullName).toBe("Ada Lovelace");
+    expect(parsed.contact).toMatchObject({
+      email: "ada@example.com",
+      phone: "(415) 555-0134",
+      linkedin: "linkedin.com/in/ada-lovelace",
+      location: "San Francisco, CA"
+    });
+    expect(parsed.highlights[0]).toMatch(/Built the first published algorithm/i);
+    expect(parsed.milestones.map((milestone) => [milestone.company, milestone.role])).toEqual([
+      ["Analytical Engines", "Head of Computation"],
+      ["Babbage Works", "Collaborator"]
+    ]);
+    expect(parsed.milestones[0]?.claims).toEqual(["Designed the instruction sequence that kept the engine correct."]);
+    expect(parsed.milestones[1]?.period).toBe("2014 — 2018");
+    expect(parsed.skills).toEqual(expect.arrayContaining(["Mathematics", "Algorithms", "Scientific Writing"]));
+  });
+
+  it("keeps production parse logs to counts and contact flags", () => {
+    const parsed = parseComprehensiveResume(plainResume);
+    const log = resumeParseLog(parsed);
+    const serialized = JSON.stringify(log);
+    expect(serialized).not.toMatch(/ada@example\.com|555-0134|ada-lovelace|San Francisco|Ada Lovelace/);
+    expect(log).toMatchObject({
+      event: "resume_parse",
+      experienceCount: 2,
+      achievementCount: 2,
+      skillCount: 3,
+      highlightCount: 1,
+      hasEmail: true,
+      hasPhone: true,
+      hasLinkedIn: true,
+      hasLocation: true
+    });
+    expect(log).not.toHaveProperty("contact");
+
+    const applied = resumeImportLog("studio_upload", parsed);
+    expect(JSON.stringify(applied)).not.toMatch(/ada@example\.com|555-0134|ada-lovelace|San Francisco/);
+    expect(applied).toMatchObject({
+      experienceCount: 2,
+      hasEmail: true,
+      hasPhone: true,
+      hasLinkedIn: true,
+      hasLocation: true
+    });
+  });
+
+  it("includes contact values in development logs only", () => {
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = "development";
+    try {
+      const parsed = parseComprehensiveResume(plainResume);
+      const log = resumeParseLog(parsed);
+      expect(log).toMatchObject({
+        contact: {
+          email: "ada@example.com",
+          phone: "(415) 555-0134",
+          linkedin: "linkedin.com/in/ada-lovelace",
+          location: "San Francisco, CA"
+        },
+        fullName: "Ada Lovelace"
+      });
+    } finally {
+      process.env.NODE_ENV = previous;
+    }
+  });
+
+  it("reads a company and role that share a line with the dates", () => {
+    const parsed = parseComprehensiveResume(`
+Ada Lovelace
+ada@example.com
+EXPERIENCE
+Acme Corp — Head of Product    Jan 2020 - Present
+● Shipped the onboarding flow for new candidate accounts.
+SKILLS Product Strategy, Roadmapping
+`.trim());
+    expect(parsed.milestones.map((milestone) => [milestone.company, milestone.role, milestone.period])).toEqual([
+      ["Acme Corp", "Head of Product", "Jan 2020 — Present"]
+    ]);
+    expect(parsed.milestones[0]?.claims).toEqual(["Shipped the onboarding flow for new candidate accounts."]);
+    expect(parsed.skills).toEqual(expect.arrayContaining(["Product Strategy", "Roadmapping"]));
   });
 });
 

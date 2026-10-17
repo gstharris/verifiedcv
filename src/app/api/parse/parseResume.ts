@@ -155,6 +155,176 @@ export function isEducationItem(text: string): boolean {
   );
 }
 
+const SECTION_HEADERS: { section: "SUMMARY" | "EXPERIENCE" | "SKILLS" | "EDUCATION"; pattern: RegExp }[] = [
+  { section: "SUMMARY", pattern: /^(?:professional summary|executive summary|summary|profile|about me)\b/i },
+  { section: "EXPERIENCE", pattern: /^(?:professional experience|work experience|employment history|employment|career history|work history|professional history|experience)\b/i },
+  { section: "SKILLS", pattern: /^(?:technical skills|core competencies|core proficiencies|core skills|key skills|skills|technologies|areas of expertise|proficiencies)\b/i },
+  { section: "EDUCATION", pattern: /^(?:education|academic background|degrees & certifications|education & credentials)\b/i }
+];
+
+function sectionFromLine(line: string): { section: "SUMMARY" | "HIGHLIGHTS" | "EXPERIENCE" | "SKILLS" | "EDUCATION"; rest: string } | null {
+  if (isHighlightHeader(line)) return { section: "HIGHLIGHTS", rest: "" };
+  const trimmed = line.trim();
+  for (const header of SECTION_HEADERS) {
+    const match = trimmed.match(header.pattern);
+    if (!match) continue;
+    return { section: header.section, rest: trimmed.slice(match[0].length).replace(/^[:|\-–—\s]+/, "").trim() };
+  }
+  return null;
+}
+
+function tenureSpan(line: string) {
+  return line.match(
+    /(?:(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+)?(?:19|20)\d{2}\s*(?:—|-|–|to|\/)\s*(?:(?:(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+)?(?:19|20)\d{2}|Present|Current|Now)/i
+  );
+}
+
+function isBulletLine(line: string) {
+  return /^[●•\-*–—◦‣⁃·]/.test(line.trim());
+}
+
+function looksLikeTitle(line: string) {
+  const trimmed = line.trim();
+  return trimmed.length > 1 && trimmed.length <= 80 && !/[.!?]$/.test(trimmed) && !isBulletLine(trimmed);
+}
+
+function isTenureOnly(line: string) {
+  const span = tenureSpan(line);
+  if (!span || isBulletLine(line)) return false;
+  return line.replace(span[0], "").replace(/[^A-Za-z]/g, "").length < 4;
+}
+
+export function resumeImportHasContent(data: Partial<ParsedDossierPayload>) {
+  const contact = data.contact;
+  return Boolean(
+    data.milestones?.length ||
+      data.highlights?.length ||
+      data.skills?.length ||
+      data.education?.length ||
+      String(data.summaryStatement || "").trim() ||
+      String(data.fullName || "").trim() ||
+      contact?.email ||
+      contact?.phone ||
+      contact?.linkedin ||
+      contact?.location
+  );
+}
+
+function headerBesideTenure(line: string): { company: string; role: string; period: string } | null {
+  if (line.includes("|") || isBulletLine(line) || isTenureOnly(line)) return null;
+  const span = tenureSpan(line);
+  if (!span || span.index === undefined) return null;
+  const head = line.slice(0, span.index).trim().replace(/[|•,–—-]\s*$/, "").trim();
+  if (!head) return null;
+  const splitHead = head.split(/\s+[—–|]\s+|\s{2,}/).map(cleanEntityHeader).filter(Boolean);
+  const parts = splitHead.length >= 2 ? splitHead : head.split(/\s+-\s+/).map(cleanEntityHeader).filter(Boolean);
+  if (!parts.length) return null;
+  return {
+    company: parts[0],
+    role: parts.slice(1).join(" ") || "Role",
+    period: normalizeTenurePeriod(span[0])
+  };
+}
+
+function extractContact(lines: string[]): CandidateContactInfo {
+  const contact: CandidateContactInfo = {
+    email: "",
+    phone: "",
+    location: "",
+    linkedin: "",
+    emailVerified: false,
+    phoneVerified: false,
+    linkedinVerified: false
+  };
+  const header: string[] = [];
+  for (const line of lines) {
+    if (!line) continue;
+    if (sectionFromLine(line)) break;
+    header.push(line);
+    if (header.length >= 40) break;
+  }
+  const headerText = header.join("\n");
+  const fullText = lines.join("\n");
+  const emailPattern = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/;
+  const phonePattern = /(?:\+?1[-. ]?)?\(?\d{3}\)?[-. ]?\d{3}[-. ]?\d{4}/;
+  const linkedinPattern = /(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/([A-Za-z0-9._-]{3,100})/i;
+  contact.email = (headerText.match(emailPattern) || fullText.match(emailPattern) || [""])[0];
+  contact.phone = (headerText.match(phonePattern) || fullText.match(phonePattern) || [""])[0];
+  const linkedin = headerText.match(linkedinPattern) || fullText.match(linkedinPattern);
+  if (linkedin?.[1]) contact.linkedin = `linkedin.com/in/${linkedin[1].replace(/\/$/, "")}`;
+  const location = headerText.match(/\b([A-Za-z][A-Za-z .'-]{1,40},\s*[A-Z]{2})\b/);
+  if (location && !/linkedin|https?:|@/i.test(location[0])) contact.location = location[1].replace(/\s+/g, " ").trim();
+  return contact;
+}
+
+function resumeContactFlags(contact?: Partial<CandidateContactInfo> | null) {
+  return {
+    hasEmail: Boolean(contact?.email?.trim()),
+    hasPhone: Boolean(contact?.phone?.trim()),
+    hasLinkedIn: Boolean(contact?.linkedin?.trim()),
+    hasLocation: Boolean(contact?.location?.trim())
+  };
+}
+
+function withDevelopmentContact<T extends Record<string, unknown>>(
+  safe: T,
+  contact?: Partial<CandidateContactInfo> | null,
+  extra?: Record<string, unknown>
+) {
+  if (process.env.NODE_ENV !== "development") return safe;
+  return {
+    ...safe,
+    ...extra,
+    contact: {
+      email: contact?.email || "",
+      phone: contact?.phone || "",
+      linkedin: contact?.linkedin || "",
+      location: contact?.location || ""
+    }
+  };
+}
+
+export function resumeParseLog(result: ParsedDossierPayload) {
+  const safe = {
+    event: "resume_parse",
+    experienceCount: result.milestones.length,
+    achievementCount: result.milestones.reduce((count, milestone) => count + milestone.claims.length, 0),
+    skillCount: result.skills.length,
+    highlightCount: result.highlights.length,
+    educationCount: result.education.length,
+    ...resumeContactFlags(result.contact)
+  };
+  return withDevelopmentContact(safe, result.contact, {
+    fullName: result.fullName,
+    headline: result.headline
+  });
+}
+
+export function resumeImportLog(
+  source: string,
+  data: {
+    milestones?: { claims?: unknown[] }[];
+    skills?: unknown[];
+    highlights?: unknown[];
+    contact?: Partial<CandidateContactInfo> | null;
+  }
+) {
+  const milestones = Array.isArray(data.milestones) ? data.milestones : [];
+  const safe = {
+    event: "resume_import_applied",
+    source,
+    experienceCount: milestones.length,
+    achievementCount: milestones.reduce(
+      (count, milestone) => count + (Array.isArray(milestone.claims) ? milestone.claims.length : 0),
+      0
+    ),
+    skillCount: Array.isArray(data.skills) ? data.skills.length : 0,
+    highlightCount: Array.isArray(data.highlights) ? data.highlights.length : 0,
+    ...resumeContactFlags(data.contact)
+  };
+  return withDevelopmentContact(safe, data.contact);
+}
+
 export function parseComprehensiveResume(rawText: string): ParsedDossierPayload {
   const normalized = rawText
     .replace(/\r\n/g, "\n")
@@ -164,43 +334,26 @@ export function parseComprehensiveResume(rawText: string): ParsedDossierPayload 
 
   const rawLines = normalized.split("\n").map((l) => l.trim());
 
-  let fullName = "Graham Harris";
-  let headline = "Head of Product Management • AI Platforms";
+  let fullName = "";
+  let headline = "";
   let summaryStatement = "";
   const skills: string[] = [];
   const education: ExtractedEducation[] = [];
   const milestones: ExtractedMilestone[] = [];
-
-  const contact: CandidateContactInfo = {
-    email: "",
-    phone: "",
-    location: "Remote / Los Angeles, CA",
-    linkedin: "",
-    emailVerified: false,
-    phoneVerified: false,
-    linkedinVerified: false
-  };
-
-  const headerBlock = rawLines.slice(0, 10).join(" \n ");
-
-  const emailMatch = headerBlock.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/);
-  if (emailMatch) contact.email = emailMatch[0];
-
-  const phoneMatch = headerBlock.match(/(?:\+?1[-. ]?)?\(?([0-9]{3})\)?[-. ]?([0-9]{3})[-. ]?([0-9]{4})/);
-  if (phoneMatch) contact.phone = phoneMatch[0];
-
-  const linkedinMatch = headerBlock.match(/(?:linkedin\.com\/in\/|linkedin:\s*)([a-zA-Z0-9_-]+)/i);
-  if (linkedinMatch) contact.linkedin = `linkedin.com/in/${linkedinMatch[1]}`;
-
-  const locationMatch = headerBlock.match(/\b([A-Za-z\s]+,\s*[A-Z]{2})\b/);
-  if (locationMatch && !locationMatch[0].includes("LinkedIn")) {
-    contact.location = locationMatch[0].trim();
-  }
+  const contact = extractContact(rawLines);
 
   const nonBlank = rawLines.filter(Boolean);
-  if (nonBlank.length > 0 && !nonBlank[0].includes("|") && nonBlank[0].length < 50) {
-    fullName = nonBlank[0].replace(/[•,]/g, "").trim();
-  }
+  const nameLine = nonBlank.find(
+    (line) =>
+      line.length < 60 &&
+      !line.includes("|") &&
+      !line.includes("@") &&
+      !/linkedin\.com/i.test(line) &&
+      !tenureSpan(line) &&
+      !sectionFromLine(line) &&
+      !/^\+?\d[\d\s().-]{6,}$/.test(line)
+  );
+  if (nameLine) fullName = nameLine.replace(/[•]/g, "").trim();
 
   type SectionType = "HEADER" | "SUMMARY" | "HIGHLIGHTS" | "EXPERIENCE" | "SKILLS" | "EDUCATION" | "OTHER";
   let currentSection: SectionType = "HEADER";
@@ -219,24 +372,10 @@ export function parseComprehensiveResume(rawText: string): ParsedDossierPayload 
     const line = rawLines[i];
     if (!line) continue;
 
-    if (/(?:^|\s)(?:PROFESSIONAL SUMMARY|EXECUTIVE SUMMARY|SUMMARY|PROFILE|ABOUT ME)(?:$|\s)/i.test(line)) {
-      currentSection = "SUMMARY";
-      continue;
-    }
-    if (isHighlightHeader(line) && currentSection !== "EXPERIENCE") {
-      currentSection = "HIGHLIGHTS";
-      continue;
-    }
-    if (/(?:^|\s)(?:PROFESSIONAL EXPERIENCE|EXPERIENCE|WORK EXPERIENCE|EMPLOYMENT HISTORY)(?:$|\s)/i.test(line)) {
-      currentSection = "EXPERIENCE";
-      continue;
-    }
-    if (/(?:^|\s)(?:TECHNICAL SKILLS|CORE COMPETENCIES|SKILLS|TECHNOLOGIES|AREAS OF EXPERTISE|PROFICIENCIES)(?:$|\s)/i.test(line)) {
-      currentSection = "SKILLS";
-      continue;
-    }
-    if (/(?:^|\s)(?:EDUCATION|ACADEMIC BACKGROUND|DEGREES & CERTIFICATIONS|EDUCATION & CREDENTIALS)(?:$|\s)/i.test(line)) {
-      currentSection = "EDUCATION";
+    const heading = sectionFromLine(line);
+    if (heading) {
+      currentSection = heading.section;
+      if (heading.rest) sectionLines[heading.section].push(heading.rest);
       continue;
     }
 
@@ -313,6 +452,7 @@ export function parseComprehensiveResume(rawText: string): ParsedDossierPayload 
 
   const roleBlocks: RoleBlock[] = [];
   let currentBlock: RoleBlock | null = null;
+  const pendingTitles: string[] = [];
 
   for (let i = 0; i < sectionLines.EXPERIENCE.length; i++) {
     const line = sectionLines.EXPERIENCE[i];
@@ -332,9 +472,7 @@ export function parseComprehensiveResume(rawText: string): ParsedDossierPayload 
       const loc = pipeParts[3] || "Remote";
       const period = normalizeTenurePeriod(rawPeriod);
 
-      if (roleBlocks.length === 0) {
-        headline = `${role} • Personalization & AI Platforms`;
-      }
+      if (roleBlocks.length === 0 && role) headline = role;
 
       currentBlock = {
         company: cleanEntityHeader(company),
@@ -343,8 +481,49 @@ export function parseComprehensiveResume(rawText: string): ParsedDossierPayload 
         location: loc,
         lines: []
       };
-    } else if (currentBlock) {
+      pendingTitles.length = 0;
+      continue;
+    }
+
+    const combined = headerBesideTenure(line);
+    if (combined) {
+      if (currentBlock) roleBlocks.push(currentBlock);
+      if (roleBlocks.length === 0 && combined.role) headline = combined.role;
+      currentBlock = { ...combined, lines: [] };
+      pendingTitles.length = 0;
+      continue;
+    }
+
+    if (isTenureOnly(line)) {
+      if (currentBlock) roleBlocks.push(currentBlock);
+      const titles = pendingTitles.splice(0, pendingTitles.length);
+      const company = titles[0] || "Career Chapter";
+      const role = titles.slice(1).join(" ") || "Role";
+      if (roleBlocks.length === 0 && titles.length > 1) headline = role;
+      currentBlock = {
+        company: cleanEntityHeader(company),
+        role: cleanEntityHeader(role),
+        period: normalizeTenurePeriod(line),
+        lines: []
+      };
+      continue;
+    }
+
+    if (currentBlock && looksLikeTitle(line)) {
+      pendingTitles.push(cleanEntityHeader(line));
+      if (pendingTitles.length > 2) {
+        const overflow = pendingTitles.shift();
+        if (overflow) currentBlock.lines.push(overflow);
+      }
+      continue;
+    }
+
+    if (currentBlock) {
+      if (pendingTitles.length) currentBlock.lines.push(...pendingTitles.splice(0));
       currentBlock.lines.push(line);
+    } else if (looksLikeTitle(line)) {
+      pendingTitles.push(cleanEntityHeader(line));
+      if (pendingTitles.length > 2) pendingTitles.shift();
     }
   }
 
@@ -362,8 +541,8 @@ export function parseComprehensiveResume(rawText: string): ParsedDossierPayload 
       role: block.role,
       period: block.period,
       location: block.location,
-      claims: items.length > 0 ? items : ["Directed operational execution, engineering trade-offs, and product architecture roadmaps."],
-      calibratedClaim: unifiedClaim || "Directed operational execution, engineering trade-offs, and product architecture roadmaps.",
+      claims: items,
+      calibratedClaim: unifiedClaim,
       isCorroborated: false
     });
   });

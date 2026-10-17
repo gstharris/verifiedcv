@@ -58,6 +58,7 @@ import { nextPortfolioVerificationStep, verificationStatusLine } from "@/lib/ver
 import { dossierSectionRank, encodeDossierLayout, parseDossierLayout, publicRegistryLabel, type PortfolioAsset } from "@/lib/portfolioAssets";
 import { LOOP_EVENTS, consumeCorroboratorRef } from "@/lib/corroborationLoop";
 import { linkedInHandle, linkedInProfileUrl, preferLinkedInProfile } from "@/lib/linkedin";
+import { resumeImportHasContent, resumeImportLog } from "@/app/api/parse/parseResume";
 import { flagEmoji, parseLocation } from "@/lib/locations";
 import { repairSkillList } from "@/lib/skills";
 import { resolvePlace, suggestPlaces } from "@/lib/places";
@@ -1025,12 +1026,12 @@ export default function StudioPage() {
       });
 
       const data = await res.json();
-      if (res.ok && data.milestones && data.milestones.length > 0) {
+      if (res.ok && resumeImportHasContent(data)) {
         if (replaceSourceRef.current) {
           replaceSourceRef.current = false;
           applyReplacedSource(data);
-          captureEvent("resume_parsed", { source: "replace_paste", chapters: data.milestones.length });
-          const count = data.milestones.length;
+          captureEvent("resume_parsed", { source: "replace_paste", chapters: data.milestones?.length || 0 });
+          const count = data.milestones?.length || 0;
           setSourceNotice({
             text: `Replaced your draft with ${count} ${count === 1 ? "chapter" : "chapters"}. Your live dossier stays as it is until you publish.`
           });
@@ -1038,29 +1039,8 @@ export default function StudioPage() {
           window.setTimeout(() => document.getElementById("experience")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
           return;
         }
-        setMilestones(incomingChapters(data.milestones));
-        if (data.fullName) setFullName(data.fullName);
-        if (data.headline) setHeadline(data.headline);
-        if (data.summaryStatement) setSummaryStatement(data.summaryStatement);
-        if (Array.isArray(data.highlights)) setHighlights(data.highlights);
-        if (data.skills) setSkills(data.skills);
-        if (data.education) setEducation(data.education);
-        if (data.contact) {
-          setContact((prev) => ({
-            ...prev,
-            ...data.contact,
-            email: data.contact.email || prev.email,
-            phone: data.contact.phone || prev.phone,
-            location: prev.location || data.contact.location,
-            linkedin: preferLinkedInProfile(prev.linkedin, data.contact.linkedin || ""),
-            emailVerified: prev.emailVerified || Boolean(data.contact.emailVerified),
-            phoneVerified: prev.phoneVerified || Boolean(data.contact.phoneVerified),
-            linkedinVerified: prev.linkedinVerified || Boolean(data.contact.linkedinVerified)
-          }));
-        }
-
-        setActiveTab("canvas");
-        captureEvent("resume_parsed", { source: "studio_paste", chapters: data.milestones.length });
+        applyParsedResume(data, "studio_paste");
+        captureEvent("resume_parsed", { source: "studio_paste", chapters: data.milestones?.length || 0 });
         setChatMessages([
           {
             sender: "ally",
@@ -1225,8 +1205,9 @@ export default function StudioPage() {
         const parsed = JSON.parse(pendingRaw);
         localStorage.removeItem("vcv_pending_payload");
 
-        if (parsed.milestones && Array.isArray(parsed.milestones) && parsed.milestones.length > 0) {
+        if (resumeImportHasContent(parsed)) {
           applyPortfolioRecord(parsed);
+          console.info(JSON.stringify(resumeImportLog("pending_payload", parsed)));
           setChatMessages([
             {
               sender: "ally",
@@ -1478,6 +1459,112 @@ export default function StudioPage() {
   }, [handle, isPortfolioSaved, milestones, waitingForPeer]);
 
 
+  const applyParsedResume = (data: {
+    milestones?: unknown[];
+    fullName?: string;
+    headline?: string;
+    summaryStatement?: string;
+    highlights?: unknown[];
+    skills?: unknown[];
+    education?: unknown[];
+    contact?: {
+      email?: string;
+      phone?: string;
+      location?: string;
+      linkedin?: string;
+      emailVerified?: boolean;
+      phoneVerified?: boolean;
+      linkedinVerified?: boolean;
+    };
+  }, source: string) => {
+    const milestonesIn = incomingChapters(data.milestones);
+    const highlightsIn = Array.isArray(data.highlights) ? data.highlights.map((line) => String(line || "")) : [];
+    const skillsIn = Array.isArray(data.skills) ? repairSkillList(data.skills) : [];
+    const educationIn = Array.isArray(data.education) ? data.education as EducationRecord[] : [];
+    setMilestones(milestonesIn);
+    if (data.fullName) setFullName(data.fullName);
+    if (data.headline) setHeadline(data.headline);
+    setSummaryStatement(String(data.summaryStatement || ""));
+    setHighlights(highlightsIn);
+    setSkills(skillsIn);
+    setEducation(educationIn);
+    if (data.contact) {
+      setContact((prev) => ({
+        ...prev,
+        ...data.contact,
+        email: data.contact?.email || prev.email,
+        phone: data.contact?.phone || prev.phone,
+        location: data.contact?.location || prev.location,
+        linkedin: preferLinkedInProfile(prev.linkedin, data.contact?.linkedin || "") || prev.linkedin,
+        emailVerified: prev.emailVerified || Boolean(data.contact?.emailVerified),
+        phoneVerified: prev.phoneVerified || Boolean(data.contact?.phoneVerified),
+        linkedinVerified: prev.linkedinVerified || Boolean(data.contact?.linkedinVerified)
+      }));
+    }
+    setPortfolioStarted(true);
+    setActiveTab("canvas");
+    console.info(JSON.stringify(resumeImportLog(source, {
+      milestones: milestonesIn,
+      skills: skillsIn,
+      highlights: highlightsIn,
+      contact: data.contact
+    })));
+  };
+
+  const clearCanvas = () => {
+    console.info(JSON.stringify({
+      event: "clear_canvas",
+      experienceCount: milestones.length,
+      achievementCount: milestones.reduce((count, milestone) => count + (milestone.claims?.length || 0), 0),
+      skillCount: skills.length,
+      highlightCount: highlights.length,
+      hasEmail: Boolean(contact.email?.trim()),
+      hasPhone: Boolean(contact.phone?.trim()),
+      hasLinkedIn: Boolean(contact.linkedin?.trim()),
+      hasLocation: Boolean(contact.location?.trim()),
+      serverDraft: serverDraftRef.current
+    }));
+    setMilestones([]);
+    setSummaryStatement("");
+    setHighlights([]);
+    setSkills([]);
+    setEducation([]);
+    setPortfolioAssets([]);
+    setFullName("");
+    setHeadline("");
+    setHandle("");
+    setContact({
+      email: "",
+      phone: "",
+      location: "",
+      linkedin: "",
+      emailVerified: false,
+      phoneVerified: false,
+      linkedinVerified: false
+    });
+    setPasteBuffer("");
+    setSourceNotice(null);
+    autosaveAbortRef.current?.abort();
+    setIsPortfolioSaved(false);
+    setPortfolioStarted(false);
+    setSaveStatus("idle");
+    clearStudioPortfolioStorage();
+    localStorage.removeItem("vcv_pending_payload");
+    serverDraftRef.current = false;
+    if (user) {
+      void fetch("/api/vault/draft", { method: "DELETE", credentials: "include" })
+        .then((res) => {
+          console.info(JSON.stringify({ event: "clear_canvas_reset", draftDeleted: res.ok, status: res.status }));
+        })
+        .catch(() => {
+          console.info(JSON.stringify({ event: "clear_canvas_reset", draftDeleted: false }));
+        });
+    } else {
+      console.info(JSON.stringify({ event: "clear_canvas_reset", draftDeleted: false, localOnly: true }));
+    }
+    setActiveTab("canvas");
+  };
+
   const handleManualPasteSubmit = async () => {
     if (!pasteBuffer.trim() || isProcessing) return;
     await executeIngest(pasteBuffer.trim());
@@ -1502,12 +1589,12 @@ export default function StudioPage() {
       });
 
       const data = await res.json();
-      if (res.ok && data.milestones && data.milestones.length > 0) {
+      if (res.ok && resumeImportHasContent(data)) {
         if (replacing) {
           replaceSourceRef.current = false;
           applyReplacedSource(data);
-          captureEvent("resume_parsed", { source: "replace_upload", chapters: data.milestones.length });
-          const count = data.milestones.length;
+          captureEvent("resume_parsed", { source: "replace_upload", chapters: data.milestones?.length || 0 });
+          const count = data.milestones?.length || 0;
           setSourceNotice({
             text: `Replaced your draft with ${count} ${count === 1 ? "chapter" : "chapters"}. Your live dossier stays as it is until you publish.`
           });
@@ -1515,34 +1602,13 @@ export default function StudioPage() {
           window.setTimeout(() => document.getElementById("experience")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
           return;
         }
-        setMilestones(incomingChapters(data.milestones));
-        if (data.fullName) setFullName(data.fullName);
-        if (data.headline) setHeadline(data.headline);
-        if (data.summaryStatement) setSummaryStatement(data.summaryStatement);
-        if (Array.isArray(data.highlights)) setHighlights(data.highlights);
-        if (data.skills) setSkills(data.skills);
-        if (data.education) setEducation(data.education);
-        if (data.contact) {
-          setContact((prev) => ({
-            ...prev,
-            ...data.contact,
-            email: data.contact.email || prev.email,
-            phone: data.contact.phone || prev.phone,
-            location: prev.location || data.contact.location,
-            linkedin: preferLinkedInProfile(prev.linkedin, data.contact.linkedin || ""),
-            emailVerified: prev.emailVerified || Boolean(data.contact.emailVerified),
-            phoneVerified: prev.phoneVerified || Boolean(data.contact.phoneVerified),
-            linkedinVerified: prev.linkedinVerified || Boolean(data.contact.linkedinVerified)
-          }));
-        }
-
-        setActiveTab("canvas");
-        captureEvent("resume_parsed", { source: "studio_upload", chapters: data.milestones.length });
+        applyParsedResume(data, "studio_upload");
+        captureEvent("resume_parsed", { source: "studio_upload", chapters: data.milestones?.length || 0 });
         setChatMessages((prev) => [
           ...prev,
           {
             sender: "ally",
-            text: `Parsed ${data.milestones.length} career chapters from ${file.name}. Review them, then save to publish your page.`
+            text: `Parsed ${data.milestones?.length || 0} career chapters from ${file.name}. Review them, then save to publish your page.`
           }
         ]);
       } else if (replacing) {
@@ -2735,17 +2801,7 @@ export default function StudioPage() {
           {(canPublish || portfolioStarted) && !isPortfolioSaved && (
             <button
               type="button"
-              onClick={() => {
-                setMilestones([]);
-                setSummaryStatement("");
-                setSkills([]);
-                setEducation([]);
-                setIsPortfolioSaved(false);
-                setPortfolioStarted(false);
-                setSaveStatus("idle");
-                clearStudioPortfolioStorage();
-                setActiveTab("canvas");
-              }}
+              onClick={clearCanvas}
               aria-label="Clear canvas"
               className="text-xs font-semibold text-slate-400 hover:text-red-500 transition-colors px-2 sm:px-3 py-1.5 cursor-pointer flex items-center gap-1"
             >
