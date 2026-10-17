@@ -3,6 +3,7 @@ import { getSupabase } from "@/lib/supabase";
 import { requireHandleOwner } from "@/lib/handleOwner";
 import { clearLinkedInSessionCookie } from "@/lib/linkedin";
 import { BETA_COOKIE, isBetaEnforced } from "@/lib/betaAccess";
+import { markPrivateNoStore } from "@/lib/httpCache";
 import { getVaultStore, saveToVaultStore } from "@/lib/store";
 
 export const runtime = "nodejs";
@@ -10,12 +11,12 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   if (isBetaEnforced() && req.cookies.get(BETA_COOKIE)?.value !== "ok") {
-    return NextResponse.json({ error: "Private beta. Studio access is required." }, { status: 401 });
+    return markPrivateNoStore(NextResponse.json({ error: "Private beta. Studio access is required." }, { status: 401 }));
   }
 
   const supabase = getSupabase();
   if (!supabase) {
-    return NextResponse.json({ error: "Database is not configured." }, { status: 500 });
+    return markPrivateNoStore(NextResponse.json({ error: "Database is not configured." }, { status: 500 }));
   }
 
   const body = await req.json().catch(() => ({}));
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest) {
   const clearContent = Boolean(body.clearContent);
   const owner = await requireHandleOwner(req, supabase, handle);
   if (!owner.ok) {
-    return NextResponse.json({ error: owner.error }, { status: owner.status });
+    return markPrivateNoStore(NextResponse.json({ error: owner.error }, { status: owner.status }));
   }
 
   const { data: candidate } = await supabase.from("candidates").select("email").eq("handle", handle).maybeSingle();
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
     .eq("handle", handle);
 
   if (flagError) {
-    return NextResponse.json({ error: flagError.message || "Could not reset verification." }, { status: 500 });
+    return markPrivateNoStore(NextResponse.json({ error: flagError.message || "Could not reset verification." }, { status: 500 }));
   }
 
   const { data: milestones } = await supabase.from("milestones").select("id").eq("candidate_handle", handle);
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
     if (clearContent) {
       const { error: milestoneError } = await supabase.from("milestones").delete().in("id", milestoneIds);
       if (milestoneError) {
-        return NextResponse.json({ error: milestoneError.message || "Could not clear the resume." }, { status: 500 });
+        return markPrivateNoStore(NextResponse.json({ error: milestoneError.message || "Could not clear the resume." }, { status: 500 }));
       }
     }
   }
@@ -93,7 +94,7 @@ export async function POST(req: NextRequest) {
     await supabase.from("email_codes").delete().eq("email", String(candidate.email).toLowerCase().trim());
   }
 
-  const response = NextResponse.json({ success: true, handle });
+  const response = markPrivateNoStore(NextResponse.json({ success: true, handle }));
   clearLinkedInSessionCookie(response);
   return response;
 }

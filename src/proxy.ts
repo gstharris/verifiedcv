@@ -10,14 +10,23 @@ export function isProtectedWrite(method: string, pathname: string) {
   return false;
 }
 
-export function proxy(req: NextRequest) {
-  if (!isBetaEnforced()) return NextResponse.next();
-  if (!isProtectedWrite(req.method, req.nextUrl.pathname)) return NextResponse.next();
-  if (req.cookies.get(BETA_COOKIE)?.value === "ok") return NextResponse.next();
+function isPrivatePage(pathname: string) {
+  return pathname === "/studio" || pathname.startsWith("/admin") || pathname.startsWith("/attest/");
+}
 
-  return NextResponse.json({ error: "Private beta. Studio access is required." }, { status: 401 });
+export function proxy(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+  const allowed =
+    !isBetaEnforced() ||
+    !isProtectedWrite(req.method, pathname) ||
+    req.cookies.get(BETA_COOKIE)?.value === "ok";
+  const response = allowed
+    ? NextResponse.next()
+    : NextResponse.json({ error: "Private beta. Studio access is required." }, { status: 401 });
+  if (isPrivatePage(pathname)) response.headers.set("Cache-Control", "no-store");
+  return response;
 }
 
 export const config = {
-  matcher: ["/api/vault/:path*", "/api/vault", "/api/verify/:path*", "/api/ally/:path*"]
+  matcher: ["/api/vault/:path*", "/api/vault", "/api/verify/:path*", "/api/ally/:path*", "/studio", "/admin/:path*", "/attest/:path*"]
 };

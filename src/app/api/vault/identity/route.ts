@@ -7,6 +7,11 @@ import {
   type CandidateIdentity
 } from "@/lib/dossierDraft";
 import { findCandidateForUser, requireDraftAccess, type OwnedCandidate } from "@/lib/vaultSession";
+import { markPrivateNoStore } from "@/lib/httpCache";
+
+function json(body: unknown, init?: { status?: number }) {
+  return markPrivateNoStore(NextResponse.json(body, init));
+}
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +29,7 @@ function identityFromCandidate(row: OwnedCandidate): CandidateIdentity {
 
 export async function PATCH(req: NextRequest) {
   if (isBetaEnforced() && req.cookies.get(BETA_COOKIE)?.value !== "ok") {
-    return NextResponse.json({ error: "Private beta. Studio access is required." }, { status: 401 });
+    return json({ error: "Private beta. Studio access is required." }, { status: 401 });
   }
 
   const access = await requireDraftAccess();
@@ -32,15 +37,15 @@ export async function PATCH(req: NextRequest) {
 
   const rawBody = await req.json().catch(() => null);
   const parsed = parseIdentityPatch(rawBody);
-  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+  if (!parsed.ok) return json({ error: parsed.error }, { status: 400 });
 
   const found = await findCandidateForUser(access.admin, access.user);
-  if ("error" in found) return NextResponse.json({ error: found.error }, { status: 500 });
+  if ("error" in found) return json({ error: found.error }, { status: 500 });
   if ("conflict" in found) {
-    return NextResponse.json({ error: "This account does not own that page." }, { status: 403 });
+    return json({ error: "This account does not own that page." }, { status: 403 });
   }
   if (!found.candidate?.handle) {
-    return NextResponse.json({ error: "No portfolio yet." }, { status: 404 });
+    return json({ error: "No portfolio yet." }, { status: 404 });
   }
 
   const body = parsed.patch;
@@ -48,7 +53,7 @@ export async function PATCH(req: NextRequest) {
     .toLowerCase()
     .trim();
   if (handle && handle !== found.candidate.handle) {
-    return NextResponse.json(
+    return json(
       { error: `This account already has a page at verifiedcv.app/${found.candidate.handle}.` },
       { status: 409 }
     );
@@ -59,9 +64,9 @@ export async function PATCH(req: NextRequest) {
   const { error } = await access.admin.from("candidates").update(applied.columns).eq("handle", found.candidate.handle);
   if (error) {
     if (/candidates_email_key|email.*unique/i.test(error.message || "")) {
-      return NextResponse.json({ error: "That email is already used on another page.", code: "EMAIL_TAKEN" }, { status: 409 });
+      return json({ error: "That email is already used on another page.", code: "EMAIL_TAKEN" }, { status: 409 });
     }
-    return NextResponse.json({ error: error.message || "Could not update identity." }, { status: 500 });
+    return json({ error: error.message || "Could not update identity." }, { status: 500 });
   }
 
   let draftUpdated = false;
@@ -80,7 +85,7 @@ export async function PATCH(req: NextRequest) {
     if (saved.error) console.error("Could not update the open draft after identity confirmation:", saved.error.message);
   }
 
-  return NextResponse.json({
+  return json({
     success: true,
     draftUpdated,
     contact: {

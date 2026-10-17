@@ -11,13 +11,15 @@ describe("portfolio verification queue", () => {
     expect(next.id).toBe("email");
   });
 
-  it("asks for LinkedIn after email", () => {
+  it("asks for chapter proof after email while LinkedIn stays optional", () => {
     const next = nextPortfolioVerificationStep({
       emailVerified: true,
       linkedinVerified: false,
       chapters: [{ id: "m1", company: "Ge-on", level: 0 }]
     });
-    expect(next.id).toBe("linkedin");
+    expect(next.id).toBe("chapter");
+    expect(next.company).toBe("Ge-on");
+    expect(next.detail).toMatch(/work email, invite a colleague, or scan an employment document/i);
   });
 
   it("then asks for the first unverified company", () => {
@@ -55,7 +57,7 @@ describe("portfolio verification queue", () => {
         ]
       })
     ).toBe(
-      "Email, phone, and work at Ge-on are confirmed. Verify LinkedIn, or your work at SCD Enterprises / PairedRight, next."
+      "Email, phone, and work at Ge-on are confirmed. Verify your work at SCD Enterprises / PairedRight next. LinkedIn is optional."
     );
   });
 });

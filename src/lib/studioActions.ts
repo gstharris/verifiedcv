@@ -6,7 +6,8 @@ export type StudioActionId =
   | "continue_verification"
   | "ask_colleague"
   | "add_sample_work"
-  | "edit_summary";
+  | "edit_summary"
+  | "verify_linkedin";
 
 export type StudioAction = {
   id: StudioActionId;
@@ -26,6 +27,7 @@ export type StudioActionInput = {
   hasSampleWork: boolean;
   canAskColleague: boolean;
   nextStep: { id: string; title: string };
+  suggestLinkedIn?: boolean;
 };
 
 const SUGGESTION_LIMIT = 4;
@@ -37,6 +39,9 @@ function quietSuggestions(input: StudioActionInput, primary: StudioAction): Stud
   if (input.canAskColleague) candidates.push({ id: "ask_colleague", label: "Ask a colleague" });
   if (input.nextStep.id !== "done") {
     candidates.push({ id: "continue_verification", label: input.nextStep.title });
+  }
+  if (input.suggestLinkedIn) {
+    candidates.push({ id: "verify_linkedin", label: "Verify LinkedIn" });
   }
   return candidates
     .filter((action) => action.id !== primary.id && action.label !== primary.label)

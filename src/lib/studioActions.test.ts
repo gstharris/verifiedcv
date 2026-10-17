@@ -68,6 +68,17 @@ describe("suggestStudioActions", () => {
     expect(suggestionLabels).toContain("Edit summary");
   });
 
+  it("offers LinkedIn as a suggestion after email, not as the required step", () => {
+    const plan = suggestStudioActions({
+      ...base,
+      nextStep: { id: "chapter", title: "Verify your time at Ge-on" },
+      suggestLinkedIn: true
+    });
+    expect(plan.primary).toEqual({ id: "continue_verification", label: "Verify your time at Ge-on" });
+    expect(plan.suggestions.map((action) => action.id)).toContain("verify_linkedin");
+    expect(plan.suggestions.map((action) => action.id)[0]).not.toBe("verify_linkedin");
+  });
+
   it("never suggests replace source, cancel, or section removal", () => {
     const cases = [
       base,

@@ -136,22 +136,6 @@ export default function CandidateDossierPage() {
         console.warn("Vault API query fallback:", err);
       }
 
-      if (typeof window !== "undefined") {
-        const savedVault = localStorage.getItem("vcv_saved_vault");
-        if (savedVault) {
-          try {
-            const parsed = JSON.parse(savedVault);
-            if (parsed.handle && parsed.handle.toLowerCase().trim() === requestedHandle) {
-              setDossier(parsed);
-              setLoading(false);
-              return;
-            }
-          } catch {
-            // ignore
-          }
-        }
-      }
-
       setDossier(null);
       setLoading(false);
       captureEvent("dossier_viewed", { handle: requestedHandle, found: false });

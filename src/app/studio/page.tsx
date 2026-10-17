@@ -39,7 +39,9 @@ import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 import {
   STUDIO_DRAFT_KEY,
   STUDIO_SAVED_KEY,
+  bindStudioAccount,
   clearStudioPortfolioStorage,
+  discardSessionStudioRecords,
   hasPortfolioContent,
   readStudioRecord,
   stripProofFromMilestones,
@@ -646,6 +648,7 @@ export default function StudioPage() {
   const skipNextAutosaveRef = useRef(true);
   const restoredDraftRef = useRef(false);
   const pendingReviewRef = useRef(false);
+  const sessionDraftRef = useRef(false);
   const autosaveAbortRef = useRef<AbortController | null>(null);
   const loggingOutRef = useRef(false);
   const publishedSnapshotRef = useRef<DossierSnapshot | null>(null);
@@ -742,6 +745,7 @@ export default function StudioPage() {
   };
 
   const [user, setUser] = useState<any>(null);
+  bindStudioAccount(user?.id ?? null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -866,6 +870,7 @@ export default function StudioPage() {
 
   const persistPortfolioLocally = (saved: boolean, payload = buildPortfolioPayload()) => {
     if (loggingOutRef.current) return;
+    if (user && !vaultChecked) return;
     writeStudioRecord(STUDIO_DRAFT_KEY, payload);
     if (saved) {
       writeStudioRecord(STUDIO_SAVED_KEY, payload);
@@ -947,14 +952,17 @@ export default function StudioPage() {
     let cancelled = false;
     const adoptServerDraft = async () => {
       const draftRes = await fetch("/api/vault/draft", { credentials: "include" });
-      if (!draftRes.ok || cancelled) return;
+      if (!draftRes.ok || cancelled) return false;
       const body = await draftRes.json().catch(() => null);
       const payload = body?.payload;
-      if (!payload || typeof payload !== "object" || !hasPortfolioContent(payload) || cancelled) return;
+      if (!payload || typeof payload !== "object" || !hasPortfolioContent(payload) || cancelled) return false;
       skipNextAutosaveRef.current = true;
       serverDraftRef.current = true;
+      sessionDraftRef.current = false;
       applyPortfolioRecord(payload);
       writeStudioRecord(STUDIO_DRAFT_KEY, payload);
+      discardSessionStudioRecords();
+      return true;
     };
     (async () => {
       try {
@@ -965,7 +973,22 @@ export default function StudioPage() {
             rememberPublished(null);
             setIsPortfolioSaved(false);
           }
-          if (!pendingReviewRef.current) await adoptServerDraft();
+          if (!pendingReviewRef.current) {
+            const adopted = await adoptServerDraft();
+            if (!adopted && !cancelled) {
+              const owned = readStudioRecord<DossierSnapshot>(STUDIO_DRAFT_KEY);
+              if (owned && hasPortfolioContent(owned)) {
+                skipNextAutosaveRef.current = true;
+                sessionDraftRef.current = false;
+                applyPortfolioRecord(owned);
+                discardSessionStudioRecords();
+              } else if (sessionDraftRef.current && editorPayloadRef.current) {
+                writeStudioRecord(STUDIO_DRAFT_KEY, editorPayloadRef.current);
+                discardSessionStudioRecords();
+                sessionDraftRef.current = false;
+              }
+            }
+          }
           if (!cancelled) setVaultChecked(true);
           return;
         }
@@ -975,7 +998,22 @@ export default function StudioPage() {
             rememberPublished(null);
             setIsPortfolioSaved(false);
           }
-          if (!pendingReviewRef.current) await adoptServerDraft();
+          if (!pendingReviewRef.current) {
+            const adopted = await adoptServerDraft();
+            if (!adopted && !cancelled) {
+              const owned = readStudioRecord<DossierSnapshot>(STUDIO_DRAFT_KEY);
+              if (owned && hasPortfolioContent(owned)) {
+                skipNextAutosaveRef.current = true;
+                sessionDraftRef.current = false;
+                applyPortfolioRecord(owned);
+                discardSessionStudioRecords();
+              } else if (sessionDraftRef.current && editorPayloadRef.current) {
+                writeStudioRecord(STUDIO_DRAFT_KEY, editorPayloadRef.current);
+                discardSessionStudioRecords();
+                sessionDraftRef.current = false;
+              }
+            }
+          }
           if (!cancelled) setVaultChecked(true);
           return;
         }
@@ -1000,8 +1038,10 @@ export default function StudioPage() {
           if (payload && typeof payload === "object" && samePage) {
             skipNextAutosaveRef.current = true;
             serverDraftRef.current = true;
+            sessionDraftRef.current = false;
             applyPortfolioRecord(payload);
             writeStudioRecord(STUDIO_DRAFT_KEY, payload);
+            discardSessionStudioRecords();
             setSaveStatus("saved");
             setVaultChecked(true);
             return;
@@ -1010,7 +1050,9 @@ export default function StudioPage() {
         const local = readStudioRecord<DossierSnapshot>(STUDIO_DRAFT_KEY);
         if (local && hasPortfolioContent(local) && hasUnpublishedChanges(baseline, local)) {
           skipNextAutosaveRef.current = true;
+          sessionDraftRef.current = false;
           applyPortfolioRecord(local);
+          discardSessionStudioRecords();
           setSaveStatus("saving");
           const put = await fetch("/api/vault/draft", {
             method: "PUT",
@@ -1020,11 +1062,13 @@ export default function StudioPage() {
           });
           serverDraftRef.current = put.ok;
           if (!cancelled) setSaveStatus(put.ok ? "saved" : "error");
-        } else if (!hasUnpublishedChanges(baseline, editorPayloadRef.current)) {
+        } else if (sessionDraftRef.current || !hasUnpublishedChanges(baseline, editorPayloadRef.current)) {
           skipNextAutosaveRef.current = true;
           serverDraftRef.current = false;
+          sessionDraftRef.current = false;
           applyPortfolioRecord(baseline);
           writeStudioRecord(STUDIO_DRAFT_KEY, baseline);
+          discardSessionStudioRecords();
           setSaveStatus("saved");
         } else {
           skipNextAutosaveRef.current = true;
@@ -1335,6 +1379,7 @@ export default function StudioPage() {
         // ignore unreadable local resume payloads
       }
     } else if (draft && hasPortfolioContent(draft)) {
+      sessionDraftRef.current = true;
       applyPortfolioRecord(draft);
       setChatMessages([
         {
@@ -1766,6 +1811,10 @@ export default function StudioPage() {
   };
 
   const handleActionPrompt = (actionType: string) => {
+    if (actionType === "verify_linkedin") {
+      window.location.href = "/api/auth/linkedin?next=/studio";
+      return;
+    }
     if (actionType === "upload_resume") {
       fileInputRef.current?.click();
       say("Choose a PDF or a text resume. Paste a Word resume instead.");
@@ -2763,9 +2812,10 @@ export default function StudioPage() {
         hasSummary: Boolean(summaryStatement.trim()),
         hasSampleWork: portfolioAssets.length > 0,
         canAskColleague: Boolean(firstChapterWithoutColleague(milestones)),
-        nextStep: { id: nextVerifyStep.id, title: nextVerifyStep.title }
+        nextStep: { id: nextVerifyStep.id, title: nextVerifyStep.title },
+        suggestLinkedIn: Boolean(isPortfolioSaved && contact.emailVerified && !contact.linkedinVerified)
       }),
-    [changeSummary.hasChanges, highlights, isPortfolioSaved, milestones, nextVerifyStep.id, nextVerifyStep.title, portfolioAssets, summaryStatement]
+    [changeSummary.hasChanges, contact.emailVerified, contact.linkedinVerified, highlights, isPortfolioSaved, milestones, nextVerifyStep.id, nextVerifyStep.title, portfolioAssets, summaryStatement]
   );
   studioPlanRef.current = studioPlan;
 

@@ -15,6 +15,7 @@ import { issueRestoreCode } from "@/lib/handleRestore";
 import { linkedInProfileUrl, preferLinkedInProfile } from "@/lib/linkedin";
 import { candidateSummary, decodeStoredHighlights, decodeStoredPage, encodeStoredPage, normalizePortfolioAsset, type PortfolioAsset } from "@/lib/portfolioAssets";
 import { repairSkillList } from "@/lib/skills";
+import { markPrivateNoStore } from "@/lib/httpCache";
 
 export const dynamic = "force-dynamic";
 
@@ -24,13 +25,18 @@ function missingOwnerColumn(message?: string) {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
+  const personal = searchParams.get("mine") === "1";
+  const respond = (body: unknown, status = 200) => {
+    const response = NextResponse.json(body, { status });
+    return personal ? markPrivateNoStore(response) : response;
+  };
   let handle = (searchParams.get("handle") || "").toLowerCase().trim();
 
-  if (searchParams.get("mine") === "1") {
+  if (personal) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      return NextResponse.json({ error: "Sign in first." }, { status: 401 });
+      return respond({ error: "Sign in first." }, 401);
     }
     const byUser = await rawSupabase.from("candidates").select("handle").eq("auth_user_id", user.id).maybeSingle();
     const byEmail = byUser.data?.handle || !user.email
@@ -38,14 +44,14 @@ export async function GET(req: NextRequest) {
       : await rawSupabase.from("candidates").select("handle").ilike("email", user.email).maybeSingle();
     handle = String(byUser.data?.handle || byEmail?.data?.handle || "").toLowerCase().trim();
     if (!handle) {
-      return NextResponse.json({ error: "No portfolio yet." }, { status: 404 });
+      return respond({ error: "No portfolio yet." }, 404);
     }
   }
 
   if (!handle || handle === DOSSIER_DRAFTS_KEY) {
-    return NextResponse.json(
+    return respond(
       { error: handle ? "Handle not found in Vault." : "Handle parameter required." },
-      { status: handle ? 404 : 400 }
+      handle ? 404 : 400
     );
   }
 
@@ -157,7 +163,7 @@ export async function GET(req: NextRequest) {
             })) || []
         };
 
-        return NextResponse.json(record);
+        return respond(record);
       }
     } catch (err) {
       console.error("Supabase GET error:", err);
@@ -168,12 +174,12 @@ export async function GET(req: NextRequest) {
   const record = store[handle];
 
   if (!record) {
-    return NextResponse.json({ error: "Handle not found in Vault." }, { status: 404 });
+    return respond({ error: "Handle not found in Vault." }, 404);
   }
 
   const stored = publicVaultRecord(record);
   if (Array.isArray(stored.skills)) stored.skills = repairSkillList(stored.skills);
-  return NextResponse.json(stored);
+  return respond(stored);
 }
 
 export async function POST(req: NextRequest) {

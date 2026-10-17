@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { BETA_COOKIE, isBetaEnforced } from "@/lib/betaAccess";
 import { decideDraftHandle, sanitizeDraftPayload } from "@/lib/dossierDraft";
 import { findCandidateForUser, requireDraftAccess } from "@/lib/vaultSession";
+import { markPrivateNoStore } from "@/lib/httpCache";
+
+function json(body: unknown, init?: { status?: number }) {
+  return markPrivateNoStore(NextResponse.json(body, init));
+}
 
 export const dynamic = "force-dynamic";
 
@@ -20,13 +25,13 @@ export async function GET() {
     .maybeSingle();
 
   if (error) {
-    return NextResponse.json({ error: error.message || "Could not load the draft." }, { status: 500 });
+    return json({ error: error.message || "Could not load the draft." }, { status: 500 });
   }
   if (!data?.payload || typeof data.payload !== "object") {
-    return NextResponse.json({ error: "No draft yet." }, { status: 404 });
+    return json({ error: "No draft yet." }, { status: 404 });
   }
 
-  return NextResponse.json({
+  return json({
     payload: data.payload,
     updatedAt: data.updated_at,
     handle: String(data.handle || "")
@@ -35,7 +40,7 @@ export async function GET() {
 
 export async function PUT(req: NextRequest) {
   if (betaBlocked(req)) {
-    return NextResponse.json({ error: "Private beta. Studio access is required." }, { status: 401 });
+    return json({ error: "Private beta. Studio access is required." }, { status: 401 });
   }
 
   const access = await requireDraftAccess();
@@ -43,16 +48,16 @@ export async function PUT(req: NextRequest) {
 
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) {
-    return NextResponse.json({ error: "Draft payload must be an object." }, { status: 400 });
+    return json({ error: "Draft payload must be an object." }, { status: 400 });
   }
   const record = body as { handle?: unknown; payload?: unknown };
   const sanitized = sanitizeDraftPayload(record.payload);
-  if (!sanitized.ok) return NextResponse.json({ error: sanitized.error }, { status: 400 });
+  if (!sanitized.ok) return json({ error: sanitized.error }, { status: 400 });
 
   const found = await findCandidateForUser(access.admin, access.user);
-  if ("error" in found) return NextResponse.json({ error: found.error }, { status: 500 });
+  if ("error" in found) return json({ error: found.error }, { status: 500 });
   if ("conflict" in found) {
-    return NextResponse.json({ error: "This account does not own that page." }, { status: 403 });
+    return json({ error: "This account does not own that page." }, { status: 403 });
   }
 
   const requested = String(record.handle || sanitized.payload.handle || "").toLowerCase().trim();
@@ -63,7 +68,7 @@ export async function PUT(req: NextRequest) {
       .select("handle, auth_user_id, email")
       .eq("handle", requested)
       .maybeSingle();
-    if (existing.error) return NextResponse.json({ error: existing.error.message }, { status: 500 });
+    if (existing.error) return json({ error: existing.error.message }, { status: 500 });
     if (existing.data?.handle) {
       const sameUser = existing.data.auth_user_id === access.user.id;
       const sameEmail = Boolean(
@@ -79,7 +84,7 @@ export async function PUT(req: NextRequest) {
     ownerHandle: found.candidate?.handle || "",
     requestedHandleTakenBySomeoneElse: taken
   });
-  if (!decision.ok) return NextResponse.json({ error: decision.error }, { status: decision.status });
+  if (!decision.ok) return json({ error: decision.error }, { status: decision.status });
 
   const updatedAt = new Date().toISOString();
   const { error } = await access.admin.from("dossier_drafts").upsert(
@@ -91,21 +96,21 @@ export async function PUT(req: NextRequest) {
     },
     { onConflict: "auth_user_id" }
   );
-  if (error) return NextResponse.json({ error: error.message || "Could not save the draft." }, { status: 500 });
+  if (error) return json({ error: error.message || "Could not save the draft." }, { status: 500 });
 
-  return NextResponse.json({ success: true, handle: decision.handle, updatedAt });
+  return json({ success: true, handle: decision.handle, updatedAt });
 }
 
 export async function DELETE(req: NextRequest) {
   if (betaBlocked(req)) {
-    return NextResponse.json({ error: "Private beta. Studio access is required." }, { status: 401 });
+    return json({ error: "Private beta. Studio access is required." }, { status: 401 });
   }
 
   const access = await requireDraftAccess();
   if (!access.ok) return access.response;
 
   const { error } = await access.admin.from("dossier_drafts").delete().eq("auth_user_id", access.user.id);
-  if (error) return NextResponse.json({ error: error.message || "Could not discard the draft." }, { status: 500 });
+  if (error) return json({ error: error.message || "Could not discard the draft." }, { status: 500 });
 
-  return NextResponse.json({ success: true });
+  return json({ success: true });
 }

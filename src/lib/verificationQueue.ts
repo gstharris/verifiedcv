@@ -24,14 +24,6 @@ export function nextPortfolioVerificationStep(input: {
     };
   }
 
-  if (!input.linkedinVerified) {
-    return {
-      id: "linkedin",
-      title: "Verify LinkedIn",
-      detail: "Connect the LinkedIn account that matches this career history."
-    };
-  }
-
   const chapters = input.chapters || [];
   const unverified = chapters.find((chapter) => chapter.level === 0);
   if (unverified) {
@@ -66,7 +58,9 @@ export function nextPortfolioVerificationStep(input: {
   return {
     id: "done",
     title: "Portfolio verification is in good shape",
-    detail: "Identity is confirmed and every chapter has proof. You can still invite more colleagues."
+    detail: input.linkedinVerified
+      ? "Identity is confirmed and every chapter has proof. You can still invite more colleagues."
+      : "Your email is confirmed and every chapter has proof. LinkedIn stays optional."
   };
 }
 
@@ -91,14 +85,14 @@ export function verificationStatusLine(input: {
   ].filter(Boolean);
   const next = [
     !input.emailVerified ? "email" : "",
-    !input.linkedinVerified ? "LinkedIn" : "",
     ...chapters.filter((chapter) => chapter.level === 0).map((chapter) => `your work at ${chapter.company}`),
     !input.phoneVerified ? "phone" : ""
   ].filter(Boolean);
 
   const doneText = done.length ? `${joinList(done)} ${done.length === 1 ? "is" : "are"} confirmed.` : "Nothing is confirmed yet.";
   const lead = doneText.charAt(0).toUpperCase() + doneText.slice(1);
-  if (!next.length) return `${lead} You can still ask another colleague.`;
+  const optional = input.emailVerified && !input.linkedinVerified ? " LinkedIn is optional." : "";
+  if (!next.length) return `${lead} You can still ask another colleague.${optional}`;
   const nextText = next.length === 1 ? `Verify ${next[0]} next.` : `Verify ${next[0]}, or ${next[1]}, next.`;
-  return `${lead} ${nextText}`;
+  return `${lead} ${nextText}${optional}`;
 }

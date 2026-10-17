@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { createClient } from "@/lib/supabase/server";
+import { markPrivateNoStore } from "@/lib/httpCache";
 
 export async function requireDraftAccess(): Promise<
   | { ok: true; user: User; admin: SupabaseClient }
@@ -10,7 +11,7 @@ export async function requireDraftAccess(): Promise<
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return {
       ok: false,
-      response: NextResponse.json({ error: "Draft storage is not configured." }, { status: 503 })
+      response: markPrivateNoStore(NextResponse.json({ error: "Draft storage is not configured." }, { status: 503 }))
     };
   }
 
@@ -21,7 +22,7 @@ export async function requireDraftAccess(): Promise<
   if (!user) {
     return {
       ok: false,
-      response: NextResponse.json({ error: "Sign in first." }, { status: 401 })
+      response: markPrivateNoStore(NextResponse.json({ error: "Sign in first." }, { status: 401 }))
     };
   }
 
@@ -29,7 +30,7 @@ export async function requireDraftAccess(): Promise<
   if (!admin) {
     return {
       ok: false,
-      response: NextResponse.json({ error: "Draft storage is not configured." }, { status: 503 })
+      response: markPrivateNoStore(NextResponse.json({ error: "Draft storage is not configured." }, { status: 503 }))
     };
   }
 

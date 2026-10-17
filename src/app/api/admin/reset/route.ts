@@ -12,6 +12,7 @@ import { clearHandleOwnerCookie } from "@/lib/handleOwner";
 import { clearLinkedInSessionCookie, clearOAuthStateCookie } from "@/lib/linkedin";
 import { getServiceRoleClient } from "@/lib/serviceRole";
 import { createClient } from "@/lib/supabase/server";
+import { markPrivateNoStore } from "@/lib/httpCache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ async function callerUser() {
 }
 
 function jsonResponse(body: unknown, status: number, req: NextRequest, signOut: boolean) {
-  const response = NextResponse.json(body, { status });
+  const response = markPrivateNoStore(NextResponse.json(body, { status }));
   if (!signOut) return response;
   clearHandleOwnerCookie(response);
   clearLinkedInSessionCookie(response);
@@ -52,9 +53,9 @@ export async function GET() {
   });
   if (!access.ok) {
     logAdminReset({ phase: "denied", actor: caller?.email || null, status: access.status });
-    return NextResponse.json({ error: access.error }, { status: access.status });
+    return markPrivateNoStore(NextResponse.json({ error: access.error }, { status: access.status }));
   }
-  return NextResponse.json({ allowed: true, email: caller?.email || null, userId: caller?.id || null });
+  return markPrivateNoStore(NextResponse.json({ allowed: true, email: caller?.email || null, userId: caller?.id || null }));
 }
 
 export async function POST(req: NextRequest) {
@@ -66,17 +67,17 @@ export async function POST(req: NextRequest) {
   });
   if (!access.ok) {
     logAdminReset({ phase: "denied", actor: caller?.email || null, status: access.status });
-    return NextResponse.json({ error: access.error }, { status: access.status });
+    return markPrivateNoStore(NextResponse.json({ error: access.error }, { status: access.status }));
   }
 
   const parsed = parseAdminResetRequest(await req.json().catch(() => ({})));
-  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+  if (!parsed.ok) return markPrivateNoStore(NextResponse.json({ error: parsed.error }, { status: 400 }));
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const admin = getServiceRoleClient();
   if (!url || !serviceRoleKey || !admin) {
-    return NextResponse.json({ error: "Admin reset storage is not configured." }, { status: 503 });
+    return markPrivateNoStore(NextResponse.json({ error: "Admin reset storage is not configured." }, { status: 503 }));
   }
 
   logAdminReset({
@@ -127,6 +128,6 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Reset failed.";
     logAdminReset({ phase: "error", actor: caller?.email || null, error: message });
-    return NextResponse.json({ error: message }, { status: 500 });
+    return markPrivateNoStore(NextResponse.json({ error: message }, { status: 500 }));
   }
 }
