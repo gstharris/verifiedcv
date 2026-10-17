@@ -21,7 +21,6 @@ import {
   FileCheck,
   Trash2,
   UploadCloud,
-  ClipboardPaste,
   UserCheck,
   X,
   RotateCcw,
@@ -52,6 +51,7 @@ import { chapterProofItems, companyVerificationTooltip, endorsedClaimIndexes, fi
 import { corporateEmailMatchesCompany } from "@/lib/corporateEmail";
 import { interpretStudioMessage } from "@/lib/allyIntent";
 import { suggestStudioActions, unknownStudioReply, type StudioAction, type StudioActionPlan } from "@/lib/studioActions";
+import { resolveStudioPhase } from "@/lib/studioPhase";
 import { NextActionDock } from "@/components/studio/NextActionDock";
 import { interpretVerificationAsk } from "@/lib/chapterMatch";
 import { nextPortfolioVerificationStep, verificationStatusLine } from "@/lib/verificationQueue";
@@ -594,9 +594,10 @@ export default function StudioPage() {
   const [isPortfolioSaved, setIsPortfolioSaved] = useState(false);
   const [portfolioStarted, setPortfolioStarted] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
+  const [entryReady, setEntryReady] = useState(false);
   const [hasSession, setHasSession] = useState(false);
   const [vaultChecked, setVaultChecked] = useState(false);
-  const [signInOnly, setSignInOnly] = useState(false);
+  const [signInRequested, setSignInRequested] = useState(false);
   const [dockExpanded, setDockExpanded] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [sourcePasteOpen, setSourcePasteOpen] = useState(false);
@@ -626,6 +627,7 @@ export default function StudioPage() {
   const [isReplayingProof, setIsReplayingProof] = useState(false);
   const skipNextAutosaveRef = useRef(true);
   const restoredDraftRef = useRef(false);
+  const pendingReviewRef = useRef(false);
   const autosaveAbortRef = useRef<AbortController | null>(null);
   const loggingOutRef = useRef(false);
   const publishedSnapshotRef = useRef<DossierSnapshot | null>(null);
@@ -945,7 +947,7 @@ export default function StudioPage() {
             rememberPublished(null);
             setIsPortfolioSaved(false);
           }
-          await adoptServerDraft();
+          if (!pendingReviewRef.current) await adoptServerDraft();
           if (!cancelled) setVaultChecked(true);
           return;
         }
@@ -955,7 +957,7 @@ export default function StudioPage() {
             rememberPublished(null);
             setIsPortfolioSaved(false);
           }
-          await adoptServerDraft();
+          if (!pendingReviewRef.current) await adoptServerDraft();
           if (!cancelled) setVaultChecked(true);
           return;
         }
@@ -963,6 +965,13 @@ export default function StudioPage() {
         rememberPublished(baseline);
         writeStudioRecord(STUDIO_SAVED_KEY, baseline);
         setIsPortfolioSaved(true);
+        if (pendingReviewRef.current) {
+          setHandle(String(data.handle || "").toLowerCase().trim());
+          skipNextAutosaveRef.current = true;
+          setSaveStatus("saved");
+          if (!cancelled) setVaultChecked(true);
+          return;
+        }
         const draftRes = await fetch("/api/vault/draft", { credentials: "include" });
         if (cancelled) return;
         if (draftRes.ok) {
@@ -1028,14 +1037,6 @@ export default function StudioPage() {
     }
     persistPortfolioLocally(false);
     onReady();
-  };
-
-  const lockIfUnsaved = (e: React.SyntheticEvent) => {
-    if (isPortfolioSaved) return;
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.target instanceof HTMLElement) e.target.blur();
-    setIsClaimModalOpen(true);
   };
 
   const openVerifyHub = (milestone: Milestone) => {
@@ -1181,10 +1182,7 @@ export default function StudioPage() {
     if (typeof window === "undefined") return;
 
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get("signin") === "1") {
-      setSignInOnly(true);
-      setIsClaimModalOpen(true);
-    }
+    if (urlParams.get("signin") === "1") setSignInRequested(true);
     if (urlParams.get("fresh") === "1") {
       clearStudioPortfolioStorage();
       localStorage.removeItem("vcv_pending_payload");
@@ -1283,41 +1281,13 @@ export default function StudioPage() {
     const draft = readStudioRecord<any>(STUDIO_DRAFT_KEY);
     const pendingRaw = localStorage.getItem("vcv_pending_payload");
 
-    if (saved && hasPortfolioContent(saved)) {
-      skipNextAutosaveRef.current = true;
-      const useDraft = Boolean(draft && hasPortfolioContent(draft) && hasUnpublishedChanges(saved, draft));
-      rememberPublished(saved);
-      applyPortfolioRecord(useDraft ? draft : saved);
-      setIsPortfolioSaved(true);
-      setSaveStatus("saved");
-      setChatMessages([
-        {
-          sender: "ally",
-          text: "Your page is saved. I'll point you at the next step."
-        }
-      ]);
-    } else if (draft && hasPortfolioContent(draft)) {
-      applyPortfolioRecord(draft);
-      setChatMessages([
-        {
-          sender: "ally",
-          text: "Loaded your draft portfolio. Review your chapters and save when ready."
-        }
-      ]);
-      if (justAuthenticated) {
-        // Wait for state to settle before automatically trying to save
-        setTimeout(() => {
-          setIsClaimModalOpen(true);
-          // We could auto-submit here, but it's safer to let the user click save again
-          // in case they need to change their handle.
-        }, 100);
-      }
-    } else if (pendingRaw) {
+    if (pendingRaw) {
       try {
         const parsed = JSON.parse(pendingRaw);
         localStorage.removeItem("vcv_pending_payload");
 
         if (resumeImportHasContent(parsed)) {
+          pendingReviewRef.current = true;
           applyPortfolioRecord(parsed);
           console.info(JSON.stringify(resumeImportLog("pending_payload", parsed)));
           setChatMessages([
@@ -1326,16 +1296,24 @@ export default function StudioPage() {
               text: "Upload successful. Please review your resume below and edit as necessary. Once it looks good, save your portfolio to begin verification."
             }
           ]);
-          if (justAuthenticated) {
-            setTimeout(() => setIsClaimModalOpen(true), 100);
-          }
-        } else if (parsed.rawText && parsed.rawText.trim().length > 0) {
-          executeIngest(parsed.rawText);
+        } else if (parsed.rawText && String(parsed.rawText).trim().length > 0) {
+          setPortfolioStarted(true);
+          void executeIngest(String(parsed.rawText));
         }
       } catch {
-        // ignore
+        // ignore unreadable local resume payloads
       }
+    } else if (draft && hasPortfolioContent(draft)) {
+      applyPortfolioRecord(draft);
+      setChatMessages([
+        {
+          sender: "ally",
+          text: "Loaded your draft portfolio. Review your chapters and save when ready."
+        }
+      ]);
     }
+
+    setEntryReady(true);
 
     if (justAuthenticated) {
       window.history.replaceState({}, document.title, "/studio");
@@ -1460,8 +1438,8 @@ export default function StudioPage() {
     }
     persistPortfolioLocally(false, payload);
 
-    if (!user) return;
-    if (isPortfolioSaved && !snapshotReady && !vaultChecked) return;
+    if (!user || !vaultChecked) return;
+    if (isPortfolioSaved && !snapshotReady) return;
 
     const dirty = !isPortfolioSaved || hasUnpublishedChanges(publishedSnapshotRef.current, payload);
     if (!dirty) {
@@ -2678,19 +2656,12 @@ export default function StudioPage() {
   };
 
   const canPublish = hasPortfolioContent({ milestones, summaryStatement, highlights, portfolioAssets });
-  const hasWork = portfolioStarted || canPublish || isPortfolioSaved;
-  const waitingForStudio = !hasWork && (!authChecked || (hasSession && !vaultChecked));
 
   useEffect(() => {
     return () => {
       if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current);
     };
   }, []);
-
-  useEffect(() => {
-    if (waitingForStudio || signInOnly || hasSession || hasWork) return;
-    router.replace("/");
-  }, [hasSession, hasWork, router, signInOnly, waitingForStudio]);
 
   const beginReplaceUpload = () => {
     replaceSourceRef.current = true;
@@ -2755,6 +2726,24 @@ export default function StudioPage() {
     [changeSummary.hasChanges, highlights, isPortfolioSaved, milestones, nextVerifyStep.id, nextVerifyStep.title, portfolioAssets, summaryStatement]
   );
   studioPlanRef.current = studioPlan;
+
+  const hasReviewableContent = portfolioStarted || canPublish;
+  const phase = resolveStudioPhase({
+    authChecked,
+    entryReady,
+    vaultChecked,
+    hasSession,
+    signInRequested,
+    hasReviewableContent,
+    hasConfirmedLiveDossier: isPortfolioSaved,
+    hasUnpublishedChanges: Boolean(publishedSnapshot) && changeSummary.hasChanges
+  });
+  const editorPhase = phase === "draft" || phase === "live" || phase === "live_dirty";
+
+  useEffect(() => {
+    if (phase !== "signed_out") return;
+    router.replace("/");
+  }, [phase, router]);
 
   const runStudioAction = (action: StudioAction) => {
     handleActionPrompt(action.id);
@@ -2906,7 +2895,7 @@ export default function StudioPage() {
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
-          {(canPublish || portfolioStarted) && !isPortfolioSaved && (
+          {editorPhase && (canPublish || portfolioStarted) && !isPortfolioSaved && (
             <button
               type="button"
               onClick={clearCanvas}
@@ -2918,7 +2907,7 @@ export default function StudioPage() {
             </button>
           )}
 
-          {isPortfolioSaved ? (
+          {editorPhase && isPortfolioSaved ? (
             <>
               {headerStatus && (
                 <span className="text-[11px] font-semibold text-slate-500">{headerStatus}</span>
@@ -2969,7 +2958,7 @@ export default function StudioPage() {
               </button>
             </>
           ) : (
-            canPublish && (
+            editorPhase && canPublish && (
               <button
                 type="button"
                 onClick={() => setIsClaimModalOpen(true)}
@@ -3001,7 +2990,7 @@ export default function StudioPage() {
         onChange={handleFileUpload}
       />
 
-      {hasWork && (
+      {editorPhase && (
         <NextActionDock
           primary={studioPlan.primary}
           suggestions={studioPlan.suggestions}
@@ -3020,64 +3009,50 @@ export default function StudioPage() {
       <div className="flex-1 flex overflow-hidden min-h-0">
         <main className="min-h-0 flex-1 overflow-y-auto w-full">
           <div className="mx-auto max-w-5xl space-y-8 p-4 pb-24 antialiased sm:p-8 sm:pb-28 md:pb-44">
-          {waitingForStudio || (!hasWork && !hasSession && !signInOnly) ? (
+          {phase === "loading" || phase === "signed_out" || phase === "sign_in" ? (
             <p className="pt-16 text-center text-sm font-semibold text-slate-500">
-              {waitingForStudio ? "Opening your studio…" : "Taking you to the start page…"}
+              {phase === "signed_out" ? "Taking you to the start page…" : phase === "sign_in" ? "Sign in to open your portfolio." : "Opening your studio…"}
             </p>
-          ) : !portfolioStarted && !canPublish ? (
+          ) : phase === "empty" ? (
             <div className="bg-white border border-[#E2E8F0] rounded-3xl p-8 sm:p-10 text-center space-y-6 shadow-xs max-w-2xl mx-auto mt-4">
               <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#059669] mx-auto">
                 <UploadCloud className="w-7 h-7" />
               </div>
 
               <div className="space-y-2">
-                <h2 className="text-xl font-black text-[#0F172A]">{hasSession ? "Upload your resume" : "Start your portfolio"}</h2>
+                <h2 className="text-xl font-black text-[#0F172A]">Upload your resume</h2>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                  {hasSession
-                    ? "You are signed in, and this page does not have a resume yet. Upload a file or paste the text."
-                    : "Upload a resume, or start with the work you want to show. A name, an email, and one piece of work is enough to publish. Experience is optional."}
+                  You are signed in, and this page does not have a resume yet. Upload a file or paste the text.
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+              <div className="space-y-3 pt-1">
                 <button
                   type="button"
                   disabled={isProcessing}
                   onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                  className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
                 >
                   <UploadCloud className="w-4 h-4 text-emerald-400" />
-                  <span>{isProcessing ? "Analyzing..." : "Upload Document"}</span>
+                  <span>{isProcessing ? "Analyzing..." : "Upload resume"}</span>
                 </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPortfolioStarted(true)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#059669] hover:bg-emerald-600 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
-                >
-                  <span>Start with your work</span>
-                </button>
-
-                {!user && (
+                <div className="flex items-center justify-center gap-4">
                   <button
                     type="button"
-                    onClick={() => setIsClaimModalOpen(true)}
-                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-[#E2E8F0] bg-white hover:bg-slate-50 text-[#0F172A] text-xs font-bold transition-all cursor-pointer"
+                    disabled={isProcessing}
+                    onClick={() => setActiveTab("paste")}
+                    className="text-xs font-semibold text-slate-500 hover:text-[#0F172A] cursor-pointer disabled:opacity-50"
                   >
-                    <span>Sign in</span>
+                    Paste resume
                   </button>
-                )}
-
-                <button
-                  type="button"
-                  disabled={isProcessing}
-                  onClick={() => setActiveTab("paste")}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
-                >
-                  <ClipboardPaste className="w-4 h-4 text-indigo-600" />
-                  <span>Paste Resume Text</span>
-                </button>
-
+                  <button
+                    type="button"
+                    onClick={() => setPortfolioStarted(true)}
+                    className="text-xs font-semibold text-slate-500 hover:text-[#0F172A] cursor-pointer"
+                  >
+                    Start from scratch
+                  </button>
+                </div>
               </div>
 
               {activeTab === "paste" && (
@@ -3112,16 +3087,7 @@ export default function StudioPage() {
               )}
             </div>
           ) : (
-            <div
-              className="flex flex-col gap-8"
-              onFocusCapture={lockIfUnsaved}
-              onClickCapture={(e) => {
-                const target = e.target as HTMLElement;
-                if (!isPortfolioSaved && target.closest("button, input, textarea, select")) {
-                  lockIfUnsaved(e);
-                }
-              }}
-            >
+            <div className="flex flex-col gap-8">
               <nav
                 aria-label="Resume sections"
                 className="sticky top-0 z-20 -mx-4 px-4 sm:-mx-8 sm:px-8 py-2.5 bg-[#F8FAFC]/95 backdrop-blur-sm border-b border-[#E2E8F0] flex flex-col gap-2"
@@ -4610,7 +4576,7 @@ export default function StudioPage() {
       )}
 
       {/* SIGNUP & HANDLE CLAIM MODAL */}
-      {isClaimModalOpen && (
+      {(phase === "sign_in" || isClaimModalOpen) && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-lg space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
@@ -4620,7 +4586,10 @@ export default function StudioPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setIsClaimModalOpen(false)}
+                onClick={() => {
+                  setIsClaimModalOpen(false);
+                  setSignInRequested(false);
+                }}
                 className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />

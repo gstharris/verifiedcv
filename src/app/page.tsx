@@ -41,13 +41,13 @@ export default function VerifiedCVLandingPage() {
   }, []);
 
   useEffect(() => {
+    if (isProcessing) return;
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch("/api/vault?mine=1", { credentials: "include" });
-        if (!cancelled && (res.ok || res.status === 404)) {
-          router.replace("/studio");
-        }
+        if (cancelled) return;
+        if (res.ok || res.status === 404) router.replace("/studio");
       } catch {
         // Guests stay on the start page.
       }
@@ -55,7 +55,7 @@ export default function VerifiedCVLandingPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [isProcessing, router]);
 
   React.useEffect(() => {
     const handleCount = DEMO_HANDLES.length;
