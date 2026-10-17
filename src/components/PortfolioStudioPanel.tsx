@@ -91,13 +91,11 @@ function titleFromFile(name: string) {
 export default function PortfolioStudioPanel({
   assets,
   handle,
-  saved,
   addSignal = 0,
   onAssetsChange
 }: {
   assets: PortfolioAsset[];
   handle: string;
-  saved: boolean;
   addSignal?: number;
   onAssetsChange: (assets: PortfolioAsset[]) => void;
 }) {
@@ -167,8 +165,8 @@ export default function PortfolioStudioPanel({
 
   const uploadFile = async (file: File) => {
     setError("");
-    if (!saved) {
-      setError("Save your page first, then upload a file.");
+    if (!handle.trim()) {
+      setError("Save and publish first, then upload a file. A public link works before that.");
       return;
     }
     if (!isAllowedPortfolioUpload(file.name)) {
@@ -200,7 +198,6 @@ export default function PortfolioStudioPanel({
     <input
       type="url"
       value={url}
-      readOnly={!saved}
       onChange={(e) => {
         setUrl(e.target.value);
         setAttachedName("");
@@ -244,7 +241,6 @@ export default function PortfolioStudioPanel({
         <div className="relative shrink-0">
           <button
             type="button"
-            disabled={!saved}
             onClick={() => setMenuOpen((open) => !open)}
             className="inline-flex items-center gap-1 text-xs font-bold text-[#059669] bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1.5 rounded-lg cursor-pointer disabled:opacity-50"
           >
@@ -281,7 +277,6 @@ export default function PortfolioStudioPanel({
         <input
           type="text"
           value={title}
-          readOnly={!saved}
           onChange={(e) => setTitle(e.target.value)}
           placeholder={form.title}
           className="w-full text-xs p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] focus:outline-none focus:border-[#059669]"
@@ -293,7 +288,6 @@ export default function PortfolioStudioPanel({
               <input
                 type="text"
                 value={issuer}
-                readOnly={!saved}
                 onChange={(e) => setIssuer(e.target.value)}
                 placeholder={form.issuer}
                 className="w-full text-xs p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] focus:outline-none focus:border-[#059669]"
@@ -303,7 +297,6 @@ export default function PortfolioStudioPanel({
               <input
                 type="text"
                 value={issuedAt}
-                readOnly={!saved}
                 onChange={(e) => setIssuedAt(e.target.value)}
                 placeholder={form.issuedAt}
                 className="w-full text-xs p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] focus:outline-none focus:border-[#059669]"
@@ -319,7 +312,6 @@ export default function PortfolioStudioPanel({
         {form.description && (
           <textarea
             value={description}
-            readOnly={!saved}
             onChange={(e) => setDescription(e.target.value)}
             placeholder={form.description}
             rows={2}
@@ -331,7 +323,6 @@ export default function PortfolioStudioPanel({
         {title.trim() && (
           <button
             type="button"
-            disabled={!saved}
             onClick={() => addAsset()}
             className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-[#0F172A] hover:bg-slate-800 px-3 py-2 rounded-xl cursor-pointer disabled:opacity-50"
           >

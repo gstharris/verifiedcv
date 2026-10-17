@@ -1030,7 +1030,7 @@ export default function StudioPage() {
         ...prev,
         {
           sender: "ally",
-          text: "Save your portfolio first. Editing, verification, and corroboration start after this profile is saved."
+          text: "Save and publish first. Verification starts after this page is live."
         }
       ]);
       return;
@@ -1742,12 +1742,10 @@ export default function StudioPage() {
       return;
     }
     if (actionType === "edit_summary") {
-      requirePortfolioSaved(() => {
-        if (!summaryStatement.trim()) setSummaryEditor(true);
-        show("summary");
-        window.setTimeout(() => document.getElementById("summary-text")?.focus(), 50);
-        say(isPortfolioSaved ? "Summary is open. It stays in your draft until you publish." : "Summary is open. Write the short version of your work.");
-      });
+      if (!summaryStatement.trim()) setSummaryEditor(true);
+      show("summary");
+      window.setTimeout(() => document.getElementById("summary-text")?.focus(), 50);
+      say(isPortfolioSaved ? "Summary is open. It stays in your draft until you publish." : "Summary is open. Write the short version of your work.");
       return;
     }
     if (actionType === "review_resume") {
@@ -1965,21 +1963,19 @@ export default function StudioPage() {
 
     const studioMessage = interpretStudioMessage(query);
     if (studioMessage.type === "skills") {
-      requirePortfolioSaved(() => {
-        show("skills");
-        if (studioMessage.skill) {
-          const skill = studioMessage.skill;
-          if (skills.some((item) => item.toLowerCase() === skill.toLowerCase())) {
-            say(`${skill} is already on your skills.`);
-            return;
-          }
-          setSkills((prev) => [...prev, skill]);
-          say("Skills are open.");
+      show("skills");
+      if (studioMessage.skill) {
+        const skill = studioMessage.skill;
+        if (skills.some((item) => item.toLowerCase() === skill.toLowerCase())) {
+          say(`${skill} is already on your skills.`);
           return;
         }
-        window.setTimeout(() => document.getElementById("skill-input")?.focus(), 50);
-        say("Skills are open. Type one in the field and press Add, or remove one with the ×.");
-      });
+        setSkills((prev) => [...prev, skill]);
+        say("Skills are open.");
+        return;
+      }
+      window.setTimeout(() => document.getElementById("skill-input")?.focus(), 50);
+      say("Skills are open. Type one in the field and press Add, or remove one with the ×.");
       return;
     }
     if (studioMessage.type === "sample_work") {
@@ -2009,53 +2005,45 @@ export default function StudioPage() {
       return;
     }
     if (studioMessage.type === "summary") {
-      requirePortfolioSaved(() => {
-        if (!summaryStatement.trim()) setSummaryEditor(true);
-        show("summary");
-        window.setTimeout(() => document.getElementById("summary-text")?.focus(), 50);
-        say(isPortfolioSaved ? "Summary is open. It stays in your draft until you publish." : "Summary is open. Write the short version of your work.");
-      });
+      if (!summaryStatement.trim()) setSummaryEditor(true);
+      show("summary");
+      window.setTimeout(() => document.getElementById("summary-text")?.focus(), 50);
+      say(isPortfolioSaved ? "Summary is open. It stays in your draft until you publish." : "Summary is open. Write the short version of your work.");
       return;
     }
     if (studioMessage.type === "headline" || studioMessage.type === "name" || studioMessage.type === "location") {
-      requirePortfolioSaved(() => {
-        show("identity-card");
-        if (studioMessage.type === "name") {
-          window.setTimeout(() => document.getElementById("candidate-name")?.focus(), 50);
-          say("Your name is ready at the top of the page.");
-          return;
-        }
-        if (studioMessage.type === "headline") {
-          window.setTimeout(() => document.getElementById("candidate-headline")?.focus(), 50);
-          say("The headline is ready under your name.");
-          return;
-        }
-        say("Location is on the contact row, next to LinkedIn.");
-      });
+      show("identity-card");
+      if (studioMessage.type === "name") {
+        window.setTimeout(() => document.getElementById("candidate-name")?.focus(), 50);
+        say("Your name is ready at the top of the page.");
+        return;
+      }
+      if (studioMessage.type === "headline") {
+        window.setTimeout(() => document.getElementById("candidate-headline")?.focus(), 50);
+        say("The headline is ready under your name.");
+        return;
+      }
+      say("Location is on the contact row, next to LinkedIn.");
       return;
     }
     if (studioMessage.type === "highlights") {
-      requirePortfolioSaved(() => {
-        if (!highlights.length) setHighlights([""]);
-        show("highlights");
-        say(isPortfolioSaved ? "Highlights are open. Add a line in your draft." : "Highlights are open. Add a line here.");
-      });
+      if (!highlights.length) setHighlights([""]);
+      show("highlights");
+      say(isPortfolioSaved ? "Highlights are open. Add a line in your draft." : "Highlights are open. Add a line here.");
       return;
     }
     if (studioMessage.type === "chapters") {
-      requirePortfolioSaved(() => {
-        if (studioMessage.create) addEmptyMilestone();
-        show("experience");
-        say(
-          studioMessage.create
-            ? isPortfolioSaved
-              ? "A blank chapter is at the top of Experience. It stays in your draft until you publish."
-              : "A blank chapter is at the top of Experience. Replace the company, title, and dates."
-            : isPortfolioSaved
-              ? "Experience is open. Edits stay in your draft until you publish."
-              : "Experience is open. Edit the company, title, dates, and lines on each chapter."
-        );
-      });
+      if (studioMessage.create) addEmptyMilestone();
+      show("experience");
+      say(
+        studioMessage.create
+          ? isPortfolioSaved
+            ? "A blank chapter is at the top of Experience. It stays in your draft until you publish."
+            : "A blank chapter is at the top of Experience. Replace the company, title, and dates."
+          : isPortfolioSaved
+            ? "Experience is open. Edits stay in your draft until you publish."
+            : "Experience is open. Edit the company, title, dates, and lines on each chapter."
+      );
       return;
     }
     if (studioMessage.type === "layout") {
@@ -2068,56 +2056,60 @@ export default function StudioPage() {
       return;
     }
     if (studioMessage.type === "identity") {
-      requirePortfolioSaved(() => {
-        show("identity-card");
-        if (studioMessage.field === "email") {
-          if (studioMessage.mode === "edit" || contact.emailVerified) {
-            if (contact.emailVerified) setEditingVerifiedField("email");
-            window.setTimeout(() => document.getElementById("contact-email")?.focus(), 50);
-            say(
-              contact.emailVerified
-                ? "That email is already verified. Change it here and the check comes off until you verify the new address."
-                : "The email field is ready. Update it, then I can send a code."
-            );
-            return;
-          }
+      show("identity-card");
+      if (studioMessage.field === "email") {
+        if (studioMessage.mode === "edit" || contact.emailVerified) {
+          if (contact.emailVerified) setEditingVerifiedField("email");
+          window.setTimeout(() => document.getElementById("contact-email")?.focus(), 50);
+          say(
+            contact.emailVerified
+              ? "That email is already verified. Change it here and the check comes off until you verify the new address."
+              : "The email field is ready. Update it, then I can send a code."
+          );
+          return;
+        }
+        requirePortfolioSaved(() => {
           void sendEmailCode().then((result) => {
             if (result === "missing") {
               document.getElementById("contact-email")?.focus();
               say("Enter an email in the contact row. I put the cursor there.");
             }
           });
+        });
+        return;
+      }
+      if (studioMessage.field === "phone") {
+        if (studioMessage.mode === "edit" || contact.phoneVerified) {
+          if (contact.phoneVerified) setEditingVerifiedField("phone");
+          window.setTimeout(() => document.getElementById("contact-phone")?.focus(), 50);
+          say(
+            contact.phoneVerified
+              ? "That phone is already verified. Change it here and the check comes off until you verify the new number."
+              : "The phone field is ready. Update it, then I can send a code."
+          );
           return;
         }
-        if (studioMessage.field === "phone") {
-          if (studioMessage.mode === "edit" || contact.phoneVerified) {
-            if (contact.phoneVerified) setEditingVerifiedField("phone");
-            window.setTimeout(() => document.getElementById("contact-phone")?.focus(), 50);
-            say(
-              contact.phoneVerified
-                ? "That phone is already verified. Change it here and the check comes off until you verify the new number."
-                : "The phone field is ready. Update it, then I can send a code."
-            );
-            return;
-          }
+        requirePortfolioSaved(() => {
           void sendPhoneCode().then((result) => {
             if (result === "missing") {
               document.getElementById("contact-phone")?.focus();
               say("Enter a phone number in the contact row. I put the cursor there.");
             }
           });
-          return;
-        }
-        if (contact.linkedinVerified && studioMessage.mode === "edit") {
-          setEditingVerifiedField("linkedin");
-          window.setTimeout(() => document.getElementById("contact-linkedin")?.focus(), 50);
-          say("The LinkedIn field is ready. Change the handle, then verify it again.");
-          return;
-        }
-        if (contact.linkedinVerified) {
-          say("LinkedIn is already confirmed. Use Edit on the contact row if the handle should change.");
-          return;
-        }
+        });
+        return;
+      }
+      if (contact.linkedinVerified && studioMessage.mode === "edit") {
+        setEditingVerifiedField("linkedin");
+        window.setTimeout(() => document.getElementById("contact-linkedin")?.focus(), 50);
+        say("The LinkedIn field is ready. Change the handle, then verify it again.");
+        return;
+      }
+      if (contact.linkedinVerified) {
+        say("LinkedIn is already confirmed. Use Edit on the contact row if the handle should change.");
+        return;
+      }
+      requirePortfolioSaved(() => {
         setLinkedinVerifyError("");
         persistPortfolioLocally(false);
         captureEvent("linkedin_verify_clicked", { handle: handle.toLowerCase().trim() });
@@ -2899,11 +2891,9 @@ export default function StudioPage() {
             <button
               type="button"
               onClick={clearCanvas}
-              aria-label="Clear canvas"
-              className="text-xs font-semibold text-slate-400 hover:text-red-500 transition-colors px-2 sm:px-3 py-1.5 cursor-pointer flex items-center gap-1"
+              className="text-xs font-semibold text-slate-400 hover:text-slate-700 transition-colors px-2 sm:px-3 py-1.5 cursor-pointer"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Clear Canvas</span>
+              Start over
             </button>
           )}
 
@@ -3240,21 +3230,19 @@ export default function StudioPage() {
                       id="candidate-name"
                       type="text"
                       value={fullName}
-                      readOnly={!isPortfolioSaved}
                       onChange={(e) => setFullName(e.target.value)}
                       placeholder="Candidate Legal Name"
                       spellCheck={true}
-                      className={`text-xl sm:text-2xl font-black text-[#0F172A] focus:outline-none border-b border-transparent ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
+                      className={`text-xl sm:text-2xl font-black text-[#0F172A] focus:outline-none border-b border-transparent focus:border-[#059669]`}
                     />
                     <input
                       id="candidate-headline"
                       type="text"
                       value={headline}
-                      readOnly={!isPortfolioSaved}
                       onChange={(e) => setHeadline(e.target.value)}
                       placeholder="Professional Headline"
                       spellCheck={true}
-                      className={`w-full text-xs sm:text-sm font-semibold text-slate-600 focus:outline-none border-b border-transparent ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
+                      className={`w-full text-xs sm:text-sm font-semibold text-slate-600 focus:outline-none border-b border-transparent focus:border-[#059669]`}
                     />
                   </div>
 
@@ -3266,7 +3254,7 @@ export default function StudioPage() {
                       : "bg-amber-50 border-amber-200 text-amber-800"
                   }`}>
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>{isPortfolioSaved ? (changeSummary.hasChanges ? "Unpublished changes" : "Live") : "Save to edit"}</span>
+                    <span>{isPortfolioSaved ? (changeSummary.hasChanges ? "Unpublished changes" : "Live") : "Not published"}</span>
                   </span>
                   )}
                   </div>
@@ -3280,14 +3268,14 @@ export default function StudioPage() {
                         id="contact-email"
                         type="email"
                         value={contact.email}
-                        readOnly={!isPortfolioSaved || (contact.emailVerified && editingVerifiedField !== "email")}
+                        readOnly={contact.emailVerified && editingVerifiedField !== "email"}
                         onChange={(e) => {
                           setContact({ ...contact, email: e.target.value, emailVerified: false });
                           setEmailCodeSent(false);
                           setEditingVerifiedField(null);
                         }}
                         placeholder="Work Email"
-                        className={`w-full text-xs bg-transparent focus:outline-none font-medium ${isPortfolioSaved && !(contact.emailVerified && editingVerifiedField !== "email") ? "" : "cursor-default"}`}
+                        className={`w-full text-xs bg-transparent focus:outline-none font-medium ${contact.emailVerified && editingVerifiedField !== "email" ? "cursor-default" : ""}`}
                       />
                     </div>
                     {contact.emailVerified ? (
@@ -3328,14 +3316,14 @@ export default function StudioPage() {
                         id="contact-phone"
                         type="text"
                         value={contact.phone}
-                        readOnly={!isPortfolioSaved || (contact.phoneVerified && editingVerifiedField !== "phone")}
+                        readOnly={contact.phoneVerified && editingVerifiedField !== "phone"}
                         onChange={(e) => {
                           setContact({ ...contact, phone: e.target.value, phoneVerified: false });
                           setPhoneCodeSent(false);
                           setEditingVerifiedField(null);
                         }}
                         placeholder="Phone"
-                        className={`w-full text-xs bg-transparent focus:outline-none font-medium ${isPortfolioSaved && !(contact.phoneVerified && editingVerifiedField !== "phone") ? "" : "cursor-default"}`}
+                        className={`w-full text-xs bg-transparent focus:outline-none font-medium ${contact.phoneVerified && editingVerifiedField !== "phone" ? "cursor-default" : ""}`}
                       />
                     </div>
                     {contact.phoneVerified ? (
@@ -3386,7 +3374,6 @@ export default function StudioPage() {
                           id="contact-linkedin"
                           type="text"
                           value={contact.linkedin}
-                          readOnly={!isPortfolioSaved}
                           onChange={(e) => {
                             const next = e.target.value;
                             const sameHandle = linkedInHandle(next) !== "" && linkedInHandle(next) === linkedInHandle(contact.linkedin);
@@ -3437,7 +3424,7 @@ export default function StudioPage() {
 
                   <LocationField
                     value={contact.location}
-                    saved={isPortfolioSaved}
+                    saved
                     onChange={(location) => setContact({ ...contact, location })}
                   />
                 </div>
@@ -3604,12 +3591,11 @@ export default function StudioPage() {
                     id="summary-text"
                     rows={4}
                     value={summaryStatement}
-                    readOnly={!isPortfolioSaved}
                     onChange={(e) => setSummaryStatement(e.target.value)}
                     spellCheck={true}
                     autoCorrect="on"
                     lang="en"
-                    className={`w-full text-xs text-slate-700 leading-relaxed p-3.5 rounded-xl border border-[#E2E8F0] focus:outline-none font-sans resize-y bg-[#F8FAFC] ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
+                    className={`w-full text-xs text-slate-700 leading-relaxed p-3.5 rounded-xl border border-[#E2E8F0] focus:outline-none font-sans resize-y bg-[#F8FAFC] focus:border-[#059669]`}
                   />
                 </div>
               )}
@@ -3645,7 +3631,6 @@ export default function StudioPage() {
                       <div key={index} className="flex items-start gap-2 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-2.5">
                         <AutoText
                           value={line}
-                          readOnly={!isPortfolioSaved}
                           onChange={(next) =>
                             setHighlights((prev) => prev.map((item, itemIndex) => (itemIndex === index ? next : item)))
                           }
@@ -3693,7 +3678,6 @@ export default function StudioPage() {
                             <input
                             type="text"
                             value={milestone.company}
-                            readOnly={!isPortfolioSaved}
                             onChange={(e) => {
                               const val = e.target.value;
                               setMilestones((prev) =>
@@ -3703,12 +3687,12 @@ export default function StudioPage() {
                             placeholder="Company name"
                             spellCheck={true}
                             size={Math.max(milestone.company.trim().length, 12)}
-                            className={`w-auto max-w-full font-black text-base text-[#0F172A] focus:outline-none border-b border-transparent [field-sizing:content] ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
+                            className={`w-auto max-w-full font-black text-base text-[#0F172A] focus:outline-none border-b border-transparent [field-sizing:content] focus:border-[#059669]`}
                           />
                             <CompanySitePrompt
                               company={milestone.company}
                               companyUrl={milestone.companyUrl}
-                              saved={isPortfolioSaved}
+                              saved
                               onChange={(url) =>
                                 setMilestones((prev) =>
                                   prev.map((item) => (item.id === milestone.id ? { ...item, companyUrl: url } : item))
@@ -3742,7 +3726,6 @@ export default function StudioPage() {
                           <input
                             type="text"
                             value={milestone.role}
-                            readOnly={!isPortfolioSaved}
                             onChange={(e) => {
                               const val = e.target.value;
                               setMilestones((prev) =>
@@ -3752,12 +3735,11 @@ export default function StudioPage() {
                             placeholder="Role title"
                             spellCheck={true}
                             size={Math.max(milestone.role.trim().length, 16)}
-                            className={`min-w-0 w-auto max-w-full text-xs font-semibold text-slate-600 focus:outline-none border-b border-transparent [field-sizing:content] ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
+                            className={`min-w-0 w-auto max-w-full text-xs font-semibold text-slate-600 focus:outline-none border-b border-transparent [field-sizing:content] focus:border-[#059669]`}
                           />
                           <div className="flex items-center gap-2 shrink-0">
                             <TenureEditor
                               value={milestone.period}
-                              readOnly={!isPortfolioSaved}
                               onChange={(period) =>
                                 setMilestones((prev) =>
                                   prev.map((item) => (item.id === milestone.id ? { ...item, period } : item))
@@ -3816,7 +3798,6 @@ export default function StudioPage() {
                               )}
                               <AutoText
                                 value={claimText}
-                                readOnly={!isPortfolioSaved}
                                 onChange={(next) => updateMilestoneClaim(milestone.id, claimIdx, next)}
                                 className="flex-1 text-xs text-slate-700 leading-relaxed focus:outline-none font-sans bg-transparent"
                               />
@@ -3952,7 +3933,6 @@ export default function StudioPage() {
               <PortfolioStudioPanel
                 assets={portfolioAssets}
                 handle={handle}
-                saved={isPortfolioSaved}
                 addSignal={sampleWorkAddSignal}
                 onAssetsChange={setPortfolioAssets}
               />
