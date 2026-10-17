@@ -68,6 +68,7 @@ import { hydrateChapter, packChapter } from "@/lib/chapterMeta";
 import { hasUnpublishedChanges, summarizeDossierChanges, type DossierSnapshot } from "@/lib/dossierChanges";
 import { draftDeleteBlocksCancel, EXPLICIT_PUBLISH_HEADER } from "@/lib/dossierDraft";
 import { publishDraft } from "@/lib/publishDraft";
+import { publishFailureMessage } from "@/lib/publishResult";
 import { mergePeerVerifications, mergeReplacedContact, overlayChapterProof, patchVaultIdentity, withIdentity } from "@/lib/studioSync";
 import { ReviewChangesDialog } from "@/components/studio/ReviewChangesDialog";
 import { UndoBanner } from "@/components/studio/UndoBanner";
@@ -1022,7 +1023,26 @@ export default function StudioPage() {
         writeStudioRecord(STUDIO_SAVED_KEY, baseline);
         setIsPortfolioSaved(true);
         if (pendingReviewRef.current) {
+          const liveContact = data.contact || {};
           setHandle(String(data.handle || "").toLowerCase().trim());
+          setFullName((current) => current.trim() || String(data.fullName || "").trim());
+          setContact((current) =>
+            mergeReplacedContact(
+              {
+                email: String(liveContact.email || ""),
+                phone: String(liveContact.phone || ""),
+                linkedin: String(liveContact.linkedin || ""),
+                location: String(liveContact.location || ""),
+                emailVerified: Boolean(liveContact.emailVerified),
+                phoneVerified: Boolean(liveContact.phoneVerified),
+                linkedinVerified: Boolean(liveContact.linkedinVerified)
+              },
+              current
+            )
+          );
+          setPortfolioAssets((current) =>
+            current.length > 0 || !Array.isArray(data.portfolioAssets) ? current : data.portfolioAssets
+          );
           skipNextAutosaveRef.current = true;
           setSaveStatus("saved");
           if (!cancelled) setVaultChecked(true);
@@ -2369,7 +2389,7 @@ export default function StudioPage() {
         method: "POST",
         headers: { "Content-Type": "application/json", [EXPLICIT_PUBLISH_HEADER]: "1" },
         credentials: "include",
-        body: JSON.stringify(dossierPayload)
+        body: JSON.stringify({ ...dossierPayload, explicitPublish: true })
       });
 
       const data = await res.json().catch(() => ({}));
@@ -2432,7 +2452,7 @@ export default function StudioPage() {
         method: "POST",
         headers: { "Content-Type": "application/json", [EXPLICIT_PUBLISH_HEADER]: "1" },
         credentials: "include",
-        body: JSON.stringify(proofPayload)
+        body: JSON.stringify({ ...proofPayload, explicitPublish: true })
       });
       if (!res.ok) return;
       rememberPublished(proofPayload);
@@ -2872,28 +2892,50 @@ export default function StudioPage() {
     if (!snapshot || !changeSummary.hasChanges) return;
     setReviewBusy(true);
     setReviewError("");
-    const merged = publishDraft(snapshot, buildPortfolioPayload());
     try {
+      const merged = publishDraft(snapshot, buildPortfolioPayload());
       const res = await fetch("/api/vault", {
         method: "POST",
         headers: { "Content-Type": "application/json", [EXPLICIT_PUBLISH_HEADER]: "1" },
         credentials: "include",
-        body: JSON.stringify(merged)
+        body: JSON.stringify({ ...merged, explicitPublish: true })
       });
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
-        setReviewError("Could not publish changes.");
+        setReviewError(publishFailureMessage(data));
         return;
       }
+      const keptEmail = data?.emailKept ? String(snapshot.contact?.email || snapshot.email || "") : "";
+      const publishedRecord = keptEmail
+        ? {
+            ...merged,
+            email: keptEmail,
+            contact: {
+              ...(merged.contact || {}),
+              email: keptEmail,
+              emailVerified: Boolean(snapshot.contact?.emailVerified)
+            }
+          }
+        : merged;
       skipNextAutosaveRef.current = true;
       serverDraftRef.current = false;
-      rememberPublished(merged);
-      applyPortfolioRecord(merged);
-      writeStudioRecord(STUDIO_SAVED_KEY, merged);
-      writeStudioRecord(STUDIO_DRAFT_KEY, merged);
+      rememberPublished(publishedRecord);
+      applyPortfolioRecord(publishedRecord);
+      try {
+        writeStudioRecord(STUDIO_SAVED_KEY, publishedRecord);
+        writeStudioRecord(STUDIO_DRAFT_KEY, publishedRecord);
+      } catch {
+        // The live page is already updated. A full browser store must not look like a failed publish.
+      }
       setSaveStatus("saved");
       setReviewOpen(false);
       setCancelConfirmOpen(false);
-      captureEvent("changes_published", { handle: handle.toLowerCase().trim() });
+      if (typeof data?.emailNotice === "string" && data.emailNotice.trim()) say(data.emailNotice.trim());
+      try {
+        captureEvent("changes_published", { handle: handle.toLowerCase().trim() });
+      } catch {
+        // Analytics must not undo a publish that already succeeded.
+      }
     } catch {
       setReviewError("Could not publish changes.");
     } finally {

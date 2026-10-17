@@ -128,6 +128,28 @@ describe("publishDraft", () => {
     expect(published.milestones?.[0].verifications).toEqual([{ id: "v1", name: "Live peer", verifiedAt: "2026-02-01" }]);
   });
 
+  it("keeps the live name and email when a pasted resume leaves them blank", () => {
+    const published = publishDraft(
+      {
+        handle: "gharris",
+        fullName: "Graham Harris",
+        email: "graham@example.com",
+        contact: { email: "graham@example.com", emailVerified: true }
+      },
+      {
+        fullName: "",
+        contact: { email: "", emailVerified: false },
+        milestones: [{ id: "m-new", company: "Acme", role: "Founder", claims: ["Shipped the first version of the product."] }]
+      }
+    );
+
+    expect(published.fullName).toBe("Graham Harris");
+    expect(published.handle).toBe("gharris");
+    expect(published.contact?.email).toBe("graham@example.com");
+    expect(published.contact?.emailVerified).toBe(true);
+    expect(published.email).toBe("graham@example.com");
+  });
+
   it("keeps the draft linkedin subject when the draft already has one", () => {
     expect(publishDraft({ linkedinSub: "live-sub" }, { linkedinSub: "draft-sub" }).linkedinSub).toBe("draft-sub");
   });

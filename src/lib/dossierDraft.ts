@@ -8,6 +8,12 @@ export function isExplicitPublish(value: string | null | undefined) {
   return value === "1";
 }
 
+export function requestPublishesLive(header: string | null | undefined, body: unknown) {
+  if (isExplicitPublish(header)) return true;
+  if (!body || typeof body !== "object") return false;
+  return (body as { explicitPublish?: unknown }).explicitPublish === true;
+}
+
 /** A local-only draft has nothing on the server to delete. Those responses must not block cancel. */
 export function draftDeleteBlocksCancel(status: number, serverDraftKnown: boolean) {
   if (status >= 200 && status < 300) return false;
@@ -79,6 +85,7 @@ function withoutDraftFields<T extends Record<string, unknown>>(record: T) {
   delete rest.draft;
   delete rest.draftPayload;
   delete rest.dossierDraft;
+  delete rest.explicitPublish;
   return rest;
 }
 

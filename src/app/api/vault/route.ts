@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin, supabase as rawSupabase } from "@/lib/supabase";
 import { createClient } from "@/lib/supabase/server";
 import { clearFileDraftsAfterPublish, getVaultStore, saveToVaultStore } from "@/lib/store";
-import { DOSSIER_DRAFTS_KEY, EXPLICIT_PUBLISH_HEADER, PUBLIC_CANDIDATE_COLUMNS, draftDeleteIsMissingTable, isExplicitPublish, publicVaultRecord } from "@/lib/dossierDraft";
+import { DOSSIER_DRAFTS_KEY, EXPLICIT_PUBLISH_HEADER, PUBLIC_CANDIDATE_COLUMNS, draftDeleteIsMissingTable, requestPublishesLive, publicVaultRecord } from "@/lib/dossierDraft";
+import { publishEmailChoice } from "@/lib/publishResult";
 import { BETA_COOKIE, isBetaEnforced } from "@/lib/betaAccess";
 import { getAppUrl } from "@/lib/appUrl";
 import {
@@ -204,6 +205,8 @@ export async function POST(req: NextRequest) {
     let tokenToSet: string | null = null;
     let isNewClaim = false;
     let restoreEmailed = false;
+    let emailNotice = "";
+    let emailKept = false;
 
     if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
       try {
@@ -213,7 +216,7 @@ export async function POST(req: NextRequest) {
 
         const { data: existing, error: existingError } = await rawSupabase
           .from("candidates")
-          .select("handle, email, linkedin, owner_token_hash, auth_user_id")
+          .select("handle, email, linkedin, owner_token_hash, auth_user_id, email_verified")
           .eq("handle", handle)
           .maybeSingle();
 
@@ -266,7 +269,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        if (existing?.handle && !isExplicitPublish(req.headers.get(EXPLICIT_PUBLISH_HEADER))) {
+        if (existing?.handle && !requestPublishesLive(req.headers.get(EXPLICIT_PUBLISH_HEADER), payload)) {
           return NextResponse.json(
             { error: "This dossier is already live. Use Publish changes to update it." },
             { status: 409 }
@@ -291,29 +294,78 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        const { error: candidateError } = await rawSupabase.from("candidates").upsert(
-          {
-            handle,
-            full_name: payload.fullName,
-            headline: payload.headline,
-            summary_statement: payload.summaryStatement,
-            bio_summary: encodeStoredPage({
-              highlights: payload.highlights,
-              portfolioAssets: payload.portfolioAssets
-            }) || payload.summaryStatement,
-            email: payload.contact?.email || "",
-            phone: payload.contact?.phone,
-            linkedin: preferLinkedInProfile(String(existing?.linkedin || ""), String(payload.contact?.linkedin || "")),
-            location: payload.contact?.location,
-            email_verified: payload.contact?.emailVerified || false,
-            phone_verified: payload.contact?.phoneVerified || false,
-            linkedin_verified: payload.contact?.linkedinVerified || false,
-            preferred_layout: payload.preferredLayout || "traditional",
-            auth_user_id: user?.id || existing?.auth_user_id || null,
-            updated_at: new Date().toISOString()
-          },
-          { onConflict: "handle" }
-        );
+        let emailForWrite = String(payload.contact?.email || "");
+        let emailVerifiedForWrite = Boolean(payload.contact?.emailVerified);
+        if (existing?.handle && incomingEmail && incomingEmail !== String(existing.email || "").toLowerCase().trim()) {
+          const { data: byEmail } = await rawSupabase
+            .from("candidates")
+            .select("handle")
+            .ilike("email", incomingEmail)
+            .maybeSingle();
+          const choice = publishEmailChoice({
+            existingHandle: handle,
+            existingEmail: String(existing.email || ""),
+            incomingEmail,
+            takenByHandle: String(byEmail?.handle || "")
+          });
+          if (choice.kept) {
+            emailForWrite = choice.email;
+            emailVerifiedForWrite = Boolean(existing.email_verified);
+            emailNotice = choice.notice;
+            emailKept = true;
+            payload.email = choice.email;
+            if (payload.contact && typeof payload.contact === "object") {
+              payload.contact.email = choice.email;
+              payload.contact.emailVerified = emailVerifiedForWrite;
+            }
+          }
+        }
+
+        const candidateRowForWrite = (email: string, emailVerified: boolean) => ({
+          handle,
+          full_name: payload.fullName,
+          headline: payload.headline,
+          summary_statement: payload.summaryStatement,
+          bio_summary: encodeStoredPage({
+            highlights: payload.highlights,
+            portfolioAssets: payload.portfolioAssets
+          }) || payload.summaryStatement,
+          email,
+          phone: payload.contact?.phone,
+          linkedin: preferLinkedInProfile(String(existing?.linkedin || ""), String(payload.contact?.linkedin || "")),
+          location: payload.contact?.location,
+          email_verified: emailVerified,
+          phone_verified: payload.contact?.phoneVerified || false,
+          linkedin_verified: payload.contact?.linkedinVerified || false,
+          preferred_layout: payload.preferredLayout || "traditional",
+          auth_user_id: user?.id || existing?.auth_user_id || null,
+          updated_at: new Date().toISOString()
+        });
+
+        let { error: candidateError } = await rawSupabase
+          .from("candidates")
+          .upsert(candidateRowForWrite(emailForWrite, emailVerifiedForWrite), { onConflict: "handle" });
+
+        if (
+          candidateError &&
+          existing?.handle &&
+          !emailKept &&
+          /candidates_email_key|email.*unique/i.test(candidateError.message || "")
+        ) {
+          emailForWrite = String(existing.email || "");
+          emailVerifiedForWrite = Boolean(existing.email_verified);
+          emailNotice = "This page kept its current email because the resume email is already used on another page.";
+          emailKept = true;
+          payload.email = emailForWrite;
+          if (payload.contact && typeof payload.contact === "object") {
+            payload.contact.email = emailForWrite;
+            payload.contact.emailVerified = emailVerifiedForWrite;
+          }
+          const retry = await rawSupabase
+            .from("candidates")
+            .upsert(candidateRowForWrite(emailForWrite, emailVerifiedForWrite), { onConflict: "handle" });
+          candidateError = retry.error;
+        }
 
         if (candidateError) {
           console.error("Supabase candidate upsert error:", candidateError);
@@ -529,6 +581,8 @@ export async function POST(req: NextRequest) {
       handle,
       restoreEmailed,
       draftCleared,
+      emailKept,
+      emailNotice,
       dossierUrl: `${getAppUrl()}/${handle}`
     });
     if (tokenToSet) {
