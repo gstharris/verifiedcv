@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
+import type { ParsedDossierPayload } from "./parseResume";
 import {
+  EMPTY_PDF_MESSAGE,
+  THIN_RESUME_MESSAGE,
+  WORD_RESUME_MESSAGE,
   extractAtomicAchievements,
+  isWordResumeFile,
   parseComprehensiveResume,
+  resumeImportHasContent,
   resumeImportLog,
   resumeParseLog
 } from "./parseResume";
@@ -331,6 +337,36 @@ SKILLS
       "Human-in-the-Loop Controls"
     ]));
     expect(parsed.skills).not.toContain("AND CERTIFICATIONS");
+  });
+});
+
+describe("resume import gate", () => {
+  it("accepts chapters, or a name with another resume section", () => {
+    expect(resumeImportHasContent({ milestones: [{ company: "Yard" }] } as Partial<ParsedDossierPayload>)).toBe(true);
+    expect(resumeImportHasContent({ fullName: "Ada Lovelace", skills: ["Mathematics"] })).toBe(true);
+    expect(resumeImportHasContent({ fullName: "Ada Lovelace", summaryStatement: "Built engines." })).toBe(true);
+    expect(resumeImportHasContent({ fullName: "Ada Lovelace", highlights: ["First algorithm"] })).toBe(true);
+    expect(resumeImportHasContent({ fullName: "Ada Lovelace", education: [{ institution: "Home" }] } as Partial<ParsedDossierPayload>)).toBe(true);
+  });
+
+  it("rejects contact-only and name-only extracts", () => {
+    expect(resumeImportHasContent({
+      fullName: "",
+      contact: { email: "ada@example.com", phone: "4155550134", linkedin: "linkedin.com/in/ada", location: "London" }
+    })).toBe(false);
+    expect(resumeImportHasContent({ fullName: "Ada Lovelace" })).toBe(false);
+    expect(resumeImportHasContent({ skills: [" "] })).toBe(false);
+    expect(resumeImportHasContent({})).toBe(false);
+  });
+
+  it("names Word files and the recovery messages without resume text", () => {
+    expect(isWordResumeFile("resume.docx", "")).toBe(true);
+    expect(isWordResumeFile("resume.DOC", "application/msword")).toBe(true);
+    expect(isWordResumeFile("resume.pdf", "application/pdf")).toBe(false);
+    expect(WORD_RESUME_MESSAGE).toMatch(/Paste the resume text, or upload a PDF/);
+    expect(EMPTY_PDF_MESSAGE).toMatch(/no selectable text/i);
+    expect(THIN_RESUME_MESSAGE).toMatch(/start from scratch/i);
+    expect(`${WORD_RESUME_MESSAGE} ${EMPTY_PDF_MESSAGE} ${THIN_RESUME_MESSAGE}`).not.toMatch(/@|linkedin\.com\/in\//);
   });
 });
 

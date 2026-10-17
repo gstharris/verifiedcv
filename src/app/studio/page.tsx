@@ -58,7 +58,7 @@ import { nextPortfolioVerificationStep, verificationStatusLine } from "@/lib/ver
 import { dossierSectionRank, encodeDossierLayout, parseDossierLayout, publicRegistryLabel, type PortfolioAsset } from "@/lib/portfolioAssets";
 import { LOOP_EVENTS, consumeCorroboratorRef } from "@/lib/corroborationLoop";
 import { linkedInHandle, linkedInProfileUrl, preferLinkedInProfile } from "@/lib/linkedin";
-import { resumeImportHasContent, resumeImportLog } from "@/app/api/parse/parseResume";
+import { WORD_RESUME_MESSAGE, isWordResumeFile, resumeImportHasContent, resumeImportLog } from "@/app/api/parse/parseResume";
 import { flagEmoji, parseLocation } from "@/lib/locations";
 import { repairSkillList } from "@/lib/skills";
 import { resolvePlace, suggestPlaces } from "@/lib/places";
@@ -619,6 +619,7 @@ export default function StudioPage() {
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [sourcePasteOpen, setSourcePasteOpen] = useState(false);
   const [sourceNotice, setSourceNotice] = useState<{ text: string; error?: boolean } | null>(null);
+  const [importNotice, setImportNotice] = useState("");
   const [sectionToRemove, setSectionToRemove] = useState<"summary" | "highlights" | null>(null);
   const [chapterToRemove, setChapterToRemove] = useState<{ id: string; company: string } | null>(null);
   const [undoNotice, setUndoNotice] = useState<
@@ -1145,6 +1146,7 @@ export default function StudioPage() {
   const executeIngest = async (text: string) => {
     setIsProcessing(true);
     if (replaceSourceRef.current) setSourceNotice(null);
+    else setImportNotice("");
     setChatMessages((prev) => [
       ...prev,
       { sender: "ally", text: "Analyzing career history, contact details, and dates..." }
@@ -1159,7 +1161,7 @@ export default function StudioPage() {
         body: formData
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok && resumeImportHasContent(data)) {
         if (replaceSourceRef.current) {
           replaceSourceRef.current = false;
@@ -1167,8 +1169,9 @@ export default function StudioPage() {
           captureEvent("resume_parsed", { source: "replace_paste", chapters: data.milestones?.length || 0 });
           setSourceNotice(null);
           window.setTimeout(() => document.getElementById("experience")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
-          return;
+          return true;
         }
+        setImportNotice("");
         applyParsedResume(data, "studio_paste");
         captureEvent("resume_parsed", { source: "studio_paste", chapters: data.milestones?.length || 0 });
         setChatMessages([
@@ -1177,19 +1180,26 @@ export default function StudioPage() {
             text: "Upload successful. Please review your resume below and edit as necessary. Once it looks good, save your portfolio to begin verification."
           }
         ]);
-      } else if (replaceSourceRef.current) {
-        replaceSourceRef.current = false;
-        setSourceNotice({ text: data.error || "Could not read that text. Your draft is unchanged.", error: true });
-      } else {
-        alert(data.error || "Failed to parse text input.");
+        return true;
       }
+      const message = typeof data.error === "string" ? data.error : "Could not read career chapters from that text.";
+      if (replaceSourceRef.current) {
+        replaceSourceRef.current = false;
+        setSourceNotice({ text: message, error: true });
+      } else {
+        setImportNotice(message);
+        setActiveTab("paste");
+      }
+      return false;
     } catch {
       if (replaceSourceRef.current) {
         replaceSourceRef.current = false;
         setSourceNotice({ text: "Could not read that text. Your draft is unchanged.", error: true });
       } else {
-        alert("Network communication error with /api/parse.");
+        setImportNotice("Could not read that text. Paste it again, or start from scratch.");
+        setActiveTab("paste");
       }
+      return false;
     } finally {
       setIsProcessing(false);
     }
@@ -1199,6 +1209,7 @@ export default function StudioPage() {
     if (typeof window === "undefined") return;
 
     const urlParams = new URLSearchParams(window.location.search);
+    const startBlank = urlParams.get("scratch") === "1";
     if (urlParams.get("signin") === "1") setSignInRequested(true);
     if (urlParams.get("fresh") === "1") {
       clearStudioPortfolioStorage();
@@ -1314,8 +1325,11 @@ export default function StudioPage() {
             }
           ]);
         } else if (parsed.rawText && String(parsed.rawText).trim().length > 0) {
+          setPasteBuffer(String(parsed.rawText));
+          setActiveTab("paste");
+          setImportNotice("Paste the resume text, then parse it. A contact line alone is not enough to start the page.");
+        } else if (startBlank) {
           setPortfolioStarted(true);
-          void executeIngest(String(parsed.rawText));
         }
       } catch {
         // ignore unreadable local resume payloads
@@ -1328,6 +1342,12 @@ export default function StudioPage() {
           text: "Loaded your draft portfolio. Review your chapters and save when ready."
         }
       ]);
+    } else if (startBlank) {
+      setPortfolioStarted(true);
+    }
+
+    if (startBlank) {
+      window.history.replaceState({}, document.title, "/studio");
     }
 
     setEntryReady(true);
@@ -1674,8 +1694,8 @@ export default function StudioPage() {
 
   const handleManualPasteSubmit = async () => {
     if (!pasteBuffer.trim() || isProcessing) return;
-    await executeIngest(pasteBuffer.trim());
-    setPasteBuffer("");
+    const imported = await executeIngest(pasteBuffer.trim());
+    if (imported) setPasteBuffer("");
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1683,8 +1703,18 @@ export default function StudioPage() {
     e.target.value = "";
     if (!file || isProcessing) return;
     const replacing = replaceSourceRef.current;
+    if (isWordResumeFile(file.name, file.type)) {
+      replaceSourceRef.current = false;
+      if (replacing) setSourceNotice({ text: WORD_RESUME_MESSAGE, error: true });
+      else {
+        setImportNotice(WORD_RESUME_MESSAGE);
+        setActiveTab("paste");
+      }
+      return;
+    }
     setIsProcessing(true);
     if (replacing) setSourceNotice(null);
+    else setImportNotice("");
 
     try {
       const formData = new FormData();
@@ -1695,7 +1725,7 @@ export default function StudioPage() {
         body: formData
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok && resumeImportHasContent(data)) {
         if (replacing) {
           replaceSourceRef.current = false;
@@ -1705,6 +1735,7 @@ export default function StudioPage() {
           window.setTimeout(() => document.getElementById("experience")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
           return;
         }
+        setImportNotice("");
         applyParsedResume(data, "studio_upload");
         captureEvent("resume_parsed", { source: "studio_upload", chapters: data.milestones?.length || 0 });
         setChatMessages((prev) => [
@@ -1716,16 +1747,18 @@ export default function StudioPage() {
         ]);
       } else if (replacing) {
         replaceSourceRef.current = false;
-        setSourceNotice({ text: data.error || "Could not read that file. Your draft is unchanged.", error: true });
+        setSourceNotice({ text: typeof data.error === "string" ? data.error : "Could not read that file. Your draft is unchanged.", error: true });
       } else {
-        alert(data.error || "File parsing failed.");
+        setImportNotice(typeof data.error === "string" ? data.error : "Could not read that file. Paste the resume text, or start from scratch.");
+        setActiveTab("paste");
       }
     } catch {
       if (replacing) {
         replaceSourceRef.current = false;
         setSourceNotice({ text: "Could not read that file. Your draft is unchanged.", error: true });
       } else {
-        alert("Error uploading document.");
+        setImportNotice("Could not read that file. Paste the resume text, or upload a PDF.");
+        setActiveTab("paste");
       }
     } finally {
       setIsProcessing(false);
@@ -1735,7 +1768,7 @@ export default function StudioPage() {
   const handleActionPrompt = (actionType: string) => {
     if (actionType === "upload_resume") {
       fileInputRef.current?.click();
-      say("Choose a PDF, Word, or text resume.");
+      say("Choose a PDF or a text resume. Paste a Word resume instead.");
       return;
     }
     if (actionType === "paste_resume") {
@@ -2009,7 +2042,7 @@ export default function StudioPage() {
         return;
       }
       fileInputRef.current?.click();
-      say("Choose a PDF, Word, or text resume. I'll read it into your chapters.");
+      say("Choose a PDF or a text resume. Paste a Word resume instead.");
       return;
     }
     if (studioMessage.type === "education") {
@@ -3094,9 +3127,12 @@ export default function StudioPage() {
               <div className="space-y-2">
                 <h2 className="text-xl font-black text-[#0F172A]">Upload your resume</h2>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                  You are signed in, and this page does not have a resume yet. Upload a file or paste the text.
+                  You are signed in, and this page does not have a resume yet. Upload a PDF or paste the text. Word files need to be pasted.
                 </p>
               </div>
+              {importNotice && (
+                <p className="text-xs font-semibold leading-relaxed text-amber-800">{importNotice}</p>
+              )}
 
               <div className="space-y-3 pt-1">
                 <button
@@ -3261,6 +3297,9 @@ export default function StudioPage() {
                   <p className="text-[11px] font-semibold leading-relaxed text-amber-700">
                     {sourceNotice.text}
                   </p>
+                )}
+                {importNotice && (
+                  <p className="text-[11px] font-semibold leading-relaxed text-amber-800">{importNotice}</p>
                 )}
               </nav>
 

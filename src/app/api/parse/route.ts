@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { extractText } from "unpdf";
-import { parseComprehensiveResume, resumeParseLog } from "./parseResume";
+import {
+  EMPTY_PDF_MESSAGE,
+  THIN_RESUME_MESSAGE,
+  WORD_RESUME_MESSAGE,
+  isWordResumeFile,
+  parseComprehensiveResume,
+  resumeImportHasContent,
+  resumeParseLog
+} from "./parseResume";
 
 export const dynamic = "force-dynamic";
 
@@ -22,14 +30,19 @@ export async function POST(req: NextRequest) {
     let textContent = pastedText || "";
 
     if (file) {
-      const buffer = await file.arrayBuffer();
+      if (isWordResumeFile(file.name, file.type)) {
+        return NextResponse.json({ error: WORD_RESUME_MESSAGE }, { status: 400 });
+      }
 
-      if (file.name.endsWith(".pdf") || file.type.includes("pdf")) {
+      const buffer = await file.arrayBuffer();
+      const pdf = file.name.toLowerCase().endsWith(".pdf") || file.type.includes("pdf");
+
+      if (pdf) {
         try {
           const { text } = await extractText(new Uint8Array(buffer));
           textContent = Array.isArray(text) ? text.join("\n") : (text || "");
         } catch (pdfErr) {
-          console.error("unpdf extraction failed:", pdfErr);
+          console.error("unpdf extraction failed:", pdfErr instanceof Error ? pdfErr.name : "extract");
           return NextResponse.json(
             { error: "Failed to extract text from PDF document." },
             { status: 400 }
@@ -38,14 +51,22 @@ export async function POST(req: NextRequest) {
       } else {
         textContent = Buffer.from(buffer).toString("utf-8");
       }
-    }
 
-    if (!textContent.trim()) {
+      if (!textContent.trim()) {
+        return NextResponse.json(
+          { error: pdf ? EMPTY_PDF_MESSAGE : "No readable resume content found." },
+          { status: 400 }
+        );
+      }
+    } else if (!textContent.trim()) {
       return NextResponse.json({ error: "No readable resume content found." }, { status: 400 });
     }
 
     const result = parseComprehensiveResume(textContent);
     console.info(JSON.stringify(resumeParseLog(result)));
+    if (!resumeImportHasContent(result)) {
+      return NextResponse.json({ error: THIN_RESUME_MESSAGE }, { status: 422 });
+    }
 
     return NextResponse.json({
       success: true,

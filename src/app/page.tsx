@@ -22,13 +22,14 @@ import {
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 import { captureEvent } from "@/lib/analytics";
 import { corroboratorRefFromSearch, writeCorroboratorRef } from "@/lib/corroborationLoop";
-import { resumeImportHasContent } from "@/app/api/parse/parseResume";
+import { THIN_RESUME_MESSAGE, isWordResumeFile, resumeImportHasContent } from "@/app/api/parse/parseResume";
 
 export default function VerifiedCVLandingPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [chatInput, setChatInput] = useState("");
+  const [importNotice, setImportNotice] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [viewPerspective, setViewPerspective] = useState<"candidate" | "recruiter">("candidate");
 
@@ -104,6 +105,7 @@ export default function VerifiedCVLandingPage() {
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!chatInput.trim() || isProcessing) return;
+    setImportNotice("");
     setIsProcessing(true);
 
     try {
@@ -115,31 +117,29 @@ export default function VerifiedCVLandingPage() {
         body: formData
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok && resumeImportHasContent(data)) {
         captureEvent("resume_parsed", { source: "landing_paste", chapters: data.milestones?.length || 0 });
         forwardPayloadToStudio(data);
         return;
       }
+      setImportNotice(typeof data.error === "string" ? data.error : THIN_RESUME_MESSAGE);
     } catch {
-      if (typeof window !== "undefined") {
-        localStorage.setItem(
-          "vcv_pending_payload",
-          JSON.stringify({ rawText: chatInput.trim() })
-        );
-      }
-      router.push("/studio");
-      return;
+      setImportNotice("Could not read that resume. Paste the text, or start from scratch.");
     } finally {
       setIsProcessing(false);
     }
-
-    router.push("/studio");
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0 || isProcessing) return;
     const file = e.target.files[0];
+    e.target.value = "";
+    if (isWordResumeFile(file.name, file.type)) {
+      setImportNotice("Word files aren't read yet. Paste the resume text, or upload a PDF.");
+      return;
+    }
+    setImportNotice("");
     setIsProcessing(true);
 
     try {
@@ -151,21 +151,18 @@ export default function VerifiedCVLandingPage() {
         body: formData
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok && resumeImportHasContent(data)) {
         captureEvent("resume_parsed", { source: "landing_upload", chapters: data.milestones?.length || 0 });
         forwardPayloadToStudio(data);
         return;
-      } else {
-        alert(data.error || "Could not parse document. Routing to Candidate Studio.");
       }
+      setImportNotice(typeof data.error === "string" ? data.error : THIN_RESUME_MESSAGE);
     } catch {
-      alert("Error uploading file. Routing to Candidate Studio.");
+      setImportNotice("Could not read that file. Paste the resume text, or upload a PDF.");
     } finally {
       setIsProcessing(false);
     }
-
-    router.push("/studio");
   };
 
   const verifiedFacts = [
@@ -268,7 +265,7 @@ export default function VerifiedCVLandingPage() {
                 className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold transition-all cursor-pointer shadow-2xs disabled:opacity-50"
               >
                 <UploadCloud className="w-4 h-4 text-emerald-400" />
-                <span>{isProcessing ? "Processing..." : "Upload Resume (PDF / Word)"}</span>
+                <span>{isProcessing ? "Processing..." : "Upload resume (PDF)"}</span>
               </button>
 
               <p className="text-[11px] font-medium text-slate-400">or paste your resume</p>
@@ -300,6 +297,18 @@ export default function VerifiedCVLandingPage() {
                   )}
                 </button>
               </form>
+              {importNotice && (
+                <div className="space-y-2 text-left">
+                  <p className="text-xs font-semibold leading-relaxed text-amber-800">{importNotice}</p>
+                  <button
+                    type="button"
+                    onClick={() => router.push("/studio?scratch=1")}
+                    className="text-xs font-semibold text-slate-500 hover:text-[#0F172A] cursor-pointer"
+                  >
+                    Start from scratch
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="inline-flex items-center gap-2 text-sm text-slate-500">
