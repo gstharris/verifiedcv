@@ -1826,8 +1826,8 @@ export default function StudioPage() {
       return;
     }
     if (actionType === "review_changes") {
-      if (!changeSummary.hasChanges || saveStatus === "saving") {
-        say(saveStatus === "saving" ? "Still saving your draft." : "Your editor matches the live dossier.");
+      if (!changeSummary.hasChanges) {
+        say("Your editor matches the live dossier.");
         return;
       }
       openReview();
@@ -2861,7 +2861,7 @@ export default function StudioPage() {
   };
 
   const openReview = () => {
-    if (!changeSummary.hasChanges || saveStatus === "saving") return;
+    if (!changeSummary.hasChanges) return;
     setReviewError("");
     setCancelConfirmOpen(false);
     setReviewOpen(true);
@@ -3016,8 +3016,7 @@ export default function StudioPage() {
                 <button
                   type="button"
                   onClick={openReview}
-                  disabled={saveStatus === "saving"}
-                  className="hidden md:inline-flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-xl bg-[#059669] hover:bg-[#047857] text-white text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                  className="hidden md:inline-flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-xl bg-[#059669] hover:bg-[#047857] text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
                 >
                   Review changes
                 </button>
