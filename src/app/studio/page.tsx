@@ -70,7 +70,7 @@ import { mergePeerVerifications, mergeReplacedContact, overlayChapterProof, patc
 import { ReviewChangesDialog } from "@/components/studio/ReviewChangesDialog";
 import { UndoBanner } from "@/components/studio/UndoBanner";
 import { faviconUrl, publicHttpsUrl, siteLabel } from "@/lib/companySite";
-import { sortChaptersByTenure } from "@/lib/tenureOverlap";
+import { blankChapter, formatTenureFields, parseTenureFields, sortChaptersByTenure, type TenureFields } from "@/lib/tenureOverlap";
 import { reviewResume } from "@/lib/resumeReview";
 import PortfolioStudioPanel from "@/components/PortfolioStudioPanel";
 import { captureEvent, identifyHandle } from "@/lib/analytics";
@@ -90,6 +90,101 @@ function linkedInFields(
 function incomingChapters(milestones: unknown) {
   if (!Array.isArray(milestones)) return [];
   return sortChaptersByTenure(milestones.map((milestone) => hydrateChapter(milestone)));
+}
+
+function savedChapters(list: Milestone[]) {
+  return sortChaptersByTenure(list).flatMap((milestone) => {
+    const compact = blankChapter(milestone);
+    if (!compact.hasContent) return [];
+    return [packChapter({ ...milestone, claims: compact.claims })];
+  });
+}
+
+function savedHighlights(lines: string[]) {
+  return lines.map((line) => line.trim()).filter(Boolean);
+}
+
+const TENURE_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function TenureEditor({
+  value,
+  readOnly,
+  onChange,
+  onCommit
+}: {
+  value: string;
+  readOnly?: boolean;
+  onChange: (period: string) => void;
+  onCommit?: () => void;
+}) {
+  const fields = parseTenureFields(value);
+  const write = (next: Partial<TenureFields>) => {
+    const merged = { ...fields, ...next };
+    if (merged.present) {
+      merged.endMonth = "";
+      merged.endYear = "";
+    }
+    onChange(formatTenureFields(merged));
+  };
+  const monthSelect = (label: string, month: string, onMonth: (month: string) => void) => (
+    <select
+      aria-label={label}
+      disabled={readOnly}
+      value={month}
+      onChange={(event) => onMonth(event.target.value)}
+      onBlur={onCommit}
+      className="bg-transparent text-[11px] font-medium text-slate-600 focus:outline-none disabled:cursor-default"
+    >
+      <option value="">Month</option>
+      {TENURE_MONTHS.map((name) => (
+        <option key={name} value={name}>{name}</option>
+      ))}
+    </select>
+  );
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-1.5 text-[11px] font-medium text-slate-600">
+      {monthSelect("Start month", fields.startMonth, (startMonth) => write({ startMonth }))}
+      <input
+        aria-label="Start year"
+        inputMode="numeric"
+        maxLength={4}
+        readOnly={readOnly}
+        value={fields.startYear}
+        onChange={(event) => write({ startYear: event.target.value.replace(/\D/g, "").slice(0, 4) })}
+        onBlur={onCommit}
+        placeholder="Year"
+        className="w-12 bg-transparent text-right focus:outline-none"
+      />
+      <span className="text-slate-300">—</span>
+      {fields.present ? (
+        <span>Present</span>
+      ) : (
+        <>
+          {monthSelect("End month", fields.endMonth, (endMonth) => write({ endMonth }))}
+          <input
+            aria-label="End year"
+            inputMode="numeric"
+            maxLength={4}
+            readOnly={readOnly}
+            value={fields.endYear}
+            onChange={(event) => write({ endYear: event.target.value.replace(/\D/g, "").slice(0, 4) })}
+            onBlur={onCommit}
+            placeholder="Year"
+            className="w-12 bg-transparent text-right focus:outline-none"
+          />
+        </>
+      )}
+      <label className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500">
+        <input
+          type="checkbox"
+          checked={fields.present}
+          disabled={readOnly}
+          onChange={(event) => write({ present: event.target.checked })}
+        />
+        Present
+      </label>
+    </div>
+  );
 }
 
 function AutoText({
@@ -137,10 +232,14 @@ function LocationField({
   const [draft, setDraft] = useState(value);
   const [open, setOpen] = useState(false);
   const [touched, setTouched] = useState(false);
+  const [chosen, setChosen] = useState<ReturnType<typeof suggestPlaces>[number] | null>(null);
   const [remote, setRemote] = useState<ReturnType<typeof suggestPlaces>>([]);
   const suggestionsRef = React.useRef<ReturnType<typeof suggestPlaces>>([]);
+  const choosingRef = React.useRef(false);
   useEffect(() => {
-    setDraft(parseLocation(value)?.label || value);
+    const label = parseLocation(value)?.label || value;
+    setDraft(label);
+    setChosen(resolvePlace(label));
   }, [value]);
   useEffect(() => {
     const query = draft.trim();
@@ -173,12 +272,22 @@ function LocationField({
     return true;
   }).slice(0, 6);
   suggestionsRef.current = suggestions;
-  const notice = touched && draft.trim() && !resolved && suggestions.length === 0 ? "Choose a city from the list." : "";
+  const selected = chosen && chosen.label.toLowerCase() === draft.trim().toLowerCase() ? chosen : null;
+  const place = selected || resolved;
+  const notice = !open && touched && draft.trim() && !place ? "Choose a city from the list." : "";
+  const choosePlace = (next: ReturnType<typeof suggestPlaces>[number]) => {
+    choosingRef.current = true;
+    setChosen(next);
+    setDraft(next.label);
+    setOpen(false);
+    setTouched(false);
+    onChange(next.label);
+  };
   return (
     <div className="relative p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC]">
       <div className="flex items-center gap-2">
         <span className="text-sm leading-none shrink-0">
-          {resolved?.countryCode ? flagEmoji(resolved.countryCode) : <MapPin className="w-3.5 h-3.5 text-slate-400" />}
+          {place?.countryCode ? flagEmoji(place.countryCode) : <MapPin className="w-3.5 h-3.5 text-slate-400" />}
         </span>
         <input
           type="text"
@@ -192,14 +301,17 @@ function LocationField({
           onFocus={() => saved && setOpen(true)}
           onBlur={() => {
             window.setTimeout(() => {
+              if (choosingRef.current) {
+                choosingRef.current = false;
+                setOpen(false);
+                return;
+              }
               setOpen(false);
               const listed = suggestionsRef.current;
-              const place = resolvePlace(draft) || (listed.length === 1 ? listed[0] : null);
-              if (place) {
-                onChange(place.label);
-                setDraft(place.label);
-                setTouched(false);
-              } else {
+              const match = resolvePlace(draft) || (listed.length === 1 ? listed[0] : null);
+              if (match) {
+                choosePlace(match);
+              } else if (!chosen || chosen.label.toLowerCase() !== draft.trim().toLowerCase()) {
                 setTouched(true);
               }
             }, 150);
@@ -216,10 +328,7 @@ function LocationField({
               type="button"
               onMouseDown={(e) => {
                 e.preventDefault();
-                onChange(place.label);
-                setDraft(place.label);
-                setOpen(false);
-                setTouched(false);
+                choosePlace(place);
               }}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-[#F8FAFC] cursor-pointer"
             >
@@ -449,8 +558,15 @@ export default function StudioPage() {
     const close = (event: MouseEvent) => {
       if (!addMenuRef.current?.contains(event.target as Node)) setAddMenuOpen(false);
     };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAddMenuOpen(false);
+    };
+    document.addEventListener("mousedown", close, true);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", close, true);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [addMenuOpen]);
   const [skillDraft, setSkillDraft] = useState("");
 
@@ -722,9 +838,9 @@ export default function StudioPage() {
     skills,
     education,
     preferredLayout,
-    highlights,
+    highlights: savedHighlights(highlights),
     portfolioAssets,
-    milestones: sortChaptersByTenure(milestones).map((milestone) => packChapter(milestone))
+    milestones: savedChapters(milestones)
   });
   editorPayloadRef.current = buildPortfolioPayload();
 
@@ -1010,7 +1126,7 @@ export default function StudioPage() {
 
   const executeIngest = async (text: string) => {
     setIsProcessing(true);
-    if (replaceSourceRef.current) setSourceNotice({ text: "Reading your resume…" });
+    if (replaceSourceRef.current) setSourceNotice(null);
     setChatMessages((prev) => [
       ...prev,
       { sender: "ally", text: "Analyzing career history, contact details, and dates..." }
@@ -1031,11 +1147,7 @@ export default function StudioPage() {
           replaceSourceRef.current = false;
           applyReplacedSource(data);
           captureEvent("resume_parsed", { source: "replace_paste", chapters: data.milestones?.length || 0 });
-          const count = data.milestones?.length || 0;
-          setSourceNotice({
-            text: `Replaced your draft with ${count} ${count === 1 ? "chapter" : "chapters"}. Your live dossier stays as it is until you publish.`
-          });
-          say("The new source is in your draft. Your live dossier stays as it is until you publish.");
+          setSourceNotice(null);
           window.setTimeout(() => document.getElementById("experience")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
           return;
         }
@@ -1326,9 +1438,9 @@ export default function StudioPage() {
       skills,
       education,
       preferredLayout,
-      highlights,
+      highlights: savedHighlights(highlights),
       portfolioAssets,
-      milestones: sortChaptersByTenure(milestones).map((milestone) => packChapter(milestone))
+      milestones: savedChapters(milestones)
     };
     if (!hasPortfolioContent(payload) && !isPortfolioSaved) return;
     const snapshotReady = Boolean(publishedSnapshotRef.current);
@@ -1577,7 +1689,7 @@ export default function StudioPage() {
     if (!file || isProcessing) return;
     const replacing = replaceSourceRef.current;
     setIsProcessing(true);
-    if (replacing) setSourceNotice({ text: "Reading your resume…" });
+    if (replacing) setSourceNotice(null);
 
     try {
       const formData = new FormData();
@@ -1594,11 +1706,7 @@ export default function StudioPage() {
           replaceSourceRef.current = false;
           applyReplacedSource(data);
           captureEvent("resume_parsed", { source: "replace_upload", chapters: data.milestones?.length || 0 });
-          const count = data.milestones?.length || 0;
-          setSourceNotice({
-            text: `Replaced your draft with ${count} ${count === 1 ? "chapter" : "chapters"}. Your live dossier stays as it is until you publish.`
-          });
-          say("The new source is in your draft. Your live dossier stays as it is until you publish.");
+          setSourceNotice(null);
           window.setTimeout(() => document.getElementById("experience")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
           return;
         }
@@ -1888,7 +1996,7 @@ export default function StudioPage() {
             return;
           }
           setSkills((prev) => [...prev, skill]);
-          say(isPortfolioSaved ? `Added ${skill} to your draft. It stays off the live dossier until you publish.` : `Added ${skill} to skills.`);
+          say("Skills are open.");
           return;
         }
         window.setTimeout(() => document.getElementById("skill-input")?.focus(), 50);
@@ -1906,7 +2014,7 @@ export default function StudioPage() {
     if (studioMessage.type === "resume") {
       if (isPortfolioSaved) {
         setReplaceOpen(true);
-        say("Replace source puts the new resume in your draft. Your live dossier stays as it is until you publish.");
+        say("Replace resume keeps the live dossier until you publish.");
         return;
       }
       fileInputRef.current?.click();
@@ -2182,9 +2290,9 @@ export default function StudioPage() {
       skills,
       education,
       preferredLayout,
-      highlights,
+      highlights: savedHighlights(highlights),
       portfolioAssets,
-      milestones: sortChaptersByTenure(milestones).map((milestone) => packChapter(milestone))
+      milestones: savedChapters(milestones)
     };
 
     try {
@@ -2244,11 +2352,11 @@ export default function StudioPage() {
     const proofPayload = {
       ...snapshot,
       handle: handle.toLowerCase().trim(),
-      milestones: sortChaptersByTenure(proofMilestones).map((milestone) => packChapter(milestone))
+      milestones: savedChapters(proofMilestones)
     };
     const draftPayload = {
       ...buildPortfolioPayload(),
-      milestones: sortChaptersByTenure(updatedMilestones).map((milestone) => packChapter(milestone))
+      milestones: savedChapters(updatedMilestones)
     };
     try {
       const res = await fetch("/api/vault", {
@@ -2779,7 +2887,7 @@ export default function StudioPage() {
         : !publishedSnapshot
           ? ""
           : changeSummary.hasChanges
-            ? "Unpublished changes"
+            ? ""
             : "Live";
 
   return (
@@ -2849,7 +2957,7 @@ export default function StudioPage() {
                 className="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-lg bg-white hover:bg-slate-50 border border-[#E2E8F0] text-[#0F172A] text-xs font-bold transition-all cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Replace source</span>
+                <span className="hidden sm:inline">Replace resume</span>
                 <span className="sm:hidden">Replace</span>
               </button>
               <button
@@ -2905,6 +3013,7 @@ export default function StudioPage() {
           expanded={dockExpanded}
           onToggle={() => setDockExpanded((open) => !open)}
           processing={isProcessing}
+          note={isPortfolioSaved && changeSummary.hasChanges ? "Unpublished changes" : ""}
         />
       )}
 
@@ -3017,6 +3126,7 @@ export default function StudioPage() {
                 aria-label="Resume sections"
                 className="sticky top-0 z-20 -mx-4 px-4 sm:-mx-8 sm:px-8 py-2.5 bg-[#F8FAFC]/95 backdrop-blur-sm border-b border-[#E2E8F0] flex flex-col gap-2"
               >
+                <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 {[
                   { id: "identity-card", label: "You" },
@@ -3039,8 +3149,78 @@ export default function StudioPage() {
                   </span>
                 ))}
                 </div>
-                {sourceNotice && (
-                  <p className={`text-[11px] font-semibold leading-relaxed ${sourceNotice.error ? "text-amber-700" : "text-[#047857]"}`}>
+                <div ref={addMenuRef} className="relative">
+                  <button
+                    type="button"
+                    aria-expanded={addMenuOpen}
+                    aria-haspopup="menu"
+                    onClick={() => setAddMenuOpen((open) => !open)}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white border border-[#E2E8F0] hover:bg-slate-50 px-3 py-1.5 rounded-lg shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-[#059669]" />
+                    <span>Add</span>
+                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${addMenuOpen ? "rotate-180" : ""}`} />
+                  </button>
+                  {addMenuOpen && (
+                    <div role="menu" className="absolute right-0 top-full z-30 mt-1 w-44 rounded-xl border border-[#E2E8F0] bg-white p-1 shadow-lg">
+                      {(
+                        [
+                          {
+                            id: "experience",
+                            label: "Experience",
+                            show: true,
+                            run: () => addEmptyMilestone()
+                          },
+                          {
+                            id: "summary",
+                            label: "Summary",
+                            show: !summaryStatement.trim() && !summaryEditor,
+                            run: () => {
+                              setSummaryEditor(true);
+                              window.setTimeout(() => document.getElementById("summary")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+                            }
+                          },
+                          {
+                            id: "highlights",
+                            label: "Highlights",
+                            show: highlights.length === 0,
+                            run: () => {
+                              setHighlights([""]);
+                              window.setTimeout(() => document.getElementById("highlights")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+                            }
+                          },
+                          {
+                            id: "work",
+                            label: "Sample work",
+                            show: portfolioAssets.length === 0 && !sampleWorkOpen,
+                            run: () => {
+                              setSampleWorkOpen(true);
+                              window.setTimeout(() => document.getElementById("work-samples")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+                            }
+                          }
+                        ] as const
+                      )
+                        .filter((option) => option.show)
+                        .map((option) => (
+                          <button
+                            key={option.id}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setAddMenuOpen(false);
+                              option.run();
+                            }}
+                            className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-700 hover:bg-[#F8FAFC] hover:text-[#0F172A] cursor-pointer"
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                </div>
+                </div>
+                {sourceNotice?.error && (
+                  <p className="text-[11px] font-semibold leading-relaxed text-amber-700">
                     {sourceNotice.text}
                   </p>
                 )}
@@ -3050,7 +3230,7 @@ export default function StudioPage() {
               {sourcePasteOpen && (
                 <div id="replace-source-paste" className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-3xl p-6 shadow-xs space-y-3">
                   <div className="space-y-1">
-                    <h3 className="font-extrabold text-xs uppercase tracking-wider text-[#0F172A]">Paste a new source</h3>
+                    <h3 className="font-extrabold text-xs uppercase tracking-wider text-[#0F172A]">Paste a new resume</h3>
                     <p className="text-xs text-slate-600">This replaces the resume text in your draft. Your live dossier stays as it is until you publish.</p>
                   </div>
                   <textarea
@@ -3523,79 +3703,10 @@ export default function StudioPage() {
               )}
 
               <div id="experience" style={{ order: dossierSectionRank(preferredLayout).experience }} className="scroll-mt-14 space-y-4">
-                <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
+                <div className="pb-2 border-b border-[#E2E8F0]">
                   <h3 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">
                     Experience ({milestones.length})
                   </h3>
-                  <div ref={addMenuRef} className="relative">
-                    <button
-                      type="button"
-                      aria-expanded={addMenuOpen}
-                      aria-haspopup="menu"
-                      onClick={() => setAddMenuOpen((open) => !open)}
-                      className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white border border-[#E2E8F0] hover:bg-slate-50 px-3 py-1.5 rounded-lg shadow-2xs transition-colors cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5 text-[#059669]" />
-                      <span>Add</span>
-                      <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${addMenuOpen ? "rotate-180" : ""}`} />
-                    </button>
-                    {addMenuOpen && (
-                      <div role="menu" className="absolute right-0 top-full z-30 mt-1 w-44 rounded-xl border border-[#E2E8F0] bg-white p-1 shadow-lg">
-                        {(
-                          [
-                            {
-                              id: "experience",
-                              label: "Experience",
-                              show: true,
-                              run: () => addEmptyMilestone()
-                            },
-                            {
-                              id: "summary",
-                              label: "Summary",
-                              show: !summaryStatement.trim() && !summaryEditor,
-                              run: () => {
-                                setSummaryEditor(true);
-                                window.setTimeout(() => document.getElementById("summary")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
-                              }
-                            },
-                            {
-                              id: "highlights",
-                              label: "Highlights",
-                              show: highlights.length === 0,
-                              run: () => {
-                                setHighlights([""]);
-                                window.setTimeout(() => document.getElementById("highlights")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
-                              }
-                            },
-                            {
-                              id: "work",
-                              label: "Sample work",
-                              show: portfolioAssets.length === 0 && !sampleWorkOpen,
-                              run: () => {
-                                setSampleWorkOpen(true);
-                                window.setTimeout(() => document.getElementById("work-samples")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
-                              }
-                            }
-                          ] as const
-                        )
-                          .filter((option) => option.show)
-                          .map((option) => (
-                            <button
-                              key={option.id}
-                              type="button"
-                              role="menuitem"
-                              onClick={() => {
-                                setAddMenuOpen(false);
-                                option.run();
-                              }}
-                              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-700 hover:bg-[#F8FAFC] hover:text-[#0F172A] cursor-pointer"
-                            >
-                              {option.label}
-                            </button>
-                          ))}
-                      </div>
-                    )}
-                  </div>
                 </div>
 
                 <div className="space-y-6">
@@ -3678,21 +3789,15 @@ export default function StudioPage() {
                             className={`min-w-0 w-auto max-w-full text-xs font-semibold text-slate-600 focus:outline-none border-b border-transparent [field-sizing:content] ${isPortfolioSaved ? "focus:border-[#059669]" : "cursor-pointer"}`}
                           />
                           <div className="flex items-center gap-2 shrink-0">
-                            <input
-                              type="text"
+                            <TenureEditor
                               value={milestone.period}
                               readOnly={!isPortfolioSaved}
-                              onChange={(e) => {
-                                const val = e.target.value;
+                              onChange={(period) =>
                                 setMilestones((prev) =>
-                                  prev.map((m) => (m.id === milestone.id ? { ...m, period: val } : m))
-                                );
-                              }}
-                              onBlur={() => setMilestones((prev) => sortChaptersByTenure(prev))}
-                              placeholder="May 2025 — Present"
-                              aria-label="Dates"
-                              size={Math.max(milestone.period.trim().length, 16)}
-                              className={`w-auto text-[11px] font-medium text-slate-600 text-right bg-transparent focus:outline-none border-b border-transparent [field-sizing:content] ${isPortfolioSaved ? "focus:border-[#059669]" : ""}`}
+                                  prev.map((item) => (item.id === milestone.id ? { ...item, period } : item))
+                                )
+                              }
+                              onCommit={() => setMilestones((prev) => sortChaptersByTenure(prev))}
                             />
                             <button
                               type="button"
@@ -4158,13 +4263,6 @@ export default function StudioPage() {
                             return m;
                           })
                         );
-                        setChatMessages((prev) => [
-                          ...prev,
-                          {
-                            sender: "ally",
-                            text: `Corporate email verified for ${targetMilestone.company}.`
-                          }
-                        ]);
                         setIsCorpEmailModalOpen(false);
                       } else {
                         setCorpEmailError(data.error || "Incorrect code.");
@@ -4466,7 +4564,7 @@ export default function StudioPage() {
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-lg space-y-5">
             <div className="space-y-2">
-              <h3 className="font-black text-lg text-[#0F172A]">Replace source?</h3>
+              <h3 className="font-black text-lg text-[#0F172A]">Replace resume?</h3>
               <p className="text-xs leading-relaxed text-slate-600">
                 This replaces the resume or pasted text in your draft. Your live dossier stays as it is until you publish. Publishing can remove chapters, and proof on removed chapters goes with them.
               </p>

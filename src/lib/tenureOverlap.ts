@@ -78,6 +78,76 @@ export function formatTenurePeriod(
   return `${start} — ${end}`;
 }
 
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+export type TenureFields = {
+  startMonth: string;
+  startYear: string;
+  endMonth: string;
+  endYear: string;
+  present: boolean;
+};
+
+function monthAbbr(token: string) {
+  const month = MONTHS[token.toLowerCase().replace(/\./g, "")];
+  return month ? MONTH_ABBR[month - 1] : "";
+}
+
+function parseTenureBound(raw: string) {
+  const cleaned = raw.trim();
+  if (/^(present|current|now)$/i.test(cleaned)) return { month: "", year: "", present: true };
+  const monthYear = cleaned.match(/^([A-Za-z]+)\.?\s+(\d{4})$/);
+  if (monthYear) return { month: monthAbbr(monthYear[1]), year: monthYear[2], present: false };
+  const year = cleaned.match(/^(\d{4})$/);
+  if (year) return { month: "", year: year[1], present: false };
+  return { month: "", year: "", present: false };
+}
+
+export function parseTenureFields(period: string): TenureFields {
+  const parts = String(period || "")
+    .split(/\s*(?:—|–|-|\bto\b)\s*/i)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const start = parseTenureBound(parts[0] || "");
+  const end = parseTenureBound(parts[1] || "");
+  return {
+    startMonth: start.present ? "" : start.month,
+    startYear: start.present ? "" : start.year,
+    endMonth: end.present ? "" : end.month,
+    endYear: end.present ? "" : end.year,
+    present: start.present || end.present
+  };
+}
+
+export function formatTenureFields(fields: TenureFields) {
+  const start = [fields.startMonth, fields.startYear].filter(Boolean).join(" ");
+  const end = fields.present ? "Present" : [fields.endMonth, fields.endYear].filter(Boolean).join(" ");
+  if (!start && !end) return "";
+  if (!end) return start;
+  if (!start) return end;
+  return `${start} — ${end}`;
+}
+
+export function blankChapter(chapter: {
+  company?: string;
+  role?: string;
+  period?: string;
+  claims?: string[];
+  verifications?: unknown[];
+  artifacts?: unknown[];
+}) {
+  const claims = (chapter.claims || []).map((claim) => claim.trim()).filter(Boolean);
+  const hasContent = Boolean(
+    String(chapter.company || "").trim() ||
+      String(chapter.role || "").trim() ||
+      String(chapter.period || "").trim() ||
+      claims.length ||
+      (chapter.verifications || []).length ||
+      (chapter.artifacts || []).length
+  );
+  return { claims, hasContent };
+}
+
 export function overlapCaption(attestorPeriod: string, months: number) {
   return `Overlapped ${attestorPeriod} · ${months} month${months === 1 ? "" : "s"} (stated)`;
 }

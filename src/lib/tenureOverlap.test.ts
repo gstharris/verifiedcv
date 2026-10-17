@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { companiesMatch, overlapCaption, overlapMonths, parseTenureRange, sortChaptersByTenure } from "./tenureOverlap";
+import { blankChapter, companiesMatch, formatTenureFields, overlapCaption, overlapMonths, parseTenureFields, parseTenureRange, sortChaptersByTenure } from "./tenureOverlap";
 
 describe("tenure overlap", () => {
   it("parses month-year ranges including Present", () => {
@@ -28,5 +28,31 @@ describe("tenure overlap", () => {
         { company: "Newer current", period: "Jan 2026 — Present" }
       ]).map((chapter) => chapter.company)
     ).toEqual(["Newer current", "Now", "Mid", "Old"]);
+  });
+
+  it("keeps months optional and drops a blank chapter", () => {
+    expect(parseTenureFields("May 2025 — Present")).toEqual({
+      startMonth: "May",
+      startYear: "2025",
+      endMonth: "",
+      endYear: "",
+      present: true
+    });
+    expect(parseTenureFields("2018 — Mar 2026")).toMatchObject({
+      startMonth: "",
+      startYear: "2018",
+      endMonth: "Mar",
+      endYear: "2026",
+      present: false
+    });
+    expect(formatTenureFields({
+      startMonth: "",
+      startYear: "2018",
+      endMonth: "Mar",
+      endYear: "2026",
+      present: false
+    })).toBe("2018 — Mar 2026");
+    expect(blankChapter({ company: "", role: "", period: "", claims: ["", "  "] }).hasContent).toBe(false);
+    expect(blankChapter({ company: "Ge-on", claims: [""] }).hasContent).toBe(true);
   });
 });

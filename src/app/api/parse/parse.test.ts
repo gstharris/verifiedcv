@@ -266,6 +266,72 @@ SKILLS Product Strategy, Roadmapping
     expect(parsed.milestones[0]?.claims).toEqual(["Shipped the onboarding flow for new candidate accounts."]);
     expect(parsed.skills).toEqual(expect.arrayContaining(["Product Strategy", "Roadmapping"]));
   });
+
+  it("keeps a wrapped bullet that ends with the word experience", () => {
+    const parsed = parseComprehensiveResume(`
+GRAHAM HARRIS
+PROFESSIONAL HIGHLIGHTS
+● Speed & Delivery: Overhauled development lifecycles at Ge-on through rapid prototyping and clear
+documentation, cutting recurring meetings by 20% and lifting velocity by 10%.
+PROFESSIONAL EXPERIENCE
+FansAgency LLC | Principal Advisor (Client: AEG Worldwide) | 2016 to 2021 | Santa Monica, CA
+● Advised executive leadership at AEG Worldwide on digital platform architecture, customer experience
+design, and commercial monetization across live entertainment campaigns.
+● Ran conversion optimization programs across high-volume digital marketing channels that delivered a
+20% increase in online conversion rates and an 18% lift in merchandise revenue.
+Yahoo Inc. | Senior Director, Global Product Management and Product Marketing | 2010 to 2016 | Santa Monica,
+CA
+● Conceived and launched the Creative Personalization Platform from concept to $400M in platform revenue.
+EARLIER CAREER EXPERIENCE
+● RiverOne | Product Manager, Supply Chain Management (SCM) | Automated workflow routing, partner
+integration protocols, and real-time operational data exchange.
+● SAP Consultant | Enterprise ERP Implementation | Configured finance, procurement, and inventory
+integration modules for enterprise corporate clients.
+EDUCATION AND CERTIFICATIONS
+● B.S. Business Administration, Management Information Systems | California State University, Chico
+● Certified Scrum Product Owner (CSPO) | Scrum Alliance
+SKILLS
+● Agentic AI & Systems Architecture: Dynamic Model Routing, Token Prioritization, 3 Patents
+● GTM Operations & Workflow Design: Quote-to-Cash Automation, Human-in-the-Loop Controls
+`.trim());
+
+    const fans = parsed.milestones.find((milestone) => milestone.company === "FansAgency LLC");
+    expect(fans?.claims[0]).toBe(
+      "Advised executive leadership at AEG Worldwide on digital platform architecture, customer experience design, and commercial monetization across live entertainment campaigns."
+    );
+    expect(fans?.claims[1]).toBe(
+      "Ran conversion optimization programs across high-volume digital marketing channels that delivered a 20% increase in online conversion rates and an 18% lift in merchandise revenue."
+    );
+    expect(parsed.highlights[0]).toMatch(/Ge-on/);
+    expect(parsed.highlights[0]).toMatch(/20%/);
+
+    const yahoo = parsed.milestones.find((milestone) => milestone.company === "Yahoo Inc.");
+    expect(yahoo?.location).toBe("Santa Monica, CA");
+    expect(yahoo?.claims.join(" ")).not.toMatch(/EARLIER CAREER|RiverOne|SAP Consultant/);
+
+    const river = parsed.milestones.find((milestone) => milestone.company === "RiverOne");
+    expect(river?.role).toBe("Product Manager, Supply Chain Management (SCM)");
+    expect(river?.claims[0]).toMatch(/real-time operational data exchange/);
+
+    expect(parsed.education).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        institution: "California State University, Chico",
+        degree: "B.S. Business Administration, Management Information Systems"
+      }),
+      expect.objectContaining({
+        institution: "Scrum Alliance",
+        degree: "Certified Scrum Product Owner (CSPO)"
+      })
+    ]));
+    expect(parsed.skills).toEqual(expect.arrayContaining([
+      "Dynamic Model Routing",
+      "Token Prioritization",
+      "3 Patents",
+      "Quote-to-Cash Automation",
+      "Human-in-the-Loop Controls"
+    ]));
+    expect(parsed.skills).not.toContain("AND CERTIFICATIONS");
+  });
 });
 
 describe("extractAtomicAchievements", () => {

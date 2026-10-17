@@ -22,8 +22,8 @@ export function getVerificationStatus(counts: VerificationCounts): VerificationS
   return { level: 0, label: "On your profile" };
 }
 
-export function publicChapterLabel(level: number): "Verification" | null {
-  if (level >= 1) return "Verification";
+export function publicChapterLabel(level: number): "Verified" | null {
+  if (level >= 1) return "Verified";
   return null;
 }
 

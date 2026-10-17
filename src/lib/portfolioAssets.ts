@@ -315,7 +315,7 @@ export function assessPortfolioAssetLink(url: string, type: PortfolioAssetType) 
 
   return {
     verificationStatus: "link_checked" as const,
-    verificationNote: "Public link saved. We did not independently certify this work."
+    verificationNote: ""
   };
 }
 

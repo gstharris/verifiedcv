@@ -43,7 +43,8 @@ export function NextActionDock({
   onAction,
   expanded,
   onToggle,
-  processing
+  processing,
+  note
 }: {
   primary: StudioAction;
   suggestions: StudioAction[];
@@ -55,6 +56,7 @@ export function NextActionDock({
   expanded: boolean;
   onToggle: () => void;
   processing: boolean;
+  note?: string;
 }) {
   const suggestionsList = suggestions.length > 0 && (
     <div className="flex flex-wrap gap-x-3 gap-y-1">
@@ -106,10 +108,11 @@ export function NextActionDock({
           {conversationControl}
         </div>
         {expanded && <Transcript messages={messages} processing={processing} />}
+        {note && <p className="text-[11px] font-semibold text-slate-500">{note}</p>}
         <button
           type="button"
           onClick={() => onAction(primary)}
-          className="w-full rounded-xl bg-[#059669] px-3 py-2.5 text-xs font-bold text-white hover:bg-[#047857] cursor-pointer"
+          className="w-full rounded-xl border border-[#E2E8F0] bg-white px-3 py-2.5 text-xs font-bold text-[#0F172A] hover:bg-[#F8FAFC] cursor-pointer"
         >
           {primary.label}
         </button>
@@ -127,11 +130,13 @@ export function NextActionDock({
             </div>
           </div>
         )}
-        <div className="flex items-center gap-2 border-t border-[#E2E8F0] bg-white px-3 py-2.5">
+        <div className="border-t border-[#E2E8F0] bg-white px-3 py-2.5">
+          {note && <p className="mb-2 text-[11px] font-semibold text-slate-500">{note}</p>}
+          <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => onAction(primary)}
-            className="min-w-0 flex-1 truncate rounded-xl bg-[#059669] px-3 py-2.5 text-xs font-bold text-white hover:bg-[#047857] cursor-pointer"
+            className="min-w-0 flex-1 truncate rounded-xl border border-[#E2E8F0] bg-white px-3 py-2.5 text-xs font-bold text-[#0F172A] hover:bg-[#F8FAFC] cursor-pointer"
           >
             {primary.label}
           </button>
@@ -143,6 +148,7 @@ export function NextActionDock({
           >
             {expanded ? "Close" : "More"}
           </button>
+          </div>
         </div>
       </section>
     </>

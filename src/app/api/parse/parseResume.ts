@@ -43,8 +43,9 @@ function cleanBodySentence(text: string): string {
   return text
     .replace(/[\u200B-\u200D\uFEFF]/g, "")
     .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ")
-    .replace(/^[●•\-\*–—◦‣⁃·\d\.\)\s]+/g, "")
-    .replace(/[●•\-\*–—◦‣⁃·]+/g, " ")
+    .replace(/^(?:[●•\*–—◦‣⁃·]+\s*|\-\s+)+/, "")
+    .replace(/^\d{1,2}[.)]\s+/, "")
+    .replace(/[●•\*–—◦‣⁃·]+/g, " ")
     .replace(/\s{2,}/g, " ")
     .trim();
 }
@@ -122,6 +123,12 @@ export function extractAtomicAchievements(rawLines: string[]): string[] {
 
     if (!cleanText || cleanText.replace(/[^a-zA-Z]/g, "").length < 3) continue;
 
+    const continuesWrappedLine = Boolean(currentBuffer) && /^[a-z0-9]/.test(cleanText);
+    if (continuesWrappedLine) {
+      currentBuffer += " " + cleanText;
+      continue;
+    }
+
     const prevEndedWithPeriod = currentBuffer.endsWith(".") || currentBuffer.endsWith(";");
     const isNewActionSentence = prevEndedWithPeriod && actionVerbStart.test(cleanText);
     const isCapitalizedNewSentence = prevEndedWithPeriod && /^[A-Z]/.test(cleanText) && cleanText.length > 20;
@@ -159,10 +166,11 @@ const SECTION_HEADERS: { section: "SUMMARY" | "EXPERIENCE" | "SKILLS" | "EDUCATI
   { section: "SUMMARY", pattern: /^(?:professional summary|executive summary|summary|profile|about me)\b/i },
   { section: "EXPERIENCE", pattern: /^(?:professional experience|work experience|employment history|employment|career history|work history|professional history|experience)\b/i },
   { section: "SKILLS", pattern: /^(?:technical skills|core competencies|core proficiencies|core skills|key skills|skills|technologies|areas of expertise|proficiencies)\b/i },
-  { section: "EDUCATION", pattern: /^(?:education|academic background|degrees & certifications|education & credentials)\b/i }
+  { section: "EDUCATION", pattern: /^(?:education(?:\s+(?:and|&)\s+certifications)?|academic background|degrees & certifications|education & credentials)\b/i }
 ];
 
 function sectionFromLine(line: string): { section: "SUMMARY" | "HIGHLIGHTS" | "EXPERIENCE" | "SKILLS" | "EDUCATION"; rest: string } | null {
+  if (isBulletLine(line)) return null;
   if (isHighlightHeader(line)) return { section: "HIGHLIGHTS", rest: "" };
   const trimmed = line.trim();
   for (const header of SECTION_HEADERS) {
@@ -186,6 +194,51 @@ function isBulletLine(line: string) {
 function looksLikeTitle(line: string) {
   const trimmed = line.trim();
   return trimmed.length > 1 && trimmed.length <= 80 && !/[.!?]$/.test(trimmed) && !isBulletLine(trimmed);
+}
+
+function joinWrappedState(lines: string[]) {
+  const joined: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const next = lines[i + 1];
+    if (next && /,\s*$/.test(line) && /^[A-Z]{2}$/.test(next)) {
+      joined.push(`${line.replace(/,\s*$/, ",")} ${next}`);
+      i += 1;
+      continue;
+    }
+    joined.push(line);
+  }
+  return joined;
+}
+
+function looksLikeDegree(text: string) {
+  return /(?:^|\b)(?:b\.s\.|b\.a\.|m\.s\.|m\.b\.a\.|ph\.d\.)(?!\w)|\b(?:bachelor|master|certified|certification|certificate)\b/i.test(text);
+}
+
+function looksLikeSchool(text: string) {
+  return /\b(?:university|college|institute|academy|alliance)\b/i.test(text);
+}
+
+function educationFields(parts: string[]) {
+  const left = parts[0] || "";
+  const right = parts[1] || "";
+  if (looksLikeDegree(left) && !looksLikeSchool(left) && (looksLikeSchool(right) || !looksLikeDegree(right))) {
+    return { institution: right || "Institution", degree: left || "Degree" };
+  }
+  return { institution: left || "Institution", degree: right || "Degree" };
+}
+
+function isSectionLabel(line: string) {
+  const cleaned = line.replace(/^[●•\*–—◦‣⁃·]+\s*/, "").trim();
+  if (tenureSpan(cleaned) || !/[A-Za-z]/.test(cleaned)) return false;
+  return cleaned.length > 3 && cleaned.length < 48 && !cleaned.includes("|") && /^[A-Z0-9 &/,.-]+$/.test(cleaned);
+}
+
+function pipeChapterWithoutYear(line: string) {
+  if (!line.includes("|") || tenureSpan(line)) return null;
+  const parts = line.replace(/^[●•\*–—◦‣⁃·]+\s*/, "").split("|").map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 3) return null;
+  return { company: parts[0], role: parts[1], claim: parts.slice(2).join(" | ") };
 }
 
 function isTenureOnly(line: string) {
@@ -332,7 +385,7 @@ export function parseComprehensiveResume(rawText: string): ParsedDossierPayload 
     .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, " - ")
     .replace(/\t/g, " ");
 
-  const rawLines = normalized.split("\n").map((l) => l.trim());
+  const rawLines = joinWrappedState(normalized.split("\n").map((l) => l.trim()));
 
   let fullName = "";
   let headline = "";
@@ -391,7 +444,17 @@ export function parseComprehensiveResume(rawText: string): ParsedDossierPayload 
   }
 
   if (sectionLines.SKILLS.length > 0) {
-    const rawSkillsText = sectionLines.SKILLS.join(" ");
+    const skillGroups: string[] = [];
+    for (const line of sectionLines.SKILLS) {
+      const startsNew = /^[●•\*–—◦‣⁃·]/.test(line) || /^-\s+/.test(line);
+      const stripped = line.replace(/^[●•\*–—◦‣⁃·]+\s*/, "").replace(/^-\s+/, "");
+      if (startsNew || skillGroups.length === 0) skillGroups.push(stripped);
+      else skillGroups[skillGroups.length - 1] += ` ${stripped}`;
+    }
+    const rawSkillsText = skillGroups.map((group) => {
+      const colon = group.indexOf(":");
+      return colon >= 0 ? group.slice(colon + 1) : group;
+    }).join(", ");
     const skillTokens = splitSkillText(rawSkillsText)
       .map(cleanEntityHeader)
       .filter((s) => s.length > 1 && s.length < 50 && !/^(Languages|Frameworks|Tools|Methodologies):?$/i.test(s));
@@ -423,11 +486,12 @@ export function parseComprehensiveResume(rawText: string): ParsedDossierPayload 
       }
 
       if (line.includes("|")) {
-        const parts = line.split("|").map((p) => cleanEntityHeader(p));
+        const parts = line.replace(/^[●•\*–—◦‣⁃·]+\s*/, "").split("|").map((p) => cleanEntityHeader(p));
+        const fields = educationFields(parts);
         education.push({
           id: `edu-${Date.now()}-${education.length}`,
-          institution: parts[0] || "University",
-          degree: parts[1] || "Degree",
+          institution: fields.institution,
+          degree: fields.degree,
           year: parts[2] ? normalizeTenurePeriod(parts[2]) : undefined
         });
       } else if (cleanedLine.length > 5 && !line.startsWith("●") && !line.startsWith("•")) {
@@ -491,6 +555,24 @@ export function parseComprehensiveResume(rawText: string): ParsedDossierPayload 
       if (roleBlocks.length === 0 && combined.role) headline = combined.role;
       currentBlock = { ...combined, lines: [] };
       pendingTitles.length = 0;
+      continue;
+    }
+
+    if (isSectionLabel(line)) continue;
+
+    const bareChapter = pipeChapterWithoutYear(line);
+    if (bareChapter) {
+      if (currentBlock) {
+        if (pendingTitles.length) currentBlock.lines.push(...pendingTitles.splice(0));
+        roleBlocks.push(currentBlock);
+      }
+      pendingTitles.length = 0;
+      currentBlock = {
+        company: cleanEntityHeader(bareChapter.company),
+        role: cleanEntityHeader(bareChapter.role),
+        period: "",
+        lines: bareChapter.claim ? [bareChapter.claim] : []
+      };
       continue;
     }
 

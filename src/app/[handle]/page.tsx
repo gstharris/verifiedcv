@@ -312,9 +312,9 @@ export default function CandidateDossierPage() {
           </div>
 
           {dossier.contact && (
-            <div className="flex flex-col gap-4 pt-4 border-t border-slate-100 text-xs sm:flex-row sm:flex-wrap xl:flex-nowrap">
+            <div className="grid grid-cols-1 gap-x-6 gap-y-3 pt-4 border-t border-slate-100 text-xs sm:grid-cols-2">
               {dossier.contact.email && (
-                <div className="flex min-w-0 flex-1 basis-full items-center gap-2 sm:basis-[calc(50%-0.5rem)] xl:basis-0">
+                <div className="flex min-w-0 items-center gap-2">
                   <div className={`flex items-center justify-center w-6 h-6 rounded-full ${dossier.contact.emailVerified ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-50 text-slate-400'}`}>
                     <Mail className="w-3 h-3" />
                   </div>
@@ -323,7 +323,7 @@ export default function CandidateDossierPage() {
                 </div>
               )}
               {dossier.contact.phone && (
-                <div className="flex min-w-0 flex-1 basis-full items-center gap-2 sm:basis-[calc(50%-0.5rem)] xl:basis-0">
+                <div className="flex min-w-0 items-center gap-2">
                   <div className={`flex items-center justify-center w-6 h-6 rounded-full ${dossier.contact.phoneVerified ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-50 text-slate-400'}`}>
                     <Phone className="w-3 h-3" />
                   </div>
@@ -332,7 +332,7 @@ export default function CandidateDossierPage() {
                 </div>
               )}
               {linkedInSlug && linkedInHref && (
-                <div className="flex min-w-0 flex-1 basis-full items-center gap-2 sm:basis-[calc(50%-0.5rem)] xl:basis-0">
+                <div className="flex min-w-0 items-center gap-2">
                   <a
                     href={linkedInHref}
                     target="_blank"
@@ -348,7 +348,7 @@ export default function CandidateDossierPage() {
                 </div>
               )}
               {dossier.contact.location && (
-                <div className="flex min-w-0 flex-1 basis-full items-center gap-2 sm:basis-[calc(50%-0.5rem)] xl:basis-0">
+                <div className="flex min-w-0 items-center gap-2">
                   <div className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-50 text-slate-400">
                     {resolvePlace(dossier.contact.location)?.countryCode ? (
                       <span className="text-sm leading-none">{flagEmoji(resolvePlace(dossier.contact.location)?.countryCode || "")}</span>
