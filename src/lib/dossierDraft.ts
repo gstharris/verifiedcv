@@ -277,13 +277,21 @@ export function applyIdentityPatch(current: CandidateIdentity, patch: IdentityPa
   }
 
   if (patch.linkedin !== undefined) {
-    next.linkedin = patch.linkedin;
-    columns.linkedin = patch.linkedin;
+    const kept = linkedInProfileUrl(current.linkedin);
+    const incomingUrl = linkedInProfileUrl(patch.linkedin);
+    if (incomingUrl || !kept) {
+      next.linkedin = incomingUrl || patch.linkedin.trim();
+      columns.linkedin = next.linkedin;
+    }
   }
   if (patch.linkedinVerified !== undefined) {
     next.linkedinVerified = patch.linkedinVerified;
     columns.linkedin_verified = patch.linkedinVerified;
-  } else if (patch.linkedin !== undefined && incoming.linkedin !== live.linkedin) {
+  } else if (patch.linkedin !== undefined && incoming.linkedin !== live.linkedin && columns.linkedin !== undefined) {
+    next.linkedinVerified = false;
+    columns.linkedin_verified = false;
+  }
+  if (!linkedInProfileUrl(next.linkedin)) {
     next.linkedinVerified = false;
     columns.linkedin_verified = false;
   }

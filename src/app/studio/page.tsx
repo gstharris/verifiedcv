@@ -287,7 +287,9 @@ function LocationField({
     onChange(next.label);
   };
   return (
-    <div className="relative p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC]">
+    <label className="block min-w-0 space-y-1.5">
+      <span className="text-[11px] font-semibold text-slate-500">City</span>
+      <div className="relative rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2.5">
       <div className="flex items-center gap-2">
         <span className="text-sm leading-none shrink-0">
           {place?.countryCode ? flagEmoji(place.countryCode) : <MapPin className="w-3.5 h-3.5 text-slate-400" />}
@@ -320,7 +322,7 @@ function LocationField({
             }, 150);
           }}
           placeholder="City"
-          className="w-full text-xs bg-transparent focus:outline-none font-medium"
+          className="w-full min-w-0 bg-transparent text-sm font-medium text-[#0F172A] focus:outline-none"
         />
       </div>
       {open && suggestions.length > 0 && (
@@ -344,7 +346,8 @@ function LocationField({
         </div>
       )}
       {notice && <p className="text-[11px] font-semibold text-amber-700 mt-1">{notice}</p>}
-    </div>
+      </div>
+    </label>
   );
 }
 
@@ -3304,8 +3307,8 @@ export default function StudioPage() {
                 aria-label="Resume sections"
                 className="sticky top-0 z-20 -mx-4 px-4 sm:-mx-8 sm:px-8 py-2.5 bg-[#F8FAFC]/95 backdrop-blur-sm border-b border-[#E2E8F0] flex flex-col gap-2"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <div className="flex min-w-0 items-center justify-between gap-3">
+                <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
                 {[
                   { id: "identity-card", label: "You" },
                   ...(summaryStatement || summaryEditor ? [{ id: "summary", label: "Summary" }] : []),
@@ -3314,17 +3317,15 @@ export default function StudioPage() {
                   { id: "skills", label: "Skills" },
                   ...(education.length > 0 ? [{ id: "education", label: "Education" }] : []),
                   ...(sampleWorkOpen || portfolioAssets.length > 0 ? [{ id: "work-samples", label: "Sample work" }] : [])
-                ].map((section, index) => (
-                  <span key={section.id} className="inline-flex items-center gap-2">
-                    {index > 0 && <span className="text-slate-300 text-[11px]">/</span>}
-                    <button
-                      type="button"
-                      onClick={() => document.getElementById(section.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                      className="text-[11px] font-bold text-slate-500 hover:text-[#0F172A] cursor-pointer"
-                    >
-                      {section.label}
-                    </button>
-                  </span>
+                ].map((section) => (
+                  <button
+                    key={section.id}
+                    type="button"
+                    onClick={() => document.getElementById(section.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                    className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold text-slate-500 hover:bg-white hover:text-[#0F172A] cursor-pointer"
+                  >
+                    {section.label}
+                  </button>
                 ))}
                 </div>
                 <div ref={addMenuRef} className="relative">
@@ -3448,47 +3449,46 @@ export default function StudioPage() {
                 </div>
               )}
 
-              <div id="identity-card" className="scroll-mt-14 bg-white border border-[#E2E8F0] rounded-3xl p-6 shadow-xs space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-100">
-                  <div className="space-y-1">
+              <div id="identity-card" className="scroll-mt-14 space-y-5 rounded-3xl border border-[#E2E8F0] bg-white p-5 shadow-xs sm:p-6">
+                <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
+                  <div className="min-w-0 flex-1 space-y-1">
                     <input
                       id="candidate-name"
                       type="text"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
-                      placeholder="Candidate Legal Name"
+                      placeholder="Your name"
                       spellCheck={true}
-                      className={`text-xl sm:text-2xl font-black text-[#0F172A] focus:outline-none border-b border-transparent focus:border-[#059669]`}
+                      className="w-full border-b border-transparent text-2xl font-black text-[#0F172A] focus:border-[#059669] focus:outline-none"
                     />
                     <input
                       id="candidate-headline"
                       type="text"
                       value={headline}
                       onChange={(e) => setHeadline(e.target.value)}
-                      placeholder="Professional Headline"
+                      placeholder="Headline"
                       spellCheck={true}
-                      className={`w-full text-xs sm:text-sm font-semibold text-slate-600 focus:outline-none border-b border-transparent focus:border-[#059669]`}
+                      className="w-full border-b border-transparent text-sm font-semibold text-slate-600 focus:border-[#059669] focus:outline-none"
                     />
                   </div>
 
-                  <div className="flex items-start self-start sm:self-auto">
                   {(!isPortfolioSaved || publishedSnapshot) && (
-                  <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${
+                  <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1 text-xs font-bold ${
                     isPortfolioSaved && !changeSummary.hasChanges
-                      ? "bg-emerald-50 border-emerald-200 text-[#059669]"
-                      : "bg-amber-50 border-amber-200 text-amber-800"
+                      ? "border-emerald-200 bg-emerald-50 text-[#059669]"
+                      : "border-amber-200 bg-amber-50 text-amber-800"
                   }`}>
-                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {isPortfolioSaved && !changeSummary.hasChanges && <CheckCircle2 className="w-3.5 h-3.5" />}
                     <span>{isPortfolioSaved ? (changeSummary.hasChanges ? "Unpublished changes" : "Live") : "Not published"}</span>
                   </span>
                   )}
-                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                  <div className="p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 flex-1">
-                      <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <label className="block min-w-0 space-y-1.5">
+                    <span className="text-[11px] font-semibold text-slate-500">Email</span>
+                    <div className="flex items-center gap-2 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2.5">
+                      <Mail className="h-4 w-4 shrink-0 text-slate-400" />
                       <input
                         id="contact-email"
                         type="email"
@@ -3499,44 +3499,45 @@ export default function StudioPage() {
                           setEmailCodeSent(false);
                           setEditingVerifiedField(null);
                         }}
-                        placeholder="Work Email"
-                        className={`w-full text-xs bg-transparent focus:outline-none font-medium ${contact.emailVerified && editingVerifiedField !== "email" ? "cursor-default" : ""}`}
+                        placeholder="name@email.com"
+                        className={`min-w-0 flex-1 bg-transparent text-sm font-medium text-[#0F172A] focus:outline-none ${contact.emailVerified && editingVerifiedField !== "email" ? "cursor-default" : ""}`}
                       />
+                      {contact.emailVerified ? (
+                        <>
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                          {editingVerifiedField !== "email" && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingVerifiedField("email");
+                                setTimeout(() => document.getElementById("contact-email")?.focus(), 0);
+                              }}
+                              className="shrink-0 cursor-pointer text-xs font-bold text-slate-500 hover:text-[#0F172A]"
+                            >
+                              Edit
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            requirePortfolioSaved(() => {
+                              void sendEmailCode();
+                            });
+                          }}
+                          className="shrink-0 cursor-pointer text-xs font-bold text-[#059669]"
+                        >
+                          {emailCodeSent ? "Resend" : "Verify"}
+                        </button>
+                      )}
                     </div>
-                    {contact.emailVerified ? (
-                      <>
-                        <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                        {editingVerifiedField !== "email" && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingVerifiedField("email");
-                              setTimeout(() => document.getElementById("contact-email")?.focus(), 0);
-                            }}
-                            className="text-[10px] font-bold text-slate-500 hover:text-[#0F172A] cursor-pointer shrink-0"
-                          >
-                            Edit
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          requirePortfolioSaved(() => {
-                            void sendEmailCode();
-                          });
-                        }}
-                        className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer shrink-0"
-                      >
-                        {emailCodeSent ? "Resend" : "Verify"}
-                      </button>
-                    )}
-                  </div>
+                  </label>
 
-                  <div className="p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <label className="block min-w-0 space-y-1.5">
+                    <span className="text-[11px] font-semibold text-slate-500">Phone</span>
+                    <div className="flex items-center gap-2 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2.5">
+                      <Phone className="h-4 w-4 shrink-0 text-slate-400" />
                       <input
                         id="contact-phone"
                         type="text"
@@ -3547,50 +3548,51 @@ export default function StudioPage() {
                           setPhoneCodeSent(false);
                           setEditingVerifiedField(null);
                         }}
-                        placeholder="Phone"
-                        className={`w-full text-xs bg-transparent focus:outline-none font-medium ${contact.phoneVerified && editingVerifiedField !== "phone" ? "cursor-default" : ""}`}
+                        placeholder="Phone number"
+                        className={`min-w-0 flex-1 bg-transparent text-sm font-medium text-[#0F172A] focus:outline-none ${contact.phoneVerified && editingVerifiedField !== "phone" ? "cursor-default" : ""}`}
                       />
+                      {contact.phoneVerified ? (
+                        <>
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                          {editingVerifiedField !== "phone" && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingVerifiedField("phone");
+                                setTimeout(() => document.getElementById("contact-phone")?.focus(), 0);
+                              }}
+                              className="shrink-0 cursor-pointer text-xs font-bold text-slate-500 hover:text-[#0F172A]"
+                            >
+                              Edit
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            requirePortfolioSaved(() => {
+                              void sendPhoneCode();
+                            });
+                          }}
+                          className="shrink-0 cursor-pointer text-xs font-bold text-[#059669]"
+                        >
+                          {phoneCodeSent ? "Resend" : "Verify"}
+                        </button>
+                      )}
                     </div>
-                    {contact.phoneVerified ? (
-                      <>
-                        <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                        {editingVerifiedField !== "phone" && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingVerifiedField("phone");
-                              setTimeout(() => document.getElementById("contact-phone")?.focus(), 0);
-                            }}
-                            className="text-[10px] font-bold text-slate-500 hover:text-[#0F172A] cursor-pointer shrink-0"
-                          >
-                            Edit
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          requirePortfolioSaved(() => {
-                            void sendPhoneCode();
-                          });
-                        }}
-                        className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer shrink-0"
-                      >
-                        {phoneCodeSent ? "Resend" : "Verify"}
-                      </button>
-                    )}
-                  </div>
+                  </label>
 
-                  <div className="p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <LinkedInIcon className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                  <label className="block min-w-0 space-y-1.5">
+                    <span className="text-[11px] font-semibold text-slate-500">LinkedIn</span>
+                    <div className="flex items-center gap-2 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2.5">
+                      <LinkedInIcon className="h-4 w-4 shrink-0 text-[#0A66C2]" />
                       {contact.linkedinVerified && editingVerifiedField !== "linkedin" && linkedInHandle(contact.linkedin) ? (
                         <a
                           href={linkedInProfileUrl(contact.linkedin)}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-xs font-semibold text-blue-700 truncate"
+                          className="min-w-0 flex-1 truncate text-sm font-semibold text-[#0A66C2]"
                         >
                           {linkedInHandle(contact.linkedin)}
                         </a>
@@ -3598,54 +3600,54 @@ export default function StudioPage() {
                         <input
                           id="contact-linkedin"
                           type="text"
-                          value={contact.linkedin}
+                          value={linkedInHandle(contact.linkedin) || contact.linkedin}
                           onChange={(e) => {
                             const next = e.target.value;
                             const sameHandle = linkedInHandle(next) !== "" && linkedInHandle(next) === linkedInHandle(contact.linkedin);
                             setContact({
                               ...contact,
-                              linkedin: next,
+                              linkedin: linkedInProfileUrl(next) || next,
                               linkedinVerified: Boolean(contact.linkedinVerified && sameHandle)
                             });
                           }}
                           onBlur={() => {
-                            if (contact.linkedinVerified) setEditingVerifiedField(null);
+                            if (contact.linkedinVerified && linkedInHandle(contact.linkedin)) setEditingVerifiedField(null);
                           }}
-                          placeholder="LinkedIn handle"
-                          className="w-full text-xs bg-transparent focus:outline-none font-medium"
+                          placeholder="your-handle"
+                          className="min-w-0 flex-1 bg-transparent text-sm font-medium text-[#0F172A] focus:outline-none"
                         />
                       )}
-                    </div>
-                    {contact.linkedinVerified && <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />}
-                    {contact.linkedinVerified && editingVerifiedField !== "linkedin" ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingVerifiedField("linkedin");
-                          setLinkedinVerifyError("");
-                          setTimeout(() => document.getElementById("contact-linkedin")?.focus(), 0);
-                        }}
-                        className="text-[10px] font-bold text-slate-500 hover:text-[#0F172A] cursor-pointer shrink-0"
-                      >
-                        Edit
-                      </button>
-                    ) : !contact.linkedinVerified ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          requirePortfolioSaved(() => {
+                      {contact.linkedinVerified && linkedInHandle(contact.linkedin) && <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />}
+                      {contact.linkedinVerified && linkedInHandle(contact.linkedin) && editingVerifiedField !== "linkedin" ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingVerifiedField("linkedin");
                             setLinkedinVerifyError("");
-                            persistPortfolioLocally(false);
-                            captureEvent("linkedin_verify_clicked", { handle: handle.toLowerCase().trim() });
-                            window.location.href = "/api/auth/linkedin?next=/studio";
-                          });
-                        }}
-                        className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer shrink-0"
-                      >
-                        Verify
-                      </button>
-                    ) : null}
-                  </div>
+                            setTimeout(() => document.getElementById("contact-linkedin")?.focus(), 0);
+                          }}
+                          className="shrink-0 cursor-pointer text-xs font-bold text-slate-500 hover:text-[#0F172A]"
+                        >
+                          Edit
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            requirePortfolioSaved(() => {
+                              setLinkedinVerifyError("");
+                              persistPortfolioLocally(false);
+                              captureEvent("linkedin_verify_clicked", { handle: handle.toLowerCase().trim() });
+                              window.location.href = "/api/auth/linkedin?next=/studio";
+                            });
+                          }}
+                          className="shrink-0 cursor-pointer text-xs font-bold text-[#059669]"
+                        >
+                          Verify
+                        </button>
+                      )}
+                    </div>
+                  </label>
 
                   <LocationField
                     value={contact.location}

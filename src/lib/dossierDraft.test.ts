@@ -135,6 +135,24 @@ describe("identity patch", () => {
     expect(applied.next.linkedin).toBe("https://www.linkedin.com/in/gharris");
   });
 
+  it("keeps a stored LinkedIn handle when a later update sends a blank one", () => {
+    const applied = applyIdentityPatch(liveIdentity, { linkedin: "", linkedinVerified: true });
+
+    expect(applied.next.linkedin).toBe("gharris");
+    expect(applied.next.linkedinVerified).toBe(true);
+    expect(applied.columns.linkedin).toBeUndefined();
+  });
+
+  it("does not mark LinkedIn verified when the handle is empty", () => {
+    const applied = applyIdentityPatch(
+      { ...liveIdentity, linkedin: "", linkedinVerified: true },
+      { linkedinVerified: true }
+    );
+
+    expect(applied.next.linkedinVerified).toBe(false);
+    expect(applied.columns.linkedin_verified).toBe(false);
+  });
+
   it("honors an explicit verification flag", () => {
     const applied = applyIdentityPatch(
       { ...liveIdentity, emailVerified: false },

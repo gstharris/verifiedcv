@@ -121,7 +121,7 @@ export async function GET(req: NextRequest) {
             location: candidate.location,
             emailVerified: candidate.email_verified,
             phoneVerified: candidate.phone_verified,
-            linkedinVerified: candidate.linkedin_verified
+            linkedinVerified: Boolean(candidate.linkedin_verified) && Boolean(linkedInProfileUrl(String(candidate.linkedin || "")))
           },
           skills: repairSkillList(skillsRes.data?.map((s) => s.skill) || []),
           education: educationRes.data || [],
@@ -344,6 +344,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        const linkedinForWrite = preferLinkedInProfile(String(existing?.linkedin || ""), String(payload.contact?.linkedin || ""));
         const candidateRowForWrite = (email: string, emailVerified: boolean) => ({
           handle,
           full_name: payload.fullName,
@@ -355,11 +356,11 @@ export async function POST(req: NextRequest) {
           }) || payload.summaryStatement,
           email,
           phone: payload.contact?.phone,
-          linkedin: preferLinkedInProfile(String(existing?.linkedin || ""), String(payload.contact?.linkedin || "")),
+          linkedin: linkedinForWrite,
           location: payload.contact?.location,
           email_verified: emailVerified,
           phone_verified: payload.contact?.phoneVerified || false,
-          linkedin_verified: payload.contact?.linkedinVerified || false,
+          linkedin_verified: Boolean(linkedinForWrite) && Boolean(payload.contact?.linkedinVerified),
           preferred_layout: payload.preferredLayout || "traditional",
           auth_user_id: user?.id || existing?.auth_user_id || null,
           updated_at: new Date().toISOString()
