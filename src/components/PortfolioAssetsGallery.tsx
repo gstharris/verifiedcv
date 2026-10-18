@@ -1,64 +1,40 @@
 "use client";
 
-import { useState } from "react";
-import { assetTypeLabel, workPreview, type PortfolioAsset } from "@/lib/portfolioAssets";
-
-function WorkPreview({ asset }: { asset: PortfolioAsset }) {
-  const preview = workPreview(asset.url);
-  const [failed, setFailed] = useState(false);
-  if (!preview || failed) {
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-[#F8FAFC] px-4 text-center text-[11px] font-bold uppercase tracking-wider text-slate-400">
-        {assetTypeLabel(asset.type)}
-      </div>
-    );
-  }
-  if (preview.kind === "frame") {
-    return (
-      <iframe
-        src={preview.src}
-        title=""
-        className="pointer-events-none h-full w-full border-0 bg-white"
-      />
-    );
-  }
-  return (
-    <img
-      src={preview.src}
-      alt=""
-      className="h-full w-full object-cover bg-[#F8FAFC]"
-      onError={() => setFailed(true)}
-    />
-  );
-}
+import { assetTypeLabel, type PortfolioAsset } from "@/lib/portfolioAssets";
+import { faviconUrl, siteLabel } from "@/lib/companySite";
 
 export default function PortfolioAssetsGallery({ assets }: { assets: PortfolioAsset[] }) {
   if (!assets.length) return null;
 
   return (
-    <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-4">
+    <div className="space-y-3 rounded-2xl border border-[#E2E8F0] bg-white p-6 shadow-xs">
       <h2 className="text-xs font-black uppercase tracking-wider text-[#0F172A]">
         Sample work ({assets.length})
       </h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="divide-y divide-slate-100">
         {assets.map((asset) => {
+          const host = asset.url ? siteLabel(asset.url) : "";
+          const icon = asset.url ? faviconUrl(asset.url) : "";
           const body = (
             <>
-              <div className="aspect-[16/10] min-h-52 overflow-hidden border-b border-[#E2E8F0] bg-[#F8FAFC]">
-                <WorkPreview asset={asset} />
-              </div>
-              <div className="p-4 space-y-1">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              {icon ? (
+                <img src={icon} alt="" className="mt-0.5 h-4 w-4 shrink-0 rounded-sm" />
+              ) : (
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
+              )}
+              <span className="min-w-0">
+                <span className="block text-sm font-bold leading-snug text-[#0F172A]">{asset.title}</span>
+                <span className="mt-0.5 block text-[11px] font-semibold text-slate-500">
                   {assetTypeLabel(asset.type)}
-                </div>
-                <div className="text-sm font-bold text-[#0F172A] leading-snug">{asset.title}</div>
+                  {host ? ` · ${host}` : ""}
+                </span>
                 {asset.description && (
-                  <p className="text-xs text-slate-600 leading-relaxed line-clamp-2">{asset.description}</p>
+                  <span className="mt-1 block text-xs leading-relaxed text-slate-600">{asset.description}</span>
                 )}
-              </div>
+              </span>
             </>
           );
-          const className = "block overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white hover:border-slate-300 transition-colors";
+          const className = "flex items-start gap-3 py-3";
           if (!asset.url) {
             return (
               <div key={asset.id} className={className}>
@@ -72,7 +48,7 @@ export default function PortfolioAssetsGallery({ assets }: { assets: PortfolioAs
               href={asset.url}
               target="_blank"
               rel="noopener noreferrer"
-              className={className}
+              className={`${className} hover:bg-[#F8FAFC]`}
             >
               {body}
             </a>
