@@ -5,9 +5,11 @@ import {
   bindStudioAccount,
   clearStudioPortfolioStorage,
   hasPortfolioContent,
+  readStudioDraftRevision,
   readStudioRecord,
   stripProofFromMilestones,
   unverifiedContact,
+  writeStudioDraftRevision,
   writeStudioRecord
 } from "./studioPortfolio";
 
@@ -81,9 +83,14 @@ describe("studio portfolio storage", () => {
     expect(readStudioRecord<{ fullName: string }>(STUDIO_DRAFT_KEY, "user-a")?.fullName).toBe("Ada Lovelace");
     expect(JSON.parse(localStorage.getItem(STUDIO_DRAFT_KEY) || "{}").fullName).toBe("Previous Person");
 
+    writeStudioDraftRevision(5, "user-a");
+    expect(readStudioDraftRevision("user-a")).toBe(5);
+    expect(readStudioDraftRevision("user-b")).toBe(0);
+
     clearStudioPortfolioStorage();
     expect(localStorage.getItem(STUDIO_DRAFT_KEY)).toBeNull();
     expect(readStudioRecord(STUDIO_DRAFT_KEY, "user-a")).toBeNull();
+    expect(readStudioDraftRevision("user-a")).toBe(0);
   });
 
   it("clears verified flags and proof artifacts for a replay", () => {

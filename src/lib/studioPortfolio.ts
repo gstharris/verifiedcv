@@ -1,4 +1,5 @@
 export const STUDIO_DRAFT_KEY = "vcv_studio_draft";
+export const STUDIO_DRAFT_REVISION_KEY = "vcv_studio_draft_revision";
 export const STUDIO_SAVED_KEY = "vcv_saved_vault";
 const STUDIO_SESSION_KEY = "vcv_studio_session";
 
@@ -31,8 +32,10 @@ function isStudioStorageKey(key: string) {
   return (
     key === STUDIO_DRAFT_KEY ||
     key === STUDIO_SAVED_KEY ||
+    key === STUDIO_DRAFT_REVISION_KEY ||
     key.startsWith(`${STUDIO_DRAFT_KEY}:`) ||
-    key.startsWith(`${STUDIO_SAVED_KEY}:`)
+    key.startsWith(`${STUDIO_SAVED_KEY}:`) ||
+    key.startsWith(`${STUDIO_DRAFT_REVISION_KEY}:`)
   );
 }
 
@@ -73,12 +76,23 @@ export function writeStudioRecord(key: string, value: unknown, accountId: string
   localStorage.setItem(scoped, JSON.stringify(value));
 }
 
+export function readStudioDraftRevision(accountId: string | null = boundAccountId) {
+  const value = readStudioRecord<number>(STUDIO_DRAFT_REVISION_KEY, accountId);
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 0;
+}
+
+export function writeStudioDraftRevision(revision: number, accountId: string | null = boundAccountId) {
+  if (!Number.isInteger(revision) || revision < 1) return;
+  writeStudioRecord(STUDIO_DRAFT_REVISION_KEY, revision, accountId);
+}
+
 export function discardSessionStudioRecords() {
   if (typeof window === "undefined") return;
   const sessionId = studioSessionId();
   if (!sessionId) return;
   localStorage.removeItem(`${STUDIO_DRAFT_KEY}:session:${sessionId}`);
   localStorage.removeItem(`${STUDIO_SAVED_KEY}:session:${sessionId}`);
+  localStorage.removeItem(`${STUDIO_DRAFT_REVISION_KEY}:session:${sessionId}`);
 }
 
 export function clearStudioPortfolioStorage() {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin, supabase as rawSupabase } from "@/lib/supabase";
 import { createClient } from "@/lib/supabase/server";
 import { clearFileDraftsAfterPublish, getVaultStore, saveToVaultStore } from "@/lib/store";
-import { DOSSIER_DRAFTS_KEY, EXPLICIT_PUBLISH_HEADER, PUBLIC_CANDIDATE_COLUMNS, draftDeleteIsMissingTable, requestPublishesLive, publicVaultRecord } from "@/lib/dossierDraft";
+import { DOSSIER_DRAFTS_KEY, EXPLICIT_PUBLISH_HEADER, PUBLIC_CANDIDATE_COLUMNS, decideDraftCancel, discardedDraftPayload, draftDeleteIsMissingTable, parseDraftRevision, requestPublishesLive, publicVaultRecord } from "@/lib/dossierDraft";
 import { publishEmailChoice } from "@/lib/publishResult";
 import { BETA_COOKIE, isBetaEnforced } from "@/lib/betaAccess";
 import { getAppUrl } from "@/lib/appUrl";
@@ -190,6 +190,10 @@ export async function POST(req: NextRequest) {
     }
 
     const payload = await req.json();
+    const publishedDraftRevision = parseDraftRevision(
+      payload && typeof payload === "object" ? (payload as { draftRevision?: unknown }).draftRevision : null
+    );
+    if (payload && typeof payload === "object") delete payload.draftRevision;
     let handle = (payload.handle || "").toLowerCase().trim();
     if (process.env.NEXT_PUBLIC_SUPABASE_URL && (!handle || !String(payload.fullName || "").trim())) {
       try {
@@ -598,13 +602,15 @@ export async function POST(req: NextRequest) {
     }
 
     saveToVaultStore(handle, dossierRecord);
-    const draftCleared = await clearPublishedDraft(authUserId, handle);
+    const discardedDraft = await clearPublishedDraft(authUserId, handle, publishedDraftRevision);
+    const draftCleared = discardedDraft.cleared;
 
     const response = NextResponse.json({
       success: true,
       handle,
       restoreEmailed,
       draftCleared,
+      draftRevision: discardedDraft.revision,
       emailKept,
       emailNotice,
       dossierUrl: `${getAppUrl()}/${handle}`
@@ -619,13 +625,50 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function clearPublishedDraft(authUserId: string | null, handle: string) {
+async function clearPublishedDraft(authUserId: string | null, handle: string, cancelRevision: number | null) {
   clearFileDraftsAfterPublish({ authUserId, handle });
-  if (!authUserId || !process.env.SUPABASE_SERVICE_ROLE_KEY) return true;
+  if (!authUserId || !process.env.SUPABASE_SERVICE_ROLE_KEY) return { cleared: true, revision: cancelRevision || 0 };
   const admin = getSupabaseAdmin();
-  if (!admin) return true;
-  const { error } = await admin.from("dossier_drafts").delete().eq("auth_user_id", authUserId);
-  if (!error || draftDeleteIsMissingTable(error.message, error.code)) return true;
-  console.error("Could not delete dossier draft after publish:", error.message);
-  return false;
+  if (!admin) return { cleared: true, revision: cancelRevision || 0 };
+  const current = await admin
+    .from("dossier_drafts")
+    .select("revision")
+    .eq("auth_user_id", authUserId)
+    .maybeSingle();
+  if (current.error) {
+    if (draftDeleteIsMissingTable(current.error.message, current.error.code)) {
+      return { cleared: true, revision: cancelRevision || 0 };
+    }
+    console.error("Could not discard dossier draft after publish:", current.error.message);
+    return { cleared: false, revision: cancelRevision || 0 };
+  }
+  const decision = decideDraftCancel({
+    hasRow: Boolean(current.data),
+    storedRevision: Number(current.data?.revision) || 0,
+    cancelRevision
+  });
+  if (!current.data && decision.revision < 1) return { cleared: true, revision: 0 };
+  const tombstone = {
+    auth_user_id: authUserId,
+    handle,
+    payload: discardedDraftPayload(),
+    revision: decision.revision,
+    updated_at: new Date().toISOString()
+  };
+  const write = current.data
+    ? await admin
+        .from("dossier_drafts")
+        .update({
+          payload: tombstone.payload,
+          revision: tombstone.revision,
+          updated_at: tombstone.updated_at
+        })
+        .eq("auth_user_id", authUserId)
+        .lte("revision", decision.revision)
+    : await admin.from("dossier_drafts").insert(tombstone);
+  if (!write.error || draftDeleteIsMissingTable(write.error.message, write.error.code)) {
+    return { cleared: true, revision: decision.revision };
+  }
+  console.error("Could not discard dossier draft after publish:", write.error.message);
+  return { cleared: false, revision: decision.revision };
 }

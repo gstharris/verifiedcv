@@ -8,8 +8,15 @@ import {
   deleteStoredDraft,
   draftDeleteIsMissingTable,
   identityColumnsAreNarrow,
+  decideDraftCancel,
+  decideDraftSave,
+  discardedDraftPayload,
   draftDeleteBlocksCancel,
+  isDiscardedDraft,
   isExplicitPublish,
+  parseDraftRevision,
+  readDraftResponse,
+  shouldRestoreLocalDraft,
   requestPublishesLive,
   parseIdentityPatch,
   publicVaultRecord,
@@ -40,7 +47,10 @@ describe("dossier draft storage", () => {
       ownerTokenHash: "secret",
       draft: { summaryStatement: "Hidden" },
       draftPayload: { summaryStatement: "Hidden" },
-      explicitPublish: true
+      explicitPublish: true,
+      draftRevision: 4,
+      __vcvDraft: "discarded",
+      __vcvRevision: 4
     });
 
     expect(stored).toEqual({ handle: "gharris", summaryStatement: "Live" });
@@ -191,6 +201,92 @@ describe("identity patch", () => {
     expect(requestPublishesLive("1", {})).toBe(true);
     expect(requestPublishesLive(null, { explicitPublish: "1" })).toBe(false);
     expect(requestPublishesLive(null, null)).toBe(false);
+  });
+
+  it("rejects a save that is not newer than cancel", () => {
+    expect(parseDraftRevision(0)).toBeNull();
+    expect(parseDraftRevision(2.5)).toBeNull();
+    expect(parseDraftRevision(3)).toBe(3);
+    expect(
+      decideDraftSave({ hasRow: true, storedRevision: 5, discarded: true, writeRevision: 5 })
+    ).toEqual({ ok: false, revision: 5 });
+    expect(
+      decideDraftSave({ hasRow: true, storedRevision: 5, discarded: true, writeRevision: null })
+    ).toEqual({ ok: false, revision: 5 });
+    expect(
+      decideDraftSave({ hasRow: true, storedRevision: 5, discarded: true, writeRevision: 6 })
+    ).toEqual({ ok: true, revision: 6 });
+    expect(
+      decideDraftSave({ hasRow: false, storedRevision: 0, discarded: false, writeRevision: 1 })
+    ).toEqual({ ok: true, revision: 1 });
+    expect(decideDraftCancel({ hasRow: true, storedRevision: 4, cancelRevision: 5 })).toEqual({ revision: 5 });
+    expect(decideDraftCancel({ hasRow: true, storedRevision: 7, cancelRevision: 5 })).toEqual({ revision: 7 });
+    expect(decideDraftCancel({ hasRow: true, storedRevision: 0, cancelRevision: null })).toEqual({ revision: 1 });
+    expect(decideDraftCancel({ hasRow: false, storedRevision: 0, cancelRevision: null })).toEqual({ revision: 0 });
+    expect(isDiscardedDraft(discardedDraftPayload())).toBe(true);
+    expect(isDiscardedDraft({ summaryStatement: "Still editing" })).toBe(false);
+  });
+
+  it("does not bring a cancelled résumé back from the browser copy", () => {
+    expect(
+      shouldRestoreLocalDraft({
+        serverHasDraft: false,
+        serverRevision: 5,
+        localRevision: 5,
+        localHasContent: true,
+        localDiffersFromLive: true
+      })
+    ).toBe(false);
+    expect(
+      shouldRestoreLocalDraft({
+        serverHasDraft: false,
+        serverRevision: 5,
+        localRevision: 0,
+        localHasContent: true,
+        localDiffersFromLive: true
+      })
+    ).toBe(false);
+    expect(
+      shouldRestoreLocalDraft({
+        serverHasDraft: false,
+        serverRevision: 0,
+        localRevision: 0,
+        localHasContent: true,
+        localDiffersFromLive: true
+      })
+    ).toBe(true);
+    expect(
+      shouldRestoreLocalDraft({
+        serverHasDraft: true,
+        serverRevision: 2,
+        localRevision: 4,
+        localHasContent: true,
+        localDiffersFromLive: true
+      })
+    ).toBe(false);
+  });
+
+  it("reads a discarded draft response as empty and keeps its fence", () => {
+    expect(readDraftResponse(404, { error: "No draft yet.", revision: 5 })).toEqual({
+      state: "empty",
+      revision: 5
+    });
+    expect(
+      readDraftResponse(200, {
+        handle: "gharris",
+        revision: 6,
+        payload: { summaryStatement: "Partial résumé", milestones: [{ id: "m2" }] }
+      })
+    ).toEqual({
+      state: "draft",
+      handle: "gharris",
+      revision: 6,
+      payload: { summaryStatement: "Partial résumé", milestones: [{ id: "m2" }] }
+    });
+    expect(readDraftResponse(200, { revision: 4, payload: discardedDraftPayload() })).toEqual({
+      state: "empty",
+      revision: 4
+    });
   });
 
   it("lets a local-only draft cancel when the server has nothing to delete", () => {

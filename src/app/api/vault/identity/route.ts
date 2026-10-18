@@ -3,6 +3,7 @@ import { BETA_COOKIE, isBetaEnforced } from "@/lib/betaAccess";
 import {
   applyIdentityPatch,
   applyIdentityToDraft,
+  isDiscardedDraft,
   parseIdentityPatch,
   type CandidateIdentity
 } from "@/lib/dossierDraft";
@@ -75,7 +76,13 @@ export async function PATCH(req: NextRequest) {
     .select("payload")
     .eq("auth_user_id", access.user.id)
     .maybeSingle();
-  if (!draft.error && draft.data?.payload && typeof draft.data.payload === "object" && !Array.isArray(draft.data.payload)) {
+  if (
+    !draft.error &&
+    draft.data?.payload &&
+    typeof draft.data.payload === "object" &&
+    !Array.isArray(draft.data.payload) &&
+    !isDiscardedDraft(draft.data.payload)
+  ) {
     const payload = applyIdentityToDraft(draft.data.payload as Record<string, unknown>, current, body);
     const saved = await access.admin
       .from("dossier_drafts")

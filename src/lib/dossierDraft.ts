@@ -20,6 +20,102 @@ export function draftDeleteBlocksCancel(status: number, serverDraftKnown: boolea
   if (!serverDraftKnown && (status === 401 || status === 404 || status === 503)) return false;
   return true;
 }
+
+export function discardedDraftPayload() {
+  return { __vcvDraft: "discarded" };
+}
+
+export function isDiscardedDraft(payload: unknown) {
+  return Boolean(
+    payload &&
+      typeof payload === "object" &&
+      !Array.isArray(payload) &&
+      (payload as { __vcvDraft?: unknown }).__vcvDraft === "discarded"
+  );
+}
+
+/** Client write numbers start at 1. Missing or fractional values are not a fence. */
+export function parseDraftRevision(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > Number.MAX_SAFE_INTEGER) {
+    return null;
+  }
+  return value;
+}
+
+/**
+ * A save may land after cancel already discarded the row.
+ * Reject it when its number is not newer than the stored fence.
+ * A save that omits a number is still rejected once the row is a tombstone.
+ */
+export function decideDraftSave(input: {
+  hasRow: boolean;
+  storedRevision: number;
+  discarded: boolean;
+  writeRevision: number | null;
+}): { ok: true; revision: number } | { ok: false; revision: number } {
+  const stored = input.storedRevision > 0 ? input.storedRevision : 0;
+  if (input.writeRevision == null) {
+    if (input.hasRow && input.discarded) return { ok: false, revision: stored };
+    return { ok: true, revision: stored + 1 };
+  }
+  if (input.hasRow && input.writeRevision <= stored) return { ok: false, revision: stored };
+  return { ok: true, revision: input.writeRevision };
+}
+
+/**
+ * Cancel moves the fence to the newest save the browser has already issued.
+ * A draft that was stored before fences existed still gets a fence of 1,
+ * so a later save cannot recreate it.
+ */
+export function decideDraftCancel(input: {
+  hasRow: boolean;
+  storedRevision: number;
+  cancelRevision: number | null;
+}) {
+  const stored = input.storedRevision > 0 ? input.storedRevision : 0;
+  const cancelAt = input.cancelRevision && input.cancelRevision > 0 ? input.cancelRevision : 0;
+  let revision = Math.max(stored, cancelAt);
+  if ((input.hasRow || cancelAt > 0) && revision < 1) revision = 1;
+  return { revision };
+}
+
+export function readDraftResponse(status: number, body: unknown) {
+  const record = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+  const revision = parseDraftRevision(record.revision) ?? 0;
+  const payload = record.payload;
+  if (
+    status >= 200 &&
+    status < 300 &&
+    payload &&
+    typeof payload === "object" &&
+    !Array.isArray(payload) &&
+    !isDiscardedDraft(payload)
+  ) {
+    return {
+      state: "draft" as const,
+      payload: payload as Record<string, unknown>,
+      handle: String(record.handle || ""),
+      revision
+    };
+  }
+  return { state: "empty" as const, revision };
+}
+
+/**
+ * After cancel, the browser can still hold the discarded résumé.
+ * Upload that copy again only when the server has no newer fence.
+ */
+export function shouldRestoreLocalDraft(input: {
+  serverHasDraft: boolean;
+  serverRevision: number;
+  localRevision: number;
+  localHasContent: boolean;
+  localDiffersFromLive: boolean;
+}) {
+  if (input.serverHasDraft || !input.localHasContent || !input.localDiffersFromLive) return false;
+  if (input.serverRevision > 0 && input.localRevision <= input.serverRevision) return false;
+  return true;
+}
 export const MAX_DRAFT_PAYLOAD_CHARS = 1_000_000;
 
 export const PUBLIC_CANDIDATE_COLUMNS =
@@ -86,6 +182,9 @@ function withoutDraftFields<T extends Record<string, unknown>>(record: T) {
   delete rest.draftPayload;
   delete rest.dossierDraft;
   delete rest.explicitPublish;
+  delete rest.draftRevision;
+  delete rest.__vcvDraft;
+  delete rest.__vcvRevision;
   return rest;
 }
 
@@ -159,6 +258,9 @@ export function sanitizeDraftPayload(
   }
   delete payload.ownerTokenHash;
   delete payload.owner_token_hash;
+  delete payload.__vcvDraft;
+  delete payload.__vcvRevision;
+  delete payload.draftRevision;
   if (JSON.stringify(payload).length > MAX_DRAFT_PAYLOAD_CHARS) {
     return { ok: false, error: "Draft is too large to save." };
   }

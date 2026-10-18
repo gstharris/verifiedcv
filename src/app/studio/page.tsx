@@ -43,9 +43,11 @@ import {
   clearStudioPortfolioStorage,
   discardSessionStudioRecords,
   hasPortfolioContent,
+  readStudioDraftRevision,
   readStudioRecord,
   stripProofFromMilestones,
   unverifiedContact,
+  writeStudioDraftRevision,
   writeStudioRecord
 } from "@/lib/studioPortfolio";
 import { getVerificationStatus } from "@/lib/verificationLevel";
@@ -66,7 +68,7 @@ import { repairSkillList } from "@/lib/skills";
 import { resolvePlace, suggestPlaces } from "@/lib/places";
 import { hydrateChapter, packChapter } from "@/lib/chapterMeta";
 import { hasUnpublishedChanges, summarizeDossierChanges, type DossierSnapshot } from "@/lib/dossierChanges";
-import { draftDeleteBlocksCancel, EXPLICIT_PUBLISH_HEADER } from "@/lib/dossierDraft";
+import { draftDeleteBlocksCancel, EXPLICIT_PUBLISH_HEADER, readDraftResponse, shouldRestoreLocalDraft } from "@/lib/dossierDraft";
 import { publishDraft } from "@/lib/publishDraft";
 import { publishFailureMessage } from "@/lib/publishResult";
 import { chapterHasProof, hasKeptIdentity, keepPublishedIdentity, mergePeerVerifications, mergeReplacedContact, overlayChapterProof, patchVaultIdentity, replaceResumeChapters, withIdentity } from "@/lib/studioSync";
@@ -658,6 +660,38 @@ export default function StudioPage() {
   const publishedSnapshotRef = useRef<DossierSnapshot | null>(null);
   const editorPayloadRef = useRef<DossierSnapshot | null>(null);
   const serverDraftRef = useRef(false);
+  const draftRevisionRef = useRef(0);
+  const cancelledThroughRef = useRef(0);
+  const suppressAutosaveRef = useRef(false);
+  const suppressPayloadRef = useRef<string | null>(null);
+
+  const noteDraftRevision = (revision: number) => {
+    if (!Number.isInteger(revision) || revision < 1) return;
+    if (revision > draftRevisionRef.current) draftRevisionRef.current = revision;
+    writeStudioDraftRevision(draftRevisionRef.current);
+  };
+
+  const issueDraftRevision = () => {
+    draftRevisionRef.current += 1;
+    writeStudioDraftRevision(draftRevisionRef.current);
+    return draftRevisionRef.current;
+  };
+
+  const releaseCancelledEdits = (previousFence: number) => {
+    cancelledThroughRef.current = previousFence;
+    suppressAutosaveRef.current = false;
+    suppressPayloadRef.current = null;
+  };
+
+  const holdCancelledEdits = () => {
+    const fence = Math.max(cancelledThroughRef.current, draftRevisionRef.current);
+    cancelledThroughRef.current = fence;
+    suppressAutosaveRef.current = true;
+    suppressPayloadRef.current = null;
+    autosaveAbortRef.current?.abort();
+    autosaveAbortRef.current = null;
+    return fence;
+  };
 
   const rememberPublished = (next: DossierSnapshot | null) => {
     publishedSnapshotRef.current = next;
@@ -956,15 +990,18 @@ export default function StudioPage() {
     let cancelled = false;
     const adoptServerDraft = async () => {
       const draftRes = await fetch("/api/vault/draft", { credentials: "include" });
-      if (!draftRes.ok || cancelled) return false;
       const body = await draftRes.json().catch(() => null);
-      const payload = body?.payload;
-      if (!payload || typeof payload !== "object" || !hasPortfolioContent(payload) || cancelled) return false;
+      const draftState = readDraftResponse(draftRes.status, body);
+      noteDraftRevision(draftState.revision);
+      if (draftState.state !== "draft" || cancelled) return false;
+      const payload = draftState.payload;
+      if (!hasPortfolioContent(payload) || cancelled) return false;
       skipNextAutosaveRef.current = true;
       serverDraftRef.current = true;
       sessionDraftRef.current = false;
       applyPortfolioRecord(payload);
       writeStudioRecord(STUDIO_DRAFT_KEY, payload);
+      writeStudioDraftRevision(draftState.revision);
       discardSessionStudioRecords();
       return true;
     };
@@ -1052,18 +1089,20 @@ export default function StudioPage() {
         }
         const draftRes = await fetch("/api/vault/draft", { credentials: "include" });
         if (cancelled) return;
-        if (draftRes.ok) {
-          const body = await draftRes.json().catch(() => null);
-          const payload = body?.payload;
-          const draftHandle = String(body?.handle || payload?.handle || "").toLowerCase().trim();
+        const draftBody = await draftRes.json().catch(() => null);
+        const draftState = readDraftResponse(draftRes.status, draftBody);
+        noteDraftRevision(draftState.revision);
+        if (draftState.state === "draft") {
+          const draftHandle = String(draftState.handle || draftState.payload.handle || "").toLowerCase().trim();
           const samePage = !draftHandle || draftHandle === String(data.handle).toLowerCase().trim();
-          if (payload && typeof payload === "object" && samePage) {
-            const carried = keepPublishedIdentity(payload, baseline);
+          if (samePage) {
+            const carried = keepPublishedIdentity(draftState.payload, baseline);
             skipNextAutosaveRef.current = true;
             serverDraftRef.current = true;
             sessionDraftRef.current = false;
             applyPortfolioRecord(carried);
             writeStudioRecord(STUDIO_DRAFT_KEY, carried);
+            writeStudioDraftRevision(draftState.revision);
             discardSessionStudioRecords();
             setSaveStatus("saved");
             setVaultChecked(true);
@@ -1071,7 +1110,17 @@ export default function StudioPage() {
           }
         }
         const local = readStudioRecord<DossierSnapshot>(STUDIO_DRAFT_KEY);
-        if (local && hasPortfolioContent(local) && hasUnpublishedChanges(baseline, local)) {
+        const editorPayload = editorPayloadRef.current;
+        if (
+          local &&
+          shouldRestoreLocalDraft({
+            serverHasDraft: false,
+            serverRevision: draftState.revision,
+            localRevision: readStudioDraftRevision(),
+            localHasContent: hasPortfolioContent(local),
+            localDiffersFromLive: hasUnpublishedChanges(baseline, local)
+          })
+        ) {
           const carried = keepPublishedIdentity(local, baseline);
           skipNextAutosaveRef.current = true;
           sessionDraftRef.current = false;
@@ -1079,20 +1128,35 @@ export default function StudioPage() {
           writeStudioRecord(STUDIO_DRAFT_KEY, carried);
           discardSessionStudioRecords();
           setSaveStatus("saving");
+          const revision = issueDraftRevision();
           const put = await fetch("/api/vault/draft", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
-            body: JSON.stringify({ handle: data.handle, payload: carried })
+            body: JSON.stringify({ handle: data.handle, payload: carried, revision })
           });
-          serverDraftRef.current = put.ok;
-          if (!cancelled) setSaveStatus(put.ok ? "saved" : "error");
-        } else if (sessionDraftRef.current || !hasUnpublishedChanges(baseline, editorPayloadRef.current)) {
+          if (put.status === 409) {
+            serverDraftRef.current = false;
+            applyPortfolioRecord(baseline);
+            writeStudioRecord(STUDIO_DRAFT_KEY, baseline);
+            writeStudioDraftRevision(draftState.revision);
+            if (!cancelled) setSaveStatus("saved");
+          } else {
+            serverDraftRef.current = put.ok;
+            if (put.ok) noteDraftRevision(revision);
+            if (!cancelled) setSaveStatus(put.ok ? "saved" : "error");
+          }
+        } else if (
+          sessionDraftRef.current ||
+          !hasPortfolioContent(editorPayload || {}) ||
+          !hasUnpublishedChanges(baseline, editorPayload)
+        ) {
           skipNextAutosaveRef.current = true;
           serverDraftRef.current = false;
           sessionDraftRef.current = false;
           applyPortfolioRecord(baseline);
           writeStudioRecord(STUDIO_DRAFT_KEY, baseline);
+          if (draftState.revision > 0) writeStudioDraftRevision(draftState.revision);
           discardSessionStudioRecords();
           setSaveStatus("saved");
         } else {
@@ -1536,6 +1600,21 @@ export default function StudioPage() {
       milestones: savedChapters(milestones)
     };
     if (!hasPortfolioContent(payload) && !isPortfolioSaved) return;
+    if (suppressAutosaveRef.current) {
+      let encoded = "";
+      try {
+        encoded = JSON.stringify(payload);
+      } catch {
+        encoded = "";
+      }
+      if (suppressPayloadRef.current === null) suppressPayloadRef.current = encoded;
+      if (suppressPayloadRef.current === encoded) {
+        setSaveStatus("saved");
+        return;
+      }
+      suppressAutosaveRef.current = false;
+      suppressPayloadRef.current = null;
+    }
     const snapshotReady = Boolean(publishedSnapshotRef.current);
     if (restoredDraftRef.current && (!snapshotReady || !hasUnpublishedChanges(publishedSnapshotRef.current, payload))) {
       restoredDraftRef.current = false;
@@ -1559,11 +1638,18 @@ export default function StudioPage() {
     const dirty = !isPortfolioSaved || hasUnpublishedChanges(publishedSnapshotRef.current, payload);
     if (!dirty) {
       setSaveStatus("saved");
-      if (!serverDraftRef.current) return;
+      if (!serverDraftRef.current || suppressAutosaveRef.current) return;
+      const revision = draftRevisionRef.current;
       const timeout = setTimeout(() => {
+        if (suppressAutosaveRef.current || draftRevisionRef.current !== revision) return;
         serverDraftRef.current = false;
         writeStudioRecord(STUDIO_DRAFT_KEY, publishedSnapshotRef.current);
-        void fetch("/api/vault/draft", { method: "DELETE", credentials: "include" }).catch(() => undefined);
+        void fetch("/api/vault/draft", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ revision })
+        }).catch(() => undefined);
       }, 800);
       return () => clearTimeout(timeout);
     }
@@ -1572,17 +1658,40 @@ export default function StudioPage() {
     autosaveAbortRef.current?.abort();
     const controller = new AbortController();
     autosaveAbortRef.current = controller;
+    const revision = issueDraftRevision();
     const timeout = setTimeout(async () => {
+      if (revision <= cancelledThroughRef.current) return;
       try {
         const res = await fetch("/api/vault/draft", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ handle: payload.handle, payload }),
+          body: JSON.stringify({ handle: payload.handle, payload, revision }),
           signal: controller.signal
         });
-        if (controller.signal.aborted) return;
-        if (res.ok) serverDraftRef.current = true;
+        const stale = controller.signal.aborted || revision <= cancelledThroughRef.current;
+        if (stale) {
+          if (res.ok) {
+            void fetch("/api/vault/draft", {
+              method: "DELETE",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ revision: Math.max(cancelledThroughRef.current, revision) })
+            }).catch(() => undefined);
+          }
+          return;
+        }
+        if (res.status === 409) {
+          const rejected = await res.json().catch(() => null);
+          noteDraftRevision(Number(rejected?.revision) || 0);
+          setSaveStatus(revision === draftRevisionRef.current ? "error" : "saved");
+          return;
+        }
+        if (res.ok) {
+          serverDraftRef.current = true;
+          const saved = await res.json().catch(() => null);
+          noteDraftRevision(Number(saved?.revision) || revision);
+        }
         setSaveStatus(res.ok ? "saved" : "error");
       } catch (err) {
         if (controller.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
@@ -1749,18 +1858,24 @@ export default function StudioPage() {
     const keepServerDraft = hasPortfolioContent(reduced);
     serverDraftRef.current = keepServerDraft;
     if (user && keepServerDraft) {
+      const revision = issueDraftRevision();
       void fetch("/api/vault/draft", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ handle: reduced.handle, payload: reduced })
+        body: JSON.stringify({ handle: reduced.handle, payload: reduced, revision })
       }).then((res) => {
         console.info(JSON.stringify({ event: "clear_canvas_reset", draftDeleted: false, status: res.status }));
       }).catch(() => {
         console.info(JSON.stringify({ event: "clear_canvas_reset", draftDeleted: false }));
       });
     } else if (user) {
-      void fetch("/api/vault/draft", { method: "DELETE", credentials: "include" })
+      void fetch("/api/vault/draft", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ revision: draftRevisionRef.current })
+      })
         .then((res) => {
           console.info(JSON.stringify({ event: "clear_canvas_reset", draftDeleted: res.ok, status: res.status }));
         })
@@ -2384,6 +2499,8 @@ export default function StudioPage() {
 
     if (!isValid) return;
 
+    const previousFence = cancelledThroughRef.current;
+    holdCancelledEdits();
     setIsCommitting(true);
     const dossierPayload = {
       handle: handle.toLowerCase().trim(),
@@ -2405,7 +2522,7 @@ export default function StudioPage() {
         method: "POST",
         headers: { "Content-Type": "application/json", [EXPLICIT_PUBLISH_HEADER]: "1" },
         credentials: "include",
-        body: JSON.stringify({ ...dossierPayload, explicitPublish: true })
+        body: JSON.stringify({ ...dossierPayload, explicitPublish: true, draftRevision: draftRevisionRef.current })
       });
 
       const data = await res.json().catch(() => ({}));
@@ -2413,6 +2530,7 @@ export default function StudioPage() {
         skipNextAutosaveRef.current = true;
         rememberPublished(dossierPayload);
         serverDraftRef.current = false;
+        noteDraftRevision(Number(data?.draftRevision) || draftRevisionRef.current);
         persistPortfolioLocally(true, dossierPayload);
         setIsPortfolioSaved(true);
         setSaveStatus("saved");
@@ -2436,6 +2554,7 @@ export default function StudioPage() {
           }
         ]);
       } else {
+        releaseCancelledEdits(previousFence);
         setRestoreNotice(data.error || "Failed to save portfolio.");
         if (data.code === "HANDLE_OWNED") setHandleStatus("taken");
         if (data.code === "EMAIL_TAKEN" && data.handle) {
@@ -2444,6 +2563,7 @@ export default function StudioPage() {
         }
       }
     } catch {
+      releaseCancelledEdits(previousFence);
       alert("Network error saving portfolio.");
     } finally {
       setIsCommitting(false);
@@ -2474,14 +2594,18 @@ export default function StudioPage() {
       rememberPublished(proofPayload);
       writeStudioRecord(STUDIO_SAVED_KEY, proofPayload);
       writeStudioRecord(STUDIO_DRAFT_KEY, draftPayload);
-      if (hasUnpublishedChanges(proofPayload, draftPayload)) {
+      if (hasUnpublishedChanges(proofPayload, draftPayload) && !suppressAutosaveRef.current) {
+        const revision = issueDraftRevision();
         const draftRes = await fetch("/api/vault/draft", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ handle: proofPayload.handle, payload: draftPayload })
+          body: JSON.stringify({ handle: proofPayload.handle, payload: draftPayload, revision })
         });
-        if (draftRes.ok) serverDraftRef.current = true;
+        if (draftRes.ok) {
+          serverDraftRef.current = true;
+          noteDraftRevision(revision);
+        }
       } else {
         serverDraftRef.current = false;
       }
@@ -2879,17 +3003,27 @@ export default function StudioPage() {
   };
 
   const retryDraftSave = async () => {
-    if (!user) return;
+    if (!user || suppressAutosaveRef.current) return;
     const payload = buildPortfolioPayload();
     setSaveStatus("saving");
     try {
+      const revision = issueDraftRevision();
       const res = await fetch("/api/vault/draft", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ handle: payload.handle, payload })
+        body: JSON.stringify({ handle: payload.handle, payload, revision })
       });
-      if (res.ok) serverDraftRef.current = true;
+      if (res.status === 409) {
+        const rejected = await res.json().catch(() => null);
+        noteDraftRevision(Number(rejected?.revision) || 0);
+        setSaveStatus("error");
+        return;
+      }
+      if (res.ok) {
+        serverDraftRef.current = true;
+        noteDraftRevision(revision);
+      }
       setSaveStatus(res.ok ? "saved" : "error");
     } catch {
       setSaveStatus("error");
@@ -2906,6 +3040,8 @@ export default function StudioPage() {
   const publishChanges = async () => {
     const snapshot = publishedSnapshotRef.current;
     if (!snapshot || !changeSummary.hasChanges) return;
+    const previousFence = cancelledThroughRef.current;
+    const fence = holdCancelledEdits();
     setReviewBusy(true);
     setReviewError("");
     try {
@@ -2914,10 +3050,11 @@ export default function StudioPage() {
         method: "POST",
         headers: { "Content-Type": "application/json", [EXPLICIT_PUBLISH_HEADER]: "1" },
         credentials: "include",
-        body: JSON.stringify({ ...merged, explicitPublish: true })
+        body: JSON.stringify({ ...merged, explicitPublish: true, draftRevision: fence })
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) {
+        releaseCancelledEdits(previousFence);
         setReviewError(publishFailureMessage(body));
         return;
       }
@@ -2935,6 +3072,7 @@ export default function StudioPage() {
         : merged;
       skipNextAutosaveRef.current = true;
       serverDraftRef.current = false;
+      noteDraftRevision(Number(body?.draftRevision) || fence);
       rememberPublished(publishedRecord);
       applyPortfolioRecord(publishedRecord);
       try {
@@ -2953,6 +3091,7 @@ export default function StudioPage() {
         // Analytics must not undo a publish that already succeeded.
       }
     } catch {
+      releaseCancelledEdits(previousFence);
       setReviewError("Could not publish changes.");
     } finally {
       setReviewBusy(false);
@@ -2964,6 +3103,8 @@ export default function StudioPage() {
     autosaveAbortRef.current = null;
     restoredDraftRef.current = true;
     skipNextAutosaveRef.current = true;
+    suppressAutosaveRef.current = true;
+    suppressPayloadRef.current = null;
     serverDraftRef.current = false;
     applyPortfolioRecord(snapshot);
     setFullName(String(snapshot.fullName || ""));
@@ -2983,6 +3124,7 @@ export default function StudioPage() {
     }
     writeStudioRecord(STUDIO_SAVED_KEY, snapshot);
     writeStudioRecord(STUDIO_DRAFT_KEY, snapshot);
+    writeStudioDraftRevision(Math.max(draftRevisionRef.current, cancelledThroughRef.current));
     setSaveStatus("saved");
     setReviewError("");
     setReviewOpen(false);
@@ -2995,20 +3137,33 @@ export default function StudioPage() {
       setReviewError("Could not cancel changes.");
       return;
     }
+    const previousFence = cancelledThroughRef.current;
+    const fence = holdCancelledEdits();
     setReviewBusy(true);
     setReviewError("");
     const serverDraftKnown = serverDraftRef.current;
     try {
       if (user || serverDraftKnown) {
-        const res = await fetch("/api/vault/draft", { method: "DELETE", credentials: "include" });
+        const res = await fetch("/api/vault/draft", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ revision: fence })
+        });
         if (draftDeleteBlocksCancel(res.status, serverDraftKnown)) {
+          releaseCancelledEdits(previousFence);
           setReviewError("Could not cancel changes.");
           return;
         }
+        const body = await res.json().catch(() => null);
+        const revision = Number(body?.revision) || fence;
+        if (revision > cancelledThroughRef.current) cancelledThroughRef.current = revision;
+        noteDraftRevision(revision);
       }
       restorePublishedEditor(snapshot);
     } catch {
       if (serverDraftKnown) {
+        releaseCancelledEdits(previousFence);
         setReviewError("Could not cancel changes.");
         return;
       }
