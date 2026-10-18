@@ -63,7 +63,7 @@ function isHighlightHeader(line: string) {
   const compact = line.replace(/[:|–—-]/g, " ").replace(/\s+/g, " ").trim();
   if (!compact || compact.length > 40) return false;
   if (/^[●•\-*]/.test(line.trim())) return false;
-  return /^(?:career |selected |key |professional )?highlights$/i.test(compact);
+  return /^(?:(?:career|selected|key|professional|core|executive|notable|signature|major)\s+)?highlights$/i.test(compact);
 }
 
 function isValidAchievement(text: string): boolean {

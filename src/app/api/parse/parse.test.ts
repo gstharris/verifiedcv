@@ -119,6 +119,36 @@ describe("parseComprehensiveResume", () => {
     expect(parsed.highlights).toEqual([]);
   });
 
+  it("keeps core highlights out of the executive summary", () => {
+    const resume = `
+GRAHAM HARRIS
+Thousand Oaks, CA | (818) 661-0117 | gstharris@gmail.com | linkedin.com/in/gstharris
+EXECUTIVE SUMMARY
+Product executive focused on revenue growth and customer needs, building and deploying applied AI solutions to
+refactor complex workflows, modernize legacy operating models, and drive business value.
+CORE HIGHLIGHTS
+● Scale & Governance: Conceived and scaled Yahoo personalization and advertising platform to $400M in
+revenue, earned 3 patents, and mentored an international 15 person product and marketing organization.
+● Commercial Impact: Restructured enterprise SaaS catalogs into tiered solution packages at Bazaarvoice,
+cutting sales cycles by 25% and expanding average deal size by 30%.
+● AI Systems & Speed: Architected multi model agentic pipelines and token prioritization at Ge-on;
+overhauled development lifecycles using rapid prototyping, cutting recurring meetings by 20% and raising
+shipping velocity by 10%.
+PROFESSIONAL EXPERIENCE
+Ge-on | Head of Product | May 2025 to Present | Remote
+● Lead product strategy, systems architecture, and technical execution for an enterprise AI platform.
+`.trim();
+    const parsed = parseComprehensiveResume(resume);
+    expect(parsed.summaryStatement).toMatch(/Product executive focused on revenue growth/i);
+    expect(parsed.summaryStatement).not.toMatch(/Scale & Governance|Commercial Impact|AI Systems & Speed|Core Highlights/i);
+    expect(parsed.highlights).toEqual([
+      "Scale & Governance: Conceived and scaled Yahoo personalization and advertising platform to $400M in revenue, earned 3 patents, and mentored an international 15 person product and marketing organization.",
+      "Commercial Impact: Restructured enterprise SaaS catalogs into tiered solution packages at Bazaarvoice, cutting sales cycles by 25% and expanding average deal size by 30%.",
+      "AI Systems & Speed: Architected multi model agentic pipelines and token prioritization at Ge-on; overhauled development lifecycles using rapid prototyping, cutting recurring meetings by 20% and raising shipping velocity by 10%."
+    ]);
+    expect(parsed.milestones.map((milestone) => milestone.company)).toEqual(["Ge-on"]);
+  });
+
   it("keeps a highlights section when the resume has one", () => {
     const withHighlights = `
 Ada Preview
