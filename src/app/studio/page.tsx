@@ -1644,8 +1644,12 @@ export default function StudioPage() {
     }
     if (skipNextAutosaveRef.current) {
       const pendingEdit = snapshotReady && hasUnpublishedChanges(publishedSnapshotRef.current, payload);
+      const erasesLiveResume =
+        snapshotReady &&
+        hasPortfolioContent(publishedSnapshotRef.current || {}) &&
+        !hasPortfolioContent(payload);
       skipNextAutosaveRef.current = false;
-      if (!pendingEdit) {
+      if (!pendingEdit || erasesLiveResume) {
         setSaveStatus("saved");
         return;
       }
@@ -1654,6 +1658,15 @@ export default function StudioPage() {
 
     if (!user || !vaultChecked) return;
     if (isPortfolioSaved && !snapshotReady) return;
+
+    const erasesLiveResume =
+      isPortfolioSaved &&
+      hasPortfolioContent(publishedSnapshotRef.current || {}) &&
+      !hasPortfolioContent(payload);
+    if (erasesLiveResume) {
+      setSaveStatus("saved");
+      return;
+    }
 
     const dirty = !isPortfolioSaved || hasUnpublishedChanges(publishedSnapshotRef.current, payload);
     if (!dirty) {

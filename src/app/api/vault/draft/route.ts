@@ -5,6 +5,7 @@ import {
   decideDraftHandle,
   decideDraftSave,
   discardedDraftPayload,
+  draftHasResume,
   isDiscardedDraft,
   parseDraftRevision,
   sanitizeDraftPayload
@@ -48,7 +49,7 @@ export async function GET() {
     return json({ error: error.message || "Could not load the draft." }, { status: 500 });
   }
   const revision = Number(data?.revision) || 0;
-  if (!data?.payload || typeof data.payload !== "object" || isDiscardedDraft(data.payload)) {
+  if (!data?.payload || typeof data.payload !== "object" || isDiscardedDraft(data.payload) || !draftHasResume(data.payload)) {
     return json({ error: "No draft yet.", revision }, { status: 404 });
   }
 
@@ -118,6 +119,9 @@ export async function PUT(req: NextRequest) {
     writeRevision: parseDraftRevision(record.revision)
   });
   if (!save.ok) return json({ error: "Those edits were already cancelled.", revision: save.revision }, { status: 409 });
+  if (found.candidate?.handle && !draftHasResume(sanitized.payload)) {
+    return json({ error: "Those edits were already cancelled.", revision: storedRevision }, { status: 409 });
+  }
 
   const updatedAt = new Date().toISOString();
   const row = {

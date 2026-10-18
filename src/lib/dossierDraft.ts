@@ -1,5 +1,6 @@
 import { contactIdentity } from "./dossierChanges";
 import { linkedInProfileUrl } from "./linkedin";
+import { hasPortfolioContent } from "./studioPortfolio";
 
 export const DOSSIER_DRAFTS_KEY = "__dossier_drafts";
 export const EXPLICIT_PUBLISH_HEADER = "x-vcv-publish";
@@ -79,6 +80,12 @@ export function decideDraftCancel(input: {
   return { revision };
 }
 
+/** A name and contact line with no chapters, summary, highlights, or sample work is not an open résumé edit. */
+export function draftHasResume(payload: unknown) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  return hasPortfolioContent(payload as Parameters<typeof hasPortfolioContent>[0]);
+}
+
 export function readDraftResponse(status: number, body: unknown) {
   const record = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
   const revision = parseDraftRevision(record.revision) ?? 0;
@@ -89,7 +96,8 @@ export function readDraftResponse(status: number, body: unknown) {
     payload &&
     typeof payload === "object" &&
     !Array.isArray(payload) &&
-    !isDiscardedDraft(payload)
+    !isDiscardedDraft(payload) &&
+    draftHasResume(payload)
   ) {
     return {
       state: "draft" as const,

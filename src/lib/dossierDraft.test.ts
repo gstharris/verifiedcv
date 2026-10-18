@@ -12,6 +12,7 @@ import {
   decideDraftSave,
   discardedDraftPayload,
   draftDeleteBlocksCancel,
+  draftHasResume,
   isDiscardedDraft,
   isExplicitPublish,
   parseDraftRevision,
@@ -287,6 +288,14 @@ describe("identity patch", () => {
       state: "empty",
       revision: 4
     });
+    expect(draftHasResume({ fullName: "Graham Harris", headline: "Head of Product", milestones: [] })).toBe(false);
+    expect(
+      readDraftResponse(200, {
+        handle: "gharris",
+        revision: 29,
+        payload: { fullName: "Graham Harris", headline: "Head of Product", milestones: [], summaryStatement: "" }
+      })
+    ).toEqual({ state: "empty", revision: 29 });
   });
 
   it("lets a local-only draft cancel when the server has nothing to delete", () => {
