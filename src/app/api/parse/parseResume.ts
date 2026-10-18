@@ -66,6 +66,13 @@ function isHighlightHeader(line: string) {
   return /^(?:(?:career|selected|key|professional|core|executive|notable|signature|major)\s+)?highlights$/i.test(compact);
 }
 
+function isPatentHeader(line: string) {
+  const compact = line.replace(/[:|–—-]/g, " ").replace(/\s+/g, " ").trim();
+  if (!compact || compact.length > 40) return false;
+  if (/^[●•\-*]/.test(line.trim())) return false;
+  return /^(?:issued\s+)?patents?$/i.test(compact);
+}
+
 function isValidAchievement(text: string): boolean {
   const lettersOnly = text.replace(/[^a-zA-Z]/g, "");
   return lettersOnly.length >= 12;
@@ -165,18 +172,21 @@ export function isEducationItem(text: string): boolean {
 const SECTION_HEADERS: { section: "SUMMARY" | "EXPERIENCE" | "SKILLS" | "EDUCATION"; pattern: RegExp }[] = [
   { section: "SUMMARY", pattern: /^(?:professional summary|executive summary|summary|profile|about me)\b/i },
   { section: "EXPERIENCE", pattern: /^(?:professional experience|work experience|employment history|employment|career history|work history|professional history|experience)\b/i },
-  { section: "SKILLS", pattern: /^(?:technical skills|core competencies|core proficiencies|core skills|key skills|skills|technologies|areas of expertise|proficiencies)\b/i },
+  { section: "SKILLS", pattern: /^(?:technical skills|core competencies(?:\s+(?:and|&)\s+skills)?|core proficiencies(?:\s+(?:and|&)\s+skills)?|core skills|key skills|skills|technologies|areas of expertise|proficiencies)\b/i },
   { section: "EDUCATION", pattern: /^(?:education(?:\s+(?:and|&)\s+certifications)?|academic background|degrees & certifications|education & credentials)\b/i }
 ];
 
-function sectionFromLine(line: string): { section: "SUMMARY" | "HIGHLIGHTS" | "EXPERIENCE" | "SKILLS" | "EDUCATION"; rest: string } | null {
+function sectionFromLine(line: string): { section: "SUMMARY" | "HIGHLIGHTS" | "EXPERIENCE" | "SKILLS" | "EDUCATION" | "OTHER"; rest: string } | null {
   if (isBulletLine(line)) return null;
   if (isHighlightHeader(line)) return { section: "HIGHLIGHTS", rest: "" };
+  if (isPatentHeader(line)) return { section: "OTHER", rest: "" };
   const trimmed = line.trim();
   for (const header of SECTION_HEADERS) {
     const match = trimmed.match(header.pattern);
     if (!match) continue;
-    return { section: header.section, rest: trimmed.slice(match[0].length).replace(/^[:|\-–—\s]+/, "").trim() };
+    let rest = trimmed.slice(match[0].length).replace(/^[:|\-–—\s]+/, "").trim();
+    if (header.section === "SKILLS" && /^(?:and|&)\s+skills$/i.test(rest)) rest = "";
+    return { section: header.section, rest };
   }
   return null;
 }
@@ -466,7 +476,7 @@ export function parseComprehensiveResume(rawText: string): ParsedDossierPayload 
     }).join(", ");
     const skillTokens = splitSkillText(rawSkillsText)
       .map(cleanEntityHeader)
-      .filter((s) => s.length > 1 && s.length < 50 && !/^(Languages|Frameworks|Tools|Methodologies):?$/i.test(s));
+      .filter((s) => s.length > 1 && s.length <= 80 && !/^(Languages|Frameworks|Tools|Methodologies):?$/i.test(s));
 
     skillTokens.forEach((s) => {
       if (isEducationItem(s)) {

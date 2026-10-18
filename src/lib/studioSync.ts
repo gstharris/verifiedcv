@@ -1,3 +1,5 @@
+import { linkedInHandle, linkedInProfileUrl } from "./linkedin";
+
 type ProofChapter = {
   id?: string;
   verifications?: unknown[];
@@ -163,6 +165,33 @@ export function mergeReplacedContact<T extends ReplacedContact>(
     emailVerified: current.emailVerified,
     phoneVerified: current.phoneVerified,
     linkedinVerified: current.linkedinVerified
+  };
+}
+
+export type LinkedInConfirmation = {
+  linkedin: string;
+  linkedinSub: string;
+};
+
+/** A portfolio reload cannot clear a LinkedIn confirmation for the same handle. */
+export function retainLinkedInConfirmation<T extends {
+  contact?: { linkedin?: string; linkedinVerified?: boolean } | null;
+  linkedinSub?: string;
+}>(record: T, confirmation: LinkedInConfirmation | null): T {
+  if (!record || !confirmation) return record;
+  const confirmedUrl = linkedInProfileUrl(confirmation.linkedin);
+  if (!confirmedUrl) return record;
+  const contact = { ...(record.contact || {}) };
+  const currentUrl = linkedInProfileUrl(String(contact.linkedin || ""));
+  if (currentUrl && linkedInHandle(currentUrl) !== linkedInHandle(confirmedUrl)) return record;
+  return {
+    ...record,
+    linkedinSub: confirmation.linkedinSub || record.linkedinSub,
+    contact: {
+      ...contact,
+      linkedin: confirmedUrl,
+      linkedinVerified: true
+    }
   };
 }
 

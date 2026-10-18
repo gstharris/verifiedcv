@@ -3,8 +3,10 @@ import {
   createOAuthState,
   isSafeNextPath,
   confirmedLinkedInLabel,
+  confirmedLinkedInProfile,
   linkedInHandle,
   linkedInProfileUrl,
+  linkedInVerifiedForWrite,
   mapUserInfoToIdentity,
   preferLinkedInProfile,
   parseOAuthState,
@@ -61,5 +63,36 @@ describe("linkedin helpers", () => {
       "https://www.linkedin.com/in/gstharris"
     );
     expect(preferLinkedInProfile("Graham Harris", "Graham Harris")).toBe("");
+  });
+
+  it("keeps the résumé handle when LinkedIn sign-in has no public profile url", () => {
+    expect(confirmedLinkedInProfile("linkedin.com/in/gstharris", { vanityName: "" })).toEqual({
+      linkedin: "https://www.linkedin.com/in/gstharris"
+    });
+    expect(confirmedLinkedInProfile("", { vanityName: "Graham Harris" })).toBeNull();
+    expect(confirmedLinkedInProfile("linkedin.com/in/gstharris", { profileUrl: "https://www.linkedin.com/in/other" })).toEqual({
+      linkedin: "https://www.linkedin.com/in/other"
+    });
+  });
+
+  it("keeps a stored LinkedIn confirmation when a later save repeats the same handle", () => {
+    expect(linkedInVerifiedForWrite({
+      existingLinkedIn: "https://www.linkedin.com/in/gstharris",
+      existingVerified: true,
+      incomingLinkedIn: "https://www.linkedin.com/in/gstharris",
+      incomingVerified: false
+    })).toBe(true);
+    expect(linkedInVerifiedForWrite({
+      existingLinkedIn: "https://www.linkedin.com/in/gstharris",
+      existingVerified: true,
+      incomingLinkedIn: "https://www.linkedin.com/in/other",
+      incomingVerified: false
+    })).toBe(false);
+    expect(linkedInVerifiedForWrite({
+      existingLinkedIn: "",
+      existingVerified: false,
+      incomingLinkedIn: "",
+      incomingVerified: true
+    })).toBe(false);
   });
 });

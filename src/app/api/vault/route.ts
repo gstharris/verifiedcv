@@ -13,7 +13,7 @@ import {
   hashOwnerToken
 } from "@/lib/handleOwner";
 import { issueRestoreCode } from "@/lib/handleRestore";
-import { linkedInProfileUrl, preferLinkedInProfile } from "@/lib/linkedin";
+import { linkedInProfileUrl, linkedInVerifiedForWrite, preferLinkedInProfile } from "@/lib/linkedin";
 import { candidateSummary, decodeStoredHighlights, decodeStoredPage, encodeStoredPage, normalizePortfolioAsset, type PortfolioAsset } from "@/lib/portfolioAssets";
 import { repairSkillList } from "@/lib/skills";
 import { markPrivateNoStore } from "@/lib/httpCache";
@@ -243,7 +243,7 @@ export async function POST(req: NextRequest) {
 
         const { data: existing, error: existingError } = await rawSupabase
           .from("candidates")
-          .select("handle, email, linkedin, owner_token_hash, auth_user_id, email_verified")
+          .select("handle, email, linkedin, linkedin_verified, owner_token_hash, auth_user_id, email_verified")
           .eq("handle", handle)
           .maybeSingle();
 
@@ -364,7 +364,12 @@ export async function POST(req: NextRequest) {
           location: payload.contact?.location,
           email_verified: emailVerified,
           phone_verified: payload.contact?.phoneVerified || false,
-          linkedin_verified: Boolean(linkedinForWrite) && Boolean(payload.contact?.linkedinVerified),
+          linkedin_verified: linkedInVerifiedForWrite({
+            existingLinkedIn: existing?.linkedin,
+            existingVerified: existing?.linkedin_verified,
+            incomingLinkedIn: linkedinForWrite,
+            incomingVerified: payload.contact?.linkedinVerified
+          }),
           preferred_layout: payload.preferredLayout || "traditional",
           auth_user_id: user?.id || existing?.auth_user_id || null,
           updated_at: new Date().toISOString()

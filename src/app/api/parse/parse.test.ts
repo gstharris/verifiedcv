@@ -368,6 +368,32 @@ SKILLS
     ]));
     expect(parsed.skills).not.toContain("AND CERTIFICATIONS");
   });
+
+  it("keeps a patents section out of core competencies and skills", () => {
+    const resume = `
+EDUCATION AND CERTIFICATIONS
+● B.S. Business Administration, Management Information Systems | California State University, Chico
+PATENTS
+● Algorithmic Decisioning, Content Personalization, and Dynamic Data Pipeline Generation (US Patent
+Office: 3 Issued Patents)
+CORE COMPETENCIES AND SKILLS
+● Product Leadership & Governance: Multi Product Portfolio Strategy, 0 to 1 Product Launches
+● AI Orchestration & Systems Architecture: Dynamic Model Routing, 3 Patents
+● Platform & Enterprise Operations: Cloud Native APIs & Integration Standards (REST/OpenAPI/MCP)
+`.trim();
+    const parsed = parseComprehensiveResume(resume);
+    expect(parsed.skills).toEqual(expect.arrayContaining([
+      "Multi Product Portfolio Strategy",
+      "0 to 1 Product Launches",
+      "Dynamic Model Routing",
+      "3 Patents",
+      "Cloud Native APIs & Integration Standards (REST/OpenAPI/MCP)"
+    ]));
+    expect(parsed.skills).not.toContain("AND SKILLS");
+    expect(parsed.skills).not.toContain("PATENTS");
+    expect(parsed.skills.join(" ")).not.toMatch(/Issued Patents/);
+    expect(parsed.education.map((item) => item.institution)).toContain("California State University, Chico");
+  });
 });
 
 describe("resume import gate", () => {

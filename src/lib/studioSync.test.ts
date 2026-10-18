@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chapterHasProof, keepPublishedIdentity, mergePeerVerifications, mergeReplacedContact, overlayChapterProof, replaceResumeChapters, withIdentity } from "./studioSync";
+import { chapterHasProof, keepPublishedIdentity, mergePeerVerifications, mergeReplacedContact, overlayChapterProof, replaceResumeChapters, retainLinkedInConfirmation, withIdentity } from "./studioSync";
 
 describe("mergePeerVerifications", () => {
   it("copies verifications onto the matching chapter and leaves its text alone", () => {
@@ -147,6 +147,41 @@ describe("keepPublishedIdentity", () => {
       linkedin: "https://www.linkedin.com/in/gharris",
       linkedinVerified: true,
       phone: "5125550100"
+    });
+  });
+});
+
+describe("retainLinkedInConfirmation", () => {
+  it("keeps a confirmation when a reloaded portfolio still has the same handle", () => {
+    const retained = retainLinkedInConfirmation(
+      {
+        summaryStatement: "Reloaded",
+        contact: {
+          linkedin: "linkedin.com/in/gstharris",
+          linkedinVerified: false,
+          email: "graham@example.com"
+        }
+      },
+      { linkedin: "https://www.linkedin.com/in/gstharris", linkedinSub: "member-1" }
+    );
+
+    expect(retained.contact).toMatchObject({
+      linkedin: "https://www.linkedin.com/in/gstharris",
+      linkedinVerified: true,
+      email: "graham@example.com"
+    });
+    expect(retained.linkedinSub).toBe("member-1");
+    expect(retained.summaryStatement).toBe("Reloaded");
+  });
+
+  it("leaves a different handle alone", () => {
+    const retained = retainLinkedInConfirmation(
+      { contact: { linkedin: "https://www.linkedin.com/in/other", linkedinVerified: false } },
+      { linkedin: "https://www.linkedin.com/in/gstharris", linkedinSub: "member-1" }
+    );
+    expect(retained.contact).toMatchObject({
+      linkedin: "https://www.linkedin.com/in/other",
+      linkedinVerified: false
     });
   });
 });

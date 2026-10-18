@@ -182,6 +182,32 @@ export function preferLinkedInProfile(existing: string, incoming: string) {
   return linkedInProfileUrl(incoming) || linkedInProfileUrl(existing) || "";
 }
 
+/** Keep a résumé /in/ handle when LinkedIn sign-in does not return one. */
+export function confirmedLinkedInProfile(
+  existing: string,
+  profile: { vanityName?: string; profileUrl?: string }
+) {
+  const fromProfile = profile.profileUrl || (profile.vanityName ? linkedInProfileUrl(profile.vanityName) || "" : "");
+  const linkedin = preferLinkedInProfile(existing, fromProfile);
+  return linkedin ? { linkedin } : null;
+}
+
+/** A later publish of the same handle must not clear a confirmation already stored. */
+export function linkedInVerifiedForWrite(input: {
+  existingLinkedIn?: string | null;
+  existingVerified?: boolean | null;
+  incomingLinkedIn?: string | null;
+  incomingVerified?: boolean | null;
+}) {
+  const incoming = linkedInProfileUrl(String(input.incomingLinkedIn || ""));
+  const existing = linkedInProfileUrl(String(input.existingLinkedIn || ""));
+  if (!incoming && !existing) return false;
+  if (input.incomingVerified && (incoming || existing)) return true;
+  if (!input.existingVerified || !existing) return false;
+  if (!incoming) return true;
+  return linkedInHandle(incoming) === linkedInHandle(existing);
+}
+
 export function confirmedLinkedInLabel(identity: { name?: string; vanityName?: string; profileUrl?: string }) {
   const handle = linkedInHandle(identity.vanityName || "") || linkedInHandle(identity.profileUrl || "");
   if (handle) return handle;

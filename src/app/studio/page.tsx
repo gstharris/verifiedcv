@@ -61,7 +61,7 @@ import { interpretVerificationAsk } from "@/lib/chapterMatch";
 import { nextPortfolioVerificationStep, verificationStatusLine } from "@/lib/verificationQueue";
 import { dossierSectionRank, encodeDossierLayout, parseDossierLayout, publicRegistryLabel, type PortfolioAsset } from "@/lib/portfolioAssets";
 import { LOOP_EVENTS, consumeCorroboratorRef } from "@/lib/corroborationLoop";
-import { linkedInHandle, linkedInProfileUrl, preferLinkedInProfile } from "@/lib/linkedin";
+import { confirmedLinkedInProfile, linkedInHandle, linkedInProfileUrl, preferLinkedInProfile } from "@/lib/linkedin";
 import { WORD_RESUME_MESSAGE, isWordResumeFile, resumeImportHasContent, resumeImportLog } from "@/app/api/parse/parseResume";
 import { flagEmoji, parseLocation } from "@/lib/locations";
 import { repairSkillList } from "@/lib/skills";
@@ -71,7 +71,7 @@ import { hasUnpublishedChanges, summarizeDossierChanges, type DossierSnapshot } 
 import { draftDeleteBlocksCancel, EXPLICIT_PUBLISH_HEADER, readDraftResponse, shouldRestoreLocalDraft } from "@/lib/dossierDraft";
 import { publishDraft } from "@/lib/publishDraft";
 import { publishFailureMessage } from "@/lib/publishResult";
-import { chapterHasProof, hasKeptIdentity, keepPublishedIdentity, mergePeerVerifications, mergeReplacedContact, overlayChapterProof, patchVaultIdentity, replaceResumeChapters, withIdentity } from "@/lib/studioSync";
+import { chapterHasProof, hasKeptIdentity, keepPublishedIdentity, mergePeerVerifications, mergeReplacedContact, overlayChapterProof, patchVaultIdentity, replaceResumeChapters, retainLinkedInConfirmation, withIdentity, type LinkedInConfirmation } from "@/lib/studioSync";
 import { ReviewChangesDialog } from "@/components/studio/ReviewChangesDialog";
 import { UndoBanner } from "@/components/studio/UndoBanner";
 import { faviconUrl, publicHttpsUrl, siteLabel } from "@/lib/companySite";
@@ -85,9 +85,10 @@ function linkedInFields(
   profile: { name?: string; vanityName?: string; profileUrl?: string },
   existing?: string
 ) {
-  const fromProfile = profile.profileUrl || (profile.vanityName ? linkedInProfileUrl(profile.vanityName) : "") || "";
+  const confirmed = confirmedLinkedInProfile(existing || "", profile);
+  if (!confirmed) return {};
   return {
-    linkedin: preferLinkedInProfile(existing || "", fromProfile),
+    linkedin: confirmed.linkedin,
     linkedinVerified: true as const
   };
 }
@@ -664,6 +665,16 @@ export default function StudioPage() {
   const cancelledThroughRef = useRef(0);
   const suppressAutosaveRef = useRef(false);
   const suppressPayloadRef = useRef<string | null>(null);
+  const linkedInConfirmationRef = useRef<LinkedInConfirmation | null>(null);
+  const pendingLinkedInRef = useRef<{ sub: string; name?: string; vanityName?: string; profileUrl?: string; email?: string } | null>(null);
+  const linkedInBootRef = useRef<{ promise: Promise<void>; resolve: () => void } | null>(null);
+  if (!linkedInBootRef.current) {
+    let resolveBoot = () => {};
+    const promise = new Promise<void>((resolve) => {
+      resolveBoot = resolve;
+    });
+    linkedInBootRef.current = { promise, resolve: resolveBoot };
+  }
 
   const noteDraftRevision = (revision: number) => {
     if (!Number.isInteger(revision) || revision < 1) return;
@@ -786,6 +797,45 @@ export default function StudioPage() {
   bindStudioAccount(user?.id ?? null);
   const supabase = createClient();
 
+  const rememberLinkedInConfirmation = (
+    existingLinkedIn: string,
+    profile: { sub?: string; vanityName?: string; profileUrl?: string } | null
+  ) => {
+    const sub = String(profile?.sub || "").trim();
+    if (!sub) return null;
+    const confirmed = confirmedLinkedInProfile(existingLinkedIn, profile || {});
+    if (!confirmed) return null;
+    const confirmation = { linkedin: confirmed.linkedin, linkedinSub: sub };
+    linkedInConfirmationRef.current = confirmation;
+    return confirmation;
+  };
+
+  const persistLinkedInConfirmation = async (confirmation: LinkedInConfirmation) => {
+    const identity = { linkedin: confirmation.linkedin, linkedinVerified: true };
+    const savedRec = readStudioRecord<DossierSnapshot>(STUDIO_SAVED_KEY);
+    const draftRec = readStudioRecord<DossierSnapshot>(STUDIO_DRAFT_KEY);
+    if (savedRec?.handle) writeStudioRecord(STUDIO_SAVED_KEY, withIdentity(savedRec, { ...(savedRec.contact || {}), ...identity }, confirmation.linkedinSub));
+    if (draftRec && hasPortfolioContent(draftRec)) {
+      writeStudioRecord(STUDIO_DRAFT_KEY, withIdentity(draftRec, { ...(draftRec.contact || {}), ...identity }, confirmation.linkedinSub));
+    }
+    const current = publishedSnapshotRef.current;
+    if (current) {
+      const next = withIdentity(current, { ...(current.contact || {}), ...identity }, confirmation.linkedinSub);
+      publishedSnapshotRef.current = next;
+      setPublishedSnapshot(next);
+    }
+    setContact((prev) => ({
+      ...prev,
+      linkedin: confirmation.linkedin,
+      linkedinVerified: true
+    }));
+    return patchVaultIdentity({
+      linkedin: confirmation.linkedin,
+      linkedinVerified: true,
+      linkedinSub: confirmation.linkedinSub
+    });
+  };
+
   useEffect(() => {
     const authTimer = window.setTimeout(() => setAuthChecked(true), 4000);
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -793,45 +843,28 @@ export default function StudioPage() {
       setAuthChecked(true);
       if (user) {
         setUser(user);
-        setContact(prev => {
-          const nextContact = { 
-            ...prev, 
-            email: user.email || prev.email 
-          };
-          
-          if (user.app_metadata?.providers?.includes("linkedin_oidc")) {
-            Object.assign(nextContact, linkedInFields({
-              name: user.user_metadata?.full_name || user.user_metadata?.name,
-              vanityName: user.user_metadata?.preferred_username,
-              profileUrl: user.user_metadata?.url
-            }, prev.linkedin));
-            
-            if (!prev.linkedinVerified && isPortfolioSaved) {
-              const savedRec = readStudioRecord<any>(STUDIO_SAVED_KEY);
-              const linkedinSub = user.user_metadata?.sub || user.id;
-              const linkedin = nextContact.linkedin || savedRec?.contact?.linkedin || "";
-              if (savedRec?.handle && linkedin) {
-                const identity = { ...nextContact, linkedin, linkedinVerified: true };
-                writeStudioRecord(STUDIO_SAVED_KEY, withIdentity(savedRec, { ...savedRec.contact, ...identity }, linkedinSub));
-                const draftRec = readStudioRecord<any>(STUDIO_DRAFT_KEY);
-                if (draftRec) writeStudioRecord(STUDIO_DRAFT_KEY, withIdentity(draftRec, { ...draftRec.contact, ...identity }, linkedinSub));
-                const current = publishedSnapshotRef.current;
-                if (current) {
-                  const next = withIdentity(current, { ...(current.contact || {}), ...identity }, linkedinSub);
-                  publishedSnapshotRef.current = next;
-                  setPublishedSnapshot(next);
-                }
-                void patchVaultIdentity({
-                  handle: String(savedRec.handle).toLowerCase().trim(),
-                  linkedin,
-                  linkedinVerified: true,
-                  linkedinSub
-                });
-              }
-            }
-          }
-          return nextContact;
-        });
+        const savedRec = readStudioRecord<DossierSnapshot>(STUDIO_SAVED_KEY);
+        const draftRec = readStudioRecord<DossierSnapshot>(STUDIO_DRAFT_KEY);
+        const storedLinkedIn = savedRec?.contact?.linkedin || draftRec?.contact?.linkedin || "";
+        if (user.app_metadata?.providers?.includes("linkedin_oidc")) {
+          const confirmation = rememberLinkedInConfirmation(storedLinkedIn, {
+            sub: user.user_metadata?.sub || user.id,
+            vanityName: user.user_metadata?.preferred_username,
+            profileUrl: user.user_metadata?.url
+          });
+          if (confirmation) void persistLinkedInConfirmation(confirmation);
+        }
+        setContact((prev) => ({
+          ...prev,
+          email: user.email || prev.email,
+          ...(user.app_metadata?.providers?.includes("linkedin_oidc")
+            ? linkedInFields({
+                name: user.user_metadata?.full_name || user.user_metadata?.name,
+                vanityName: user.user_metadata?.preferred_username,
+                profileUrl: user.user_metadata?.url
+              }, prev.linkedin || storedLinkedIn)
+            : {})
+        }));
       }
     });
 
@@ -847,11 +880,12 @@ export default function StudioPage() {
             email: user.email || prev.email 
           };
           if (user.app_metadata?.providers?.includes("linkedin_oidc")) {
+            const savedRec = readStudioRecord<DossierSnapshot>(STUDIO_SAVED_KEY);
             Object.assign(nextContact, linkedInFields({
               name: user.user_metadata?.full_name || user.user_metadata?.name,
               vanityName: user.user_metadata?.preferred_username,
               profileUrl: user.user_metadata?.url
-            }, prev.linkedin));
+            }, prev.linkedin || savedRec?.contact?.linkedin || ""));
           }
           return nextContact;
         });
@@ -918,7 +952,8 @@ export default function StudioPage() {
 
   const applyPortfolioRecord = (parsed: any) => {
     if (!parsed) return;
-    if (Array.isArray(parsed.milestones)) setMilestones(incomingChapters(parsed.milestones));
+    const retained = retainLinkedInConfirmation(parsed, linkedInConfirmationRef.current);
+    if (Array.isArray(retained.milestones)) setMilestones(incomingChapters(retained.milestones));
     if (parsed.fullName) setFullName(parsed.fullName);
     if (parsed.headline) setHeadline(parsed.headline);
     if (Object.prototype.hasOwnProperty.call(parsed, "summaryStatement")) {
@@ -929,14 +964,14 @@ export default function StudioPage() {
     if (Array.isArray(parsed.portfolioAssets)) setPortfolioAssets(parsed.portfolioAssets);
     if (parsed.preferredLayout) setPreferredLayout(parseDossierLayout(parsed.preferredLayout).id);
     if (Array.isArray(parsed.highlights)) setHighlights(parsed.highlights.map((line: unknown) => String(line || "")));
-    if (parsed.contact) {
+    if (retained.contact) {
       setContact((prev) => ({
         ...prev,
-        ...parsed.contact,
-        linkedin: preferLinkedInProfile(prev.linkedin, parsed.contact.linkedin || "") || parsed.contact.linkedin || prev.linkedin,
-        emailVerified: parsed.contact.emailVerified ?? prev.emailVerified,
-        phoneVerified: parsed.contact.phoneVerified ?? prev.phoneVerified,
-        linkedinVerified: parsed.contact.linkedinVerified ?? prev.linkedinVerified
+        ...retained.contact,
+        linkedin: preferLinkedInProfile(prev.linkedin, retained.contact?.linkedin || "") || retained.contact?.linkedin || prev.linkedin,
+        emailVerified: retained.contact?.emailVerified ?? prev.emailVerified,
+        phoneVerified: retained.contact?.phoneVerified ?? prev.phoneVerified,
+        linkedinVerified: retained.contact?.linkedinVerified ?? prev.linkedinVerified
       }));
     }
     if (parsed.handle) setHandle(String(parsed.handle).toLowerCase().trim());
@@ -1007,6 +1042,8 @@ export default function StudioPage() {
     };
     (async () => {
       try {
+        await linkedInBootRef.current?.promise;
+        if (cancelled) return;
         const res = await fetch("/api/vault?mine=1", { credentials: "include" });
         if (cancelled) return;
         if (!res.ok) {
@@ -1166,6 +1203,17 @@ export default function StudioPage() {
         if (!cancelled) setVaultChecked(true);
       } catch {
         if (!cancelled) setVaultChecked(true);
+      } finally {
+        if (cancelled || linkedInConfirmationRef.current || !pendingLinkedInRef.current) return;
+        const savedRec = readStudioRecord<DossierSnapshot>(STUDIO_SAVED_KEY);
+        const draftRec = readStudioRecord<DossierSnapshot>(STUDIO_DRAFT_KEY);
+        const existing = String(draftRec?.contact?.linkedin || savedRec?.contact?.linkedin || "");
+        const confirmation = rememberLinkedInConfirmation(existing, pendingLinkedInRef.current);
+        if (!confirmation) return;
+        const saved = await persistLinkedInConfirmation(confirmation);
+        if (!saved) {
+          setLinkedinVerifyError("LinkedIn signed you in, but the page did not save the check. Try again.");
+        }
       }
     })();
     return () => {
@@ -1372,6 +1420,7 @@ export default function StudioPage() {
         }
       ]);
       window.history.replaceState({}, document.title, window.location.pathname);
+      linkedInBootRef.current?.resolve();
     } else if (hasHashToken) {
       // Supabase Implicit Grant Flow
       
@@ -1381,62 +1430,18 @@ export default function StudioPage() {
       const refreshToken = hashParams.get("refresh_token");
       
       setTimeout(async () => {
-        // 2. Force the session if we have the tokens using the component's supabase client
-        if (accessToken && refreshToken) {
-          await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken
-          });
+        try {
+          if (accessToken && refreshToken) {
+            await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken
+            });
+          }
+          await applyLinkedInSession();
+        } finally {
+          linkedInBootRef.current?.resolve();
+          window.history.replaceState({}, document.title, window.location.pathname);
         }
-        
-        const { data: { session } } = await supabase.auth.getSession();
-        const user = session?.user;
-        
-        if (user && user.app_metadata?.providers?.includes("linkedin_oidc")) {
-          setContact((prev) => {
-            const nextContact = {
-              ...prev,
-              ...linkedInFields({
-                name: user.user_metadata?.full_name || user.user_metadata?.name,
-                vanityName: user.user_metadata?.preferred_username,
-                profileUrl: user.user_metadata?.url
-              }, prev.linkedin)
-            };
-            const linkedinSub = user.user_metadata?.sub || user.id;
-            const identity = { ...nextContact, linkedinVerified: true };
-            if (draft && hasPortfolioContent(draft)) {
-              writeStudioRecord(STUDIO_DRAFT_KEY, withIdentity(draft, { ...draft.contact, ...identity }, linkedinSub));
-            }
-            if (saved?.handle) {
-              writeStudioRecord(STUDIO_SAVED_KEY, withIdentity(saved, { ...saved.contact, ...identity }, linkedinSub));
-              const current = publishedSnapshotRef.current;
-              if (current) {
-                const next = withIdentity(current, { ...(current.contact || {}), ...identity }, linkedinSub);
-                publishedSnapshotRef.current = next;
-                setPublishedSnapshot(next);
-              }
-              void patchVaultIdentity({
-                handle: String(saved.handle).toLowerCase().trim(),
-                linkedin: identity.linkedin,
-                linkedinVerified: true,
-                linkedinSub
-              });
-            }
-            return nextContact;
-          });
-          
-          setChatMessages((prev) => [
-            ...prev,
-            {
-              sender: "ally",
-              text: `LinkedIn identity confirmed${user.user_metadata?.full_name ? ` for ${user.user_metadata.full_name}` : ""}. We will not post to your profile.`
-            }
-          ]);
-          captureEvent("linkedin_verified");
-        }
-        
-        // 3. Only clear the URL after we've completely finished processing
-        window.history.replaceState({}, document.title, window.location.pathname);
       }, 100);
     }
     
@@ -1501,60 +1506,75 @@ export default function StudioPage() {
     async function applyLinkedInSession() {
       try {
         const res = await fetch("/api/auth/linkedin/session");
-        const data = await res.json();
+        const data = await res.json().catch(() => null);
         if (data?.authenticated && data.profile) {
           if (data.usableForConfirm === false) {
             setLinkedinVerifyError(data.confirmError || "This LinkedIn account is too incomplete to verify.");
-            if (linkedInAuth) {
-              window.history.replaceState({}, document.title, "/studio");
-            }
+            if (linkedInAuth) window.history.replaceState({}, document.title, "/studio");
             return;
           }
-          setContact((prev) => {
-            const nextContact = {
-              ...prev,
-              email: prev.email || data.profile.email || prev.email,
-              ...linkedInFields(data.profile, prev.linkedin)
-            };
-            const linkedinSub = data.profile.sub;
-            const identity = { ...nextContact, linkedinVerified: true };
-            if (draft && hasPortfolioContent(draft)) {
-              writeStudioRecord(STUDIO_DRAFT_KEY, withIdentity(draft, { ...draft.contact, ...identity }, linkedinSub));
+          pendingLinkedInRef.current = {
+            sub: String(data.profile.sub || ""),
+            name: data.profile.name,
+            vanityName: data.profile.vanityName,
+            profileUrl: data.profile.profileUrl,
+            email: data.profile.email
+          };
+          const existing = String(saved?.contact?.linkedin || draft?.contact?.linkedin || "");
+          const confirmation = rememberLinkedInConfirmation(existing, pendingLinkedInRef.current);
+          if (confirmation) {
+            const savedOk = await persistLinkedInConfirmation(confirmation);
+            if (!savedOk) {
+              setLinkedinVerifyError("LinkedIn signed you in, but the page did not save the check. Try again.");
+            } else if (linkedInAuth === "success") {
+              setLinkedinVerifyError("");
+              setChatMessages((prev) => [
+                ...prev,
+                {
+                  sender: "ally",
+                  text: `LinkedIn identity confirmed${data.profile.name ? ` for ${data.profile.name}` : ""}. We will not post to your profile.`
+                }
+              ]);
+              captureEvent("linkedin_verified");
+              window.history.replaceState({}, document.title, "/studio");
             }
-            if (saved?.handle) {
-              writeStudioRecord(STUDIO_SAVED_KEY, withIdentity(saved, { ...saved.contact, ...identity }, linkedinSub));
-              const current = publishedSnapshotRef.current;
-              if (current) {
-                const next = withIdentity(current, { ...(current.contact || {}), ...identity }, linkedinSub);
-                publishedSnapshotRef.current = next;
-                setPublishedSnapshot(next);
-              }
-              void patchVaultIdentity({
-                handle: String(saved.handle).toLowerCase().trim(),
-                linkedin: identity.linkedin,
-                email: identity.email,
-                linkedinVerified: true,
-                linkedinSub
-              });
+          }
+          return;
+        }
+
+        const { data: authData } = await supabase.auth.getUser();
+        const authUser = authData?.user;
+        if (authUser?.app_metadata?.providers?.includes("linkedin_oidc")) {
+          pendingLinkedInRef.current = {
+            sub: String(authUser.user_metadata?.sub || authUser.id || ""),
+            name: authUser.user_metadata?.full_name || authUser.user_metadata?.name,
+            vanityName: authUser.user_metadata?.preferred_username,
+            profileUrl: authUser.user_metadata?.url,
+            email: authUser.email
+          };
+          const existing = String(saved?.contact?.linkedin || draft?.contact?.linkedin || "");
+          const confirmation = rememberLinkedInConfirmation(existing, pendingLinkedInRef.current);
+          if (confirmation) {
+            const savedOk = await persistLinkedInConfirmation(confirmation);
+            if (savedOk && (linkedInAuth === "success" || hasHashToken)) {
+              setLinkedinVerifyError("");
+              setChatMessages((prev) => [
+                ...prev,
+                {
+                  sender: "ally",
+                  text: `LinkedIn identity confirmed${pendingLinkedInRef.current?.name ? ` for ${pendingLinkedInRef.current.name}` : ""}. We will not post to your profile.`
+                }
+              ]);
+              captureEvent("linkedin_verified");
+              window.history.replaceState({}, document.title, "/studio");
             }
-            return nextContact;
-          });
-          if (linkedInAuth === "success") {
-            setLinkedinVerifyError("");
-            setChatMessages((prev) => [
-              ...prev,
-              {
-                sender: "ally",
-                text: `LinkedIn identity confirmed${data.profile.name ? ` for ${data.profile.name}` : ""}. We will not post to your profile.`
-              }
-            ]);
-            captureEvent("linkedin_verified");
-            window.history.replaceState({}, document.title, "/studio");
           }
           return;
         }
       } catch {
         // Session lookup is optional; the Verify button still works.
+      } finally {
+        linkedInBootRef.current?.resolve();
       }
 
       const returnError = linkedInReturnMessage(linkedInAuth, linkedInReason, false);
@@ -1566,7 +1586,7 @@ export default function StudioPage() {
     }
 
     if (!hasHashToken) {
-      applyLinkedInSession();
+      void applyLinkedInSession();
     }
   }, []);
 
