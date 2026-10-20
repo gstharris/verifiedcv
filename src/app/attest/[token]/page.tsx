@@ -90,6 +90,7 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
   const [linkedInError, setLinkedInError] = useState("");
 
   const [isSuccess, setIsSuccess] = useState(false);
+  const [declined, setDeclined] = useState(false);
 
   useEffect(() => {
     async function fetchAttestation() {
@@ -107,6 +108,9 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
           }
           if (json.data.status === "CONFIRMED") {
             setIsSuccess(true);
+          }
+          if (json.data.status === "REJECTED") {
+            setDeclined(true);
           }
         } else {
           setError(json.error || "Invalid or expired attestation link.");
@@ -272,6 +276,29 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
     }
   };
 
+  const handleDecline = async () => {
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const res = await fetch("/api/verify/attest", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, decision: "decline" })
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setDeclined(true);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } else {
+        setSubmitError(json.error || "Could not record that response.");
+      }
+    } catch {
+      setSubmitError("Network interruption recording that response.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const startOwnPage = () => {
     if (!data) return;
     const ref = {
@@ -343,7 +370,7 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
       {/* Main Container */}
       <main className="max-w-xl w-full mx-auto p-6 sm:py-12 space-y-6">
         
-        {!isSuccess ? (
+        {!isSuccess && !declined ? (
           <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-xs space-y-6">
             
             {/* Header Context */}
@@ -580,8 +607,23 @@ export default function ChapterAttestationPage({ params }: { params: Promise<{ t
                 )}
               </button>
               )}
+              <button
+                type="button"
+                onClick={handleDecline}
+                disabled={submitting}
+                className="w-full py-2 text-xs font-bold text-slate-500 hover:text-[#0F172A] cursor-pointer disabled:opacity-50"
+              >
+                I didn&apos;t work with them
+              </button>
             </div>
 
+          </div>
+        ) : declined ? (
+          <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 sm:p-8 shadow-xs space-y-4 text-center">
+            <h2 className="text-2xl font-black text-[#0F172A] tracking-tight">No confirmation recorded</h2>
+            <p className="text-xs text-slate-600 max-w-sm mx-auto leading-relaxed">
+              We recorded that you can&apos;t confirm {data.candidateName}&apos;s time at {data.companyName}.
+            </p>
           </div>
         ) : (
           <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 sm:p-8 shadow-xs space-y-6 text-center">

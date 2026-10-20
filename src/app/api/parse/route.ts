@@ -3,12 +3,15 @@ import { extractText } from "unpdf";
 import {
   EMPTY_PDF_MESSAGE,
   THIN_RESUME_MESSAGE,
-  WORD_RESUME_MESSAGE,
-  isWordResumeFile,
   parseComprehensiveResume,
   resumeImportHasContent,
   resumeParseLog
 } from "./parseResume";
+import {
+  UNREADABLE_RESUME_MESSAGE,
+  extractResumeFileText
+} from "@/lib/resumeFileText";
+import { UNSUPPORTED_RESUME_MESSAGE, resumeFileKind } from "@/lib/resumeFileKind";
 
 export const dynamic = "force-dynamic";
 
@@ -30,16 +33,16 @@ export async function POST(req: NextRequest) {
     let textContent = pastedText || "";
 
     if (file) {
-      if (isWordResumeFile(file.name, file.type)) {
-        return NextResponse.json({ error: WORD_RESUME_MESSAGE }, { status: 400 });
+      const kind = resumeFileKind(file.name, file.type);
+      if (kind === "unsupported") {
+        return NextResponse.json({ error: UNSUPPORTED_RESUME_MESSAGE }, { status: 400 });
       }
 
-      const buffer = await file.arrayBuffer();
-      const pdf = file.name.toLowerCase().endsWith(".pdf") || file.type.includes("pdf");
+      const bytes = new Uint8Array(await file.arrayBuffer());
 
-      if (pdf) {
+      if (kind === "pdf") {
         try {
-          const { text } = await extractText(new Uint8Array(buffer));
+          const { text } = await extractText(bytes);
           textContent = Array.isArray(text) ? text.join("\n") : (text || "");
         } catch (pdfErr) {
           console.error("unpdf extraction failed:", pdfErr instanceof Error ? pdfErr.name : "extract");
@@ -49,12 +52,16 @@ export async function POST(req: NextRequest) {
           );
         }
       } else {
-        textContent = Buffer.from(buffer).toString("utf-8");
+        const extracted = await extractResumeFileText(kind, bytes);
+        if ("error" in extracted) {
+          return NextResponse.json({ error: extracted.error }, { status: 400 });
+        }
+        textContent = extracted.text;
       }
 
       if (!textContent.trim()) {
         return NextResponse.json(
-          { error: pdf ? EMPTY_PDF_MESSAGE : "No readable resume content found." },
+          { error: kind === "pdf" ? EMPTY_PDF_MESSAGE : UNREADABLE_RESUME_MESSAGE },
           { status: 400 }
         );
       }

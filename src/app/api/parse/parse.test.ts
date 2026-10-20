@@ -3,9 +3,7 @@ import type { ParsedDossierPayload } from "./parseResume";
 import {
   EMPTY_PDF_MESSAGE,
   THIN_RESUME_MESSAGE,
-  WORD_RESUME_MESSAGE,
   extractAtomicAchievements,
-  isWordResumeFile,
   parseComprehensiveResume,
   resumeImportHasContent,
   resumeImportLog,
@@ -415,14 +413,10 @@ describe("resume import gate", () => {
     expect(resumeImportHasContent({})).toBe(false);
   });
 
-  it("names Word files and the recovery messages without resume text", () => {
-    expect(isWordResumeFile("resume.docx", "")).toBe(true);
-    expect(isWordResumeFile("resume.DOC", "application/msword")).toBe(true);
-    expect(isWordResumeFile("resume.pdf", "application/pdf")).toBe(false);
-    expect(WORD_RESUME_MESSAGE).toMatch(/Paste the resume text, or upload a PDF/);
+  it("names recovery messages without resume text", () => {
     expect(EMPTY_PDF_MESSAGE).toMatch(/no selectable text/i);
     expect(THIN_RESUME_MESSAGE).toMatch(/start from scratch/i);
-    expect(`${WORD_RESUME_MESSAGE} ${EMPTY_PDF_MESSAGE} ${THIN_RESUME_MESSAGE}`).not.toMatch(/@|linkedin\.com\/in\//);
+    expect(`${EMPTY_PDF_MESSAGE} ${THIN_RESUME_MESSAGE}`).not.toMatch(/@|linkedin\.com\/in\//);
   });
 });
 

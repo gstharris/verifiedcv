@@ -257,14 +257,8 @@ function isTenureOnly(line: string) {
   return line.replace(span[0], "").replace(/[^A-Za-z]/g, "").length < 4;
 }
 
-export const WORD_RESUME_MESSAGE = "Word files aren't read yet. Paste the resume text, or upload a PDF.";
 export const EMPTY_PDF_MESSAGE = "This PDF has no selectable text. Paste the resume instead.";
 export const THIN_RESUME_MESSAGE = "We couldn't read career chapters from that. Paste the resume text, or start from scratch.";
-
-export function isWordResumeFile(name: string, type = "") {
-  const lower = name.toLowerCase();
-  return lower.endsWith(".docx") || lower.endsWith(".doc") || /wordprocessingml|msword/i.test(type);
-}
 
 function filledList(value: unknown) {
   return Array.isArray(value) && value.some((item) => String(item || "").trim());

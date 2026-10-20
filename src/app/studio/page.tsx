@@ -62,7 +62,9 @@ import { nextPortfolioVerificationStep, verificationStatusLine } from "@/lib/ver
 import { dossierSectionRank, encodeDossierLayout, parseDossierLayout, publicRegistryLabel, type PortfolioAsset } from "@/lib/portfolioAssets";
 import { LOOP_EVENTS, consumeCorroboratorRef } from "@/lib/corroborationLoop";
 import { confirmedLinkedInProfile, linkedInHandle, linkedInProfileUrl, preferLinkedInProfile } from "@/lib/linkedin";
-import { WORD_RESUME_MESSAGE, isWordResumeFile, resumeImportHasContent, resumeImportLog } from "@/app/api/parse/parseResume";
+import { resumeImportHasContent, resumeImportLog } from "@/app/api/parse/parseResume";
+import { RESUME_FILE_ACCEPT, UNSUPPORTED_RESUME_MESSAGE, resumeFileKind } from "@/lib/resumeFileKind";
+import { type CorroborationRequestView } from "@/lib/corroborationRequests";
 import { flagEmoji, parseLocation } from "@/lib/locations";
 import { repairSkillList } from "@/lib/skills";
 import { resolvePlace, suggestPlaces } from "@/lib/places";
@@ -727,6 +729,8 @@ export default function StudioPage() {
   const [corpEmailSending, setCorpEmailSending] = useState(false);
   const [corpEmailDirectory, setCorpEmailDirectory] = useState("");
   const [colleagueEmail, setColleagueEmail] = useState("");
+  const [colleagueRequests, setColleagueRequests] = useState<CorroborationRequestView[]>([]);
+  const [colleagueRequestsState, setColleagueRequestsState] = useState<"loading" | "ready" | "error">("loading");
   const [colleagueRole, setColleagueRole] = useState("Engineering Peer / Manager");
   const [askForAchievements, setAskForAchievements] = useState(true);
   const [inviteSent, setInviteSent] = useState(false);
@@ -1302,6 +1306,33 @@ export default function StudioPage() {
         });
       } catch {
         // The open window still shows whatever proof is already on the chapter.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isVerifyHubOpen, targetMilestone?.id]);
+
+  useEffect(() => {
+    if (!isVerifyHubOpen || !targetMilestone?.id) return;
+    const milestoneId = targetMilestone.id;
+    let cancelled = false;
+    setColleagueRequestsState("loading");
+    (async () => {
+      try {
+        const res = await fetch(`/api/verify/requests?milestoneId=${encodeURIComponent(milestoneId)}`, {
+          credentials: "include"
+        });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!res.ok || !data.success || !Array.isArray(data.requests)) {
+          setColleagueRequestsState("error");
+          return;
+        }
+        setColleagueRequests(data.requests);
+        setColleagueRequestsState("ready");
+      } catch {
+        if (!cancelled) setColleagueRequestsState("error");
       }
     })();
     return () => {
@@ -1932,11 +1963,11 @@ export default function StudioPage() {
     e.target.value = "";
     if (!file || isProcessing) return;
     const replacing = replaceSourceRef.current;
-    if (isWordResumeFile(file.name, file.type)) {
+    if (resumeFileKind(file.name, file.type) === "unsupported") {
       replaceSourceRef.current = false;
-      if (replacing) setSourceNotice({ text: WORD_RESUME_MESSAGE, error: true });
+      if (replacing) setSourceNotice({ text: UNSUPPORTED_RESUME_MESSAGE, error: true });
       else {
-        setImportNotice(WORD_RESUME_MESSAGE);
+        setImportNotice(UNSUPPORTED_RESUME_MESSAGE);
         setActiveTab("paste");
       }
       return;
@@ -2001,7 +2032,7 @@ export default function StudioPage() {
     }
     if (actionType === "upload_resume") {
       fileInputRef.current?.click();
-      say("Choose a PDF or a text resume. Paste a Word resume instead.");
+      say("Choose a PDF, Word, RTF, or text resume.");
       return;
     }
     if (actionType === "paste_resume") {
@@ -2275,7 +2306,7 @@ export default function StudioPage() {
         return;
       }
       fileInputRef.current?.click();
-      say("Choose a PDF or a text resume. Paste a Word resume instead.");
+      say("Choose a PDF, Word, RTF, or text resume.");
       return;
     }
     if (studioMessage.type === "education") {
@@ -2826,7 +2857,12 @@ export default function StudioPage() {
         return;
       }
 
+      setColleagueEmail("");
       setIsInviteModalOpen(false);
+      if (returnToVerifyHubRef.current) {
+        returnToVerifyHubRef.current = false;
+        setIsVerifyHubOpen(true);
+      }
       setWaitingForPeer(true);
       captureEvent("peer_invite_sent", { handle: handle.toLowerCase().trim(), company: targetMilestone.company });
       setChatMessages((prev) => [
@@ -3384,7 +3420,7 @@ export default function StudioPage() {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".pdf,.docx,.txt,.md"
+        accept={RESUME_FILE_ACCEPT}
         className="hidden"
         onChange={handleFileUpload}
       />
@@ -3422,7 +3458,7 @@ export default function StudioPage() {
               <div className="space-y-2">
                 <h2 className="text-xl font-black text-[#0F172A]">Upload your resume</h2>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                  You are signed in, and this page does not have a resume yet. Upload a PDF or paste the text. Word files need to be pasted.
+                  You are signed in, and this page does not have a resume yet. Upload a PDF, Word, RTF, or text file, or paste the resume.
                 </p>
               </div>
               {importNotice && (
@@ -4453,6 +4489,42 @@ export default function StudioPage() {
                         )}
                       </div>
                     ))}
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Colleague requests</p>
+                    {colleagueRequestsState === "loading" && (
+                      <p className="text-[11px] text-slate-500">Loading requests…</p>
+                    )}
+                    {colleagueRequestsState === "error" && (
+                      <p className="text-[11px] text-red-700">Couldn&apos;t load colleague requests.</p>
+                    )}
+                    {colleagueRequestsState === "ready" && colleagueRequests.length === 0 && (
+                      <p className="text-[11px] text-slate-500">No colleague requests for this chapter yet.</p>
+                    )}
+                    {colleagueRequestsState === "ready" &&
+                      colleagueRequests.map((request, index) => (
+                        <div
+                          key={`${request.email}-${request.sentOn}-${request.status}-${index}`}
+                          className="flex items-center justify-between gap-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-semibold text-[#0F172A]">{request.email}</p>
+                            {request.sentOn && <p className="text-[11px] text-slate-500">Sent {request.sentOn}</p>}
+                          </div>
+                          <span
+                            className={`shrink-0 rounded-lg border px-2 py-0.5 text-[10px] font-bold ${
+                              request.status === "verified"
+                                ? "border-emerald-200 bg-emerald-50 text-[#059669]"
+                                : request.status === "declined"
+                                  ? "border-red-200 bg-red-50 text-red-700"
+                                  : "border-[#E2E8F0] bg-white text-slate-600"
+                            }`}
+                          >
+                            {request.label}
+                          </span>
+                        </div>
+                      ))}
                   </div>
 
                   {!workEmailDone && (

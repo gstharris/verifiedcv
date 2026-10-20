@@ -193,8 +193,33 @@ export async function PUT(req: NextRequest) {
     }
 
     const body = await req.json();
+    const token = String(body?.token || "");
+
+    if (String(body?.decision || "") === "decline") {
+      if (!token) {
+        return NextResponse.json({ success: false, error: "This confirmation link has expired or was already used." }, { status: 400 });
+      }
+      const { data: pending, error: pendingError } = await supabase
+        .from("attestations")
+        .select("token, status")
+        .eq("token", token)
+        .maybeSingle();
+      if (pendingError || !pending) {
+        return NextResponse.json({ success: false, error: "This confirmation link has expired or was already used." }, { status: 404 });
+      }
+      if (pending.status === "CONFIRMED") {
+        return NextResponse.json({ success: false, error: "This chapter is already confirmed." }, { status: 409 });
+      }
+      if (pending.status !== "REJECTED") {
+        const { error: declineError } = await supabase.from("attestations").update({ status: "REJECTED" }).eq("token", token);
+        if (declineError) {
+          return NextResponse.json({ success: false, error: declineError.message }, { status: 500 });
+        }
+      }
+      return NextResponse.json({ success: true, status: "REJECTED" });
+    }
+
     const {
-      token,
       relationship = "PEER",
       notes = "",
       attestorName = "",
@@ -252,6 +277,10 @@ export async function PUT(req: NextRequest) {
         alreadyConfirmed: true,
         signature: record.cryptographic_signature
       });
+    }
+
+    if (record.status === "REJECTED") {
+      return NextResponse.json({ success: false, error: "This request was declined." }, { status: 400 });
     }
 
     const candidateLookup = await supabase

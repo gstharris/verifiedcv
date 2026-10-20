@@ -15,7 +15,8 @@ import {
 import VerifiedCVLogo from "@/components/VerifiedCVLogo";
 import { captureEvent } from "@/lib/analytics";
 import { corroboratorRefFromSearch, writeCorroboratorRef } from "@/lib/corroborationLoop";
-import { THIN_RESUME_MESSAGE, isWordResumeFile, resumeImportHasContent } from "@/app/api/parse/parseResume";
+import { THIN_RESUME_MESSAGE, resumeImportHasContent } from "@/app/api/parse/parseResume";
+import { RESUME_FILE_ACCEPT, UNSUPPORTED_RESUME_MESSAGE, resumeFileKind } from "@/lib/resumeFileKind";
 
 function StudioPreview() {
   return (
@@ -204,8 +205,8 @@ export default function VerifiedCVLandingPage() {
     if (!e.target.files || e.target.files.length === 0 || isProcessing) return;
     const file = e.target.files[0];
     e.target.value = "";
-    if (isWordResumeFile(file.name, file.type)) {
-      setImportNotice("Word files aren't read yet. Paste the resume text, or upload a PDF.");
+    if (resumeFileKind(file.name, file.type) === "unsupported") {
+      setImportNotice(UNSUPPORTED_RESUME_MESSAGE);
       return;
     }
     setImportNotice("");
@@ -292,7 +293,7 @@ export default function VerifiedCVLandingPage() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf,.docx,.txt,.md"
+                accept={RESUME_FILE_ACCEPT}
                 className="hidden"
                 onChange={handleFileUpload}
               />
@@ -306,7 +307,7 @@ export default function VerifiedCVLandingPage() {
                 className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold transition-all cursor-pointer shadow-2xs disabled:opacity-50"
               >
                 <UploadCloud className="w-4 h-4 text-emerald-400" />
-                <span>{isProcessing ? "Processing..." : "Upload resume (PDF)"}</span>
+                <span>{isProcessing ? "Processing..." : "Upload resume"}</span>
               </button>
 
               <p className="text-[11px] font-medium text-slate-400">or paste your resume</p>
@@ -444,7 +445,7 @@ export default function VerifiedCVLandingPage() {
               </span>
               <h3 className="font-extrabold text-sm text-[#0F172A]">Upload resume</h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Drop a PDF or paste the text. We read your chapters, summary, and skills onto the page.
+                Drop a PDF, Word, RTF, or text file, or paste the resume. We read your chapters, summary, and skills onto the page.
               </p>
             </div>
 
